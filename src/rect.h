@@ -72,6 +72,22 @@ inline bool rect_is_empty(struct rect *rect) {
     return (rect->left >= rect->right || rect->top >= rect->bottom);
 }
 
+inline void rect_move_to(struct rect *rect, int16_t x, int16_t y) {
+    if (!rect)
+        return;
+    rect->bottom += y - rect->top;
+    rect->right += x - rect->left;
+    rect->top = y;
+    rect->left = x;
+}
+
+inline void rect_translate(struct rect *rect, int16_t dx, int16_t dy) {
+    if (!rect)
+        return;
+    rect->left += dx; rect->right += dx;
+    rect->top += dy; rect->bottom += dy;
+}
+
 inline bool rect_blit_clip(int16_t *x, int16_t *y, struct rect *src, struct rect *clip) {
     if (!x || !y || !src || !clip)
         return false;

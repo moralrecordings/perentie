@@ -12,7 +12,9 @@
 typedef unsigned char byte;
 typedef unsigned short word;
 
-byte *VGA_base = (byte *)0xA0000;
+inline byte *vga_ptr() {
+    return (byte *)0xA0000 + __djgpp_conventional_base;
+}
 
 void video_shutdown();
 
@@ -30,21 +32,6 @@ void video_init() {
     atexit(video_shutdown);
 }
 
-void video_test(int offset) {
-    byte *VGA = VGA_base + __djgpp_conventional_base;
-    for (int y = 0; y < 200; y++) {
-        for (int x = 0; x < 320; x++) {
-           VGA[(y<<8) + (y<<6) + x] = (x + offset) % 16;
-        }
-    }
-}
-
-inline int clamp (int i, int a, int b) {
-    int result = i > a ? i : a;
-    result = i < b ? i : b - 1;
-    return result;
-}
-
 void video_blit_image(struct image *image, int16_t x, int16_t y) {
     if (!image) {
         printf("WARNING: Tried to blit nothing ya dingus");
@@ -60,13 +47,13 @@ void video_blit_image(struct image *image, int16_t x, int16_t y) {
         return;
     }
    
-    byte *VGA = VGA_base + __djgpp_conventional_base;
+    byte *VGA = vga_ptr();
 
     int16_t width = rect_width(ir);
     for (int yi = ir->top; yi < ir->bottom; ) {
         memcpy(
             (VGA + (y << 8) + (y << 6) + x),
-            (image->data + yi*image->pitch + ir->left),
+            (image->data + (yi << image->shift) + ir->left),
             width
         );
         yi++;
@@ -74,7 +61,6 @@ void video_blit_image(struct image *image, int16_t x, int16_t y) {
     }
     destroy_rect(ir);
     destroy_rect(crop);
-    //printf("%d %d %d %d %d %d\n", xbegin, xend, ybegin, yend, ximgbegin, yimgbegin);
 }
 
 void video_shutdown() {
