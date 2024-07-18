@@ -6,16 +6,25 @@
 #include "lua/lualib.h"
 
 #include "dos.h"
+#include "image.h"
 
 int main(int argc, char **argv) {
     lua_State *L = luaL_newstate();
     luaL_openlibs(L);
+    struct image *image = create_image("test.png");
 
     video_init();
-    for (int i = 0; i < 10; i++) {
-        video_test(i);
-        usleep(500000);
+    for (int i = 0; i < 100; i++) {
+        video_blit_image(image, 
+            (int)(rand()%(SCREEN_WIDTH + image->width)) - (int)image->width,
+            (int)(rand()%(SCREEN_HEIGHT + image->height)) - (int)image->height
+        );
+        usleep(100000);
     }
-    luaL_dofile(L, "test.lua");
+    video_shutdown();
+    destroy_image(image);
+//    sleep(1);
+//    luaL_dofile(L, "test.lua");
+
     return 0;
 }
