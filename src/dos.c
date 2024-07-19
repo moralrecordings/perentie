@@ -2,8 +2,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+
 #include <dos.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <sys/nearptr.h>
+#include <termios.h>
+#include <unistd.h>
 
 #include "dos.h"
 #include "image.h"
@@ -98,5 +103,34 @@ void pcspeaker_tone(int freq) {
 void pcspeaker_stop(int freq) {
     // disable PC speaker gate on keyboard controller
     outportb(0x61, inportb(0x61) & 0xfc);
+}
+
+
+void serial_test() {
+    // Used for debug console.
+    // Rely on DJGPP's POSIX compatibility layer for doing all the work.
+    int port = open("COM4", O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (port < 0) {
+        printf("Couldn't open serial (%d): %s", errno, strerror(errno));
+        return;
+    }
+    struct termios tty;
+    if (tcgetattr(port, &tty)) {
+        printf("Couldn't fetch termios settings for port (%d): %s", errno, strerror(errno));
+        close(port);
+        return;
+    }
+    // Disable parity bit
+    tty.c_cflag &= ~PARENB;
+    // 1 stop bit
+    tty.c_cflag &= ~CSTOPB;
+    // 8 bits per byte
+    tty.c_cflag &= ~CSIZE;
+    tty.c_cflag |= CS8;
+    // 38400 baud, fastest speed known to science
+    tty.c_cflag |= B38400;
+    // Begone, worthless modem control lines
+    tty.c_cflag |= CLOCAL;
+
 }
 
