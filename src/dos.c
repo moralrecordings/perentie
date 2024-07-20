@@ -73,6 +73,21 @@ void video_blit_image(struct image *image, int16_t x, int16_t y) {
     destroy_rect(crop);
 }
 
+void video_flip() {
+    // sleep until the start of the next vertical blanking interval
+    // CRT mode and status - CGA status register - in vertical retrace
+    if (inportb(0x3da) & 8) {
+        // in the middle of a vblank, wait until the next draw 
+        do {
+            __dpmi_yield();
+        } while (inportb(0x3da) & 8);
+    }
+    // in the middle of a draw, wait for the start of the next vblank
+    do {
+        __dpmi_yield();
+    } while (!(inportb(0x3da) & 8));
+}
+
 void video_shutdown() {
     // Mode 3h - text, 16 colours, 80x25
     union REGS regs;
@@ -243,6 +258,8 @@ void timer_sleep(uint32_t delay_millis) {
 
     // Blocking loop until enough ticks have passed
     do {
+        // Yield/halt CPU until next interrupt
+        __dpmi_yield();
         end = timer_ticks();
     } while ((end - begin) < delay_ticks);
 }

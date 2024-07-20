@@ -10,6 +10,7 @@ struct image;
 
 void video_init();
 void video_blit_image(struct image *image, int16_t x, int16_t y);
+void video_flip();
 void video_shutdown();
 
 void timer_init();
