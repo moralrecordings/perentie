@@ -10,7 +10,7 @@ struct image {
     byte *palette;
     uint32_t width;
     uint32_t height;
-    uint8_t shift;
+    uint32_t pitch;
 };
 
 struct image *create_image(const char *path);

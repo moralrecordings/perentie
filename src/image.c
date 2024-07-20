@@ -7,12 +7,8 @@
 
 #include "image.h"
 
-uint8_t get_shift(uint32_t width) {
-    for (uint8_t i = 0; i < 32; i++) {
-        if ((1 << i) >= width) {
-            return i;
-        }
-    }
+inline uint8_t get_pitch(uint32_t width) {
+    return (width % 4) == 0 ? width : width + 4 - (width % 4);
 }
 
 
@@ -65,8 +61,8 @@ struct image *create_image(const char *path) {
     struct image *image = (struct image *)calloc(1, sizeof(struct image));
     image->width = ihdr.width;
     image->height = ihdr.height; 
-    image->shift = get_shift(ihdr.width);
-    image->data = (byte *)calloc(image->height << image->shift, sizeof(byte));
+    image->pitch = get_pitch(ihdr.width);
+    image->data = (byte *)calloc(image->height * image->pitch, sizeof(byte));
     image->palette = (byte *)calloc(256*3, sizeof(byte));
 
     byte *row_buffer = (byte *)calloc(image->width, sizeof(byte));
@@ -75,7 +71,7 @@ struct image *create_image(const char *path) {
     do {
         result = spng_get_row_info(ctx, &row_info);
         if (result) break;
-        byte *row = image->data + (row_info.row_num << image->shift);
+        byte *row = image->data + (row_info.row_num * image->pitch);
         result = spng_decode_row(ctx, row_buffer, image->width);
         switch (ihdr.bit_depth) {
             case 8:
