@@ -26,25 +26,62 @@ PTOnlyRunOnce = function (name)
     _PTOnlyRunOnce[name] = 1;
 end
 
-local _PTThreads = {}
-local _PTThreadMaxID = 0
+local _PTThreads = {};
+local _PTThreadsSleepUntil = {}
 PTStartThread = function (name, func) 
     if _PTThreads[name] then
         error(string.format("PTStartThread(): thread named %s exists", name));
     end
-    _PTThreadMaxID = _PTThreadMaxID + 1;
-    _PTThreads[name] = _PTThreadMaxID;
-    _PTStartThread(_PTThreads[name], func);
+    _PTThreads[name] = coroutine.create(func);
 end
 
 PTStopThread = function (name) 
     if not _PTThreads[name] then
         error(string.format("PTStopThread(): thread named %s doesn't exist", name));
     end
-    _PTStopThread(_PTThreads[name]);
+    coroutine.close(_PTThreads[name]);
     _PTThreads[name] = nil;
 end
 
+PTSleep = function (millis)
+    thread, _ = coroutine.running();
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            _PTThreadsSleepUntil[k] = PTGetMillis() + millis;
+            coroutine.yield();
+            return;
+        end
+    end
+    error(string.format("PTSleep(): thread not found"));
+end
+
+_PTRunThreads = function ()
+    count = 0;
+    for name, thread in pairs(_PTThreads) do
+        if _PTThreadsSleepUntil[name] then
+            if _PTThreadsSleepUntil > _PTGetMillis() then
+                goto continue;
+            else
+                _PTThreadsSleepUntil[name] = nil;
+            end
+        end
+        success, result = coroutine.resume(thread);
+        if not success then
+            print(string.format("Thread %s errored: %s", name, result));
+            debug.traceback(_PTThreads[name]);
+        end
+        status = coroutine.status(thread);
+        if status == "dead" then
+            print(string.format("Thread %s terminated", name));
+            coroutine.close(_PTThreads[name]);
+            _PTThreads[name] = nil;
+        else
+            count = count + 1;
+        end
+        ::continue::
+    end
+    return count;
+end
 
 local _PTCurrentRoom = nil;
 local _PTOnRoomEnterHandlers = {};
