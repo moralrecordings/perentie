@@ -22,6 +22,9 @@ void timer_shutdown();
 void pcspeaker_tone(float freq);
 void pcspeaker_stop();
 
+void mouse_init();
+void mouse_shutdown();
+
 void serial_test();
 
 #endif

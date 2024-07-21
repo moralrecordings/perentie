@@ -13,16 +13,16 @@ LIB_LUA = $(PATH_LUA)/liblua.a
 LIB_SPNG = $(PATH_SPNG)/libspng.a
 LIB_MINIZ = $(PATH_MINIZ)/libminiz.a
 
-CFLAGS = -O2
+CFLAGS = -O2 -g
 LDFLAGS = -lm -L./$(PATH_LUA) -llua -L./$(PATH_SPNG) -lspng -L./$(PATH_MINIZ) -lminiz
 
-OBJECTS = dos.o main.o image.o stb/stb.o
+OBJECTS = dos.o main.o image.o script.o stb/stb.o
 
 all: perentie.exe
 
 lua: $(LIB_LUA)
 $(LIB_LUA):
-	$(MAKE) -C $(PATH_LUA) -f makefile liblua.a CFLAGS=$(CFLAGS) CC=$(CC) AR="$(AR) rc" LD=$(LD) STRIP=$(STRIP) RANLIB=$(RANLIB)
+	$(MAKE) -C $(PATH_LUA) -f makefile liblua.a CFLAGS="$(CFLAGS)" CC="$(CC)" AR="$(AR) rc" LD="$(LD)" STRIP="$(STRIP)" RANLIB="$(RANLIB)"
 
 $(PATH_MINIZ)/%.o : $(PATH_MINIZ)/%.c
 	$(CC) $(CFLAGS) -c $? -o $@

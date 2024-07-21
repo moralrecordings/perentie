@@ -75,7 +75,7 @@ void video_blit_image(struct image *image, int16_t x, int16_t y) {
 
 void video_flip() {
     // sleep until the start of the next vertical blanking interval
-    // CRT mode and status - CGA status register - in vertical retrace
+    // CRT mode and status - CGA/EGA/VGA input status 1 register - in vertical retrace
     if (inportb(0x3da) & 8) {
         // in the middle of a vblank, wait until the next draw 
         do {
@@ -322,6 +322,20 @@ void pcspeaker_stop() {
     outportb(0x61, inportb(0x61) & 0xfc);
 }
 
+// Mouse
+// Adapted from the Allegro 4.4 mouse code
+
+void mouse_shutdown();
+
+void mouse_init() {
+
+
+    atexit(mouse_shutdown);
+}
+
+void mouse_shutdown() {
+
+}
 
 // Serial port
 
