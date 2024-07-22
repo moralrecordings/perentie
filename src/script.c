@@ -1,12 +1,19 @@
+#include <stdlib.h>
+
 #include "lua/lua.h"
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
-#include "stb/stb_ds.h"
 
 #include "dos.h"
+#include "version.h"
 
 
 lua_State *main_thread = NULL;
+
+static int lua_pt_version(lua_State *L) {
+    lua_pushstring(L, VERSION);
+    return 1;
+}
 
 static int lua_pt_get_millis(lua_State *L) {
     lua_pushinteger(L, timer_millis());
@@ -25,6 +32,7 @@ static int lua_pt_stop_beep(lua_State *L) {
 }
 
 static const struct luaL_Reg lua_funcs [] = {
+    {"_PTVersion", lua_pt_version},
     {"_PTGetMillis", lua_pt_get_millis},
     {"_PTPlayBeep", lua_pt_play_beep},
     {"_PTStopBeep", lua_pt_stop_beep},
@@ -32,6 +40,8 @@ static const struct luaL_Reg lua_funcs [] = {
 };
 
 int script_exec() {
+    if (!main_thread)
+        return 0;
     lua_getglobal(main_thread, "_PTRunThreads");
     lua_call(main_thread, 0, 1);
     int result = (int)lua_tointeger(main_thread, 1);

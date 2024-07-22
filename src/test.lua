@@ -20,10 +20,21 @@ print_crap = function ()
     end
 end
 
+taunt_watchdog = function ()
+    limit = 100000;
+    print(string.format("taunt_watchdog: I'm going to count all the way to %d, you can't stop me", limit));
+    for i = 0, limit do
+        if i % 1000 == 0 then
+            print(string.format("taunt_watchdog: %d!", i))
+        end
+    end
+end
+
 
 PTOnRoomEnter("test", function ()
     PTStartThread("play_sweep", play_sweep);
     PTStartThread("print_crap", print_crap);
+    PTStartThread("taunt_watchdog", taunt_watchdog);
 end);
 
 PTOnRoomExit("test", function ()
