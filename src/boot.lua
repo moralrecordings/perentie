@@ -58,27 +58,31 @@ end
 _PTRunThreads = function ()
     count = 0;
     for name, thread in pairs(_PTThreads) do
+        is_awake = true;
         if _PTThreadsSleepUntil[name] then
-            if _PTThreadsSleepUntil > _PTGetMillis() then
-                goto continue;
+            if _PTThreadsSleepUntil[name] > _PTGetMillis() then
+                is_awake = false
             else
                 _PTThreadsSleepUntil[name] = nil;
             end
         end
-        success, result = coroutine.resume(thread);
-        if not success then
-            print(string.format("Thread %s errored: %s", name, result));
-            debug.traceback(_PTThreads[name]);
-        end
-        status = coroutine.status(thread);
-        if status == "dead" then
-            print(string.format("Thread %s terminated", name));
-            coroutine.close(_PTThreads[name]);
-            _PTThreads[name] = nil;
+        if is_awake then
+            success, result = coroutine.resume(thread);
+            if not success then
+                print(string.format("PTRunThreads(): Thread %s errored: %s", name, result));
+                debug.traceback(_PTThreads[name]);
+            end
+            status = coroutine.status(thread);
+            if status == "dead" then
+                print(string.format("PTRunThreads(): Thread %s terminated", name));
+                coroutine.close(_PTThreads[name]);
+                _PTThreads[name] = nil;
+            else
+                count = count + 1;
+            end
         else
             count = count + 1;
         end
-        ::continue::
     end
     return count;
 end

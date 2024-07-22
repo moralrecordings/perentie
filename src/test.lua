@@ -3,7 +3,7 @@ PTOnlyRunOnce("test.lua");
 play_sweep = function ()
     for j = 1, 20 do
         delay = 250/j;
-        print(string.format("play_sweep: loop %d, delay %d\n", j, delay));
+        print(string.format("play_sweep: loop %d, delay %f\n", j, delay));
         for i = 0, 24 do 
             freq = 220.0 * (2 ^ (i/12.0));
             PTPlayBeep(freq);

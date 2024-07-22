@@ -6,13 +6,6 @@
 #include "dos.h"
 
 
-struct script_thread {
-    int thread_id;
-    lua_State *state;
-    uint32_t sleep_until;
-    int ref;
-};
-
 lua_State *main_thread = NULL;
 
 static int lua_pt_get_millis(lua_State *L) {
@@ -41,7 +34,7 @@ static const struct luaL_Reg lua_funcs [] = {
 int script_exec() {
     lua_getglobal(main_thread, "_PTRunThreads");
     lua_call(main_thread, 0, 1);
-    int result = lua_tointeger(main_thread, -1);
+    int result = (int)lua_tointeger(main_thread, 1);
     lua_pop(main_thread, 1);
     return result;
 }

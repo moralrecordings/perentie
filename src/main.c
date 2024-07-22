@@ -2,9 +2,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "lua/lua.h"
-#include "lua/lauxlib.h"
-#include "lua/lualib.h"
 #include "stb/stb_ds.h"
 
 #include "dos.h"
@@ -18,18 +15,6 @@ int main(int argc, char **argv) {
     while (script_exec()) {
         timer_sleep(10);
     }
-
-    /*for (int j = 1; j < 20; j++) {
-        int delay = 250/j;
-        printf("Loop %d, delay %d\n", j, delay);
-        fflush(stdout);
-        for (int i = 0; i < 24; i++) {
-            float freq = 220.0f * powf(2, i/12.0f); 
-            pcspeaker_tone(freq);
-            timer_sleep(delay);
-            pcspeaker_stop();
-        }
-    }*/
 
     //serial_test();
 
