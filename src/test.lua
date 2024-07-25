@@ -31,16 +31,35 @@ taunt_watchdog = function ()
 end
 
 
-PTOnRoomEnter("test", function ()
+-- Create a room
+test_room = PTRoom("test", 320, 200);
+-- Create a background image
+test_img = PTImage("test.png");
+test_bg = PTBackground(test_img, 32, 32, 0);
+-- Assign the background image to the room
+PTRoomAddObject(test_room, test_bg);
+
+
+
+-- the C blitter would then zero the screen,
+-- take the current room
+-- and iterate through all the backgrounds/sprites
+-- and draw them to the screen.
+-- bonus would be for each item to have a dirty flag,
+-- and keep track of each change with dirty rectangles.
+
+fake_room = PTRoom("texttest", 0, 0);
+
+PTOnRoomEnter("texttest", function ()
     PTStartThread("play_sweep", play_sweep);
     PTStartThread("print_crap", print_crap);
     PTStartThread("taunt_watchdog", taunt_watchdog);
 end);
 
-PTOnRoomExit("test", function ()
+PTOnRoomExit("texttest", function ()
     PTStopThread("play_sweep");
     PTStopThread("print_crap");
 end);
 
 
-PTSwitchRoom("test");
+PTSwitchRoom(fake_room);

@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -12,39 +13,49 @@ inline uint8_t get_pitch(uint32_t width) {
 }
 
 
-struct image *create_image(const char *path) {
-    FILE *fp = fopen(path, "rb");
+pt_image *create_image(const char *path) {
+    pt_image *image = (pt_image *)calloc(1, sizeof(pt_image));
+    image->path = path;
+    image_load(image);
+    return image;
+}
+
+bool image_load(pt_image *image) {
+    if (!image)
+        return false;
+
+    FILE *fp = fopen(image->path, "rb");
     if (!fp) {
-        printf("Failed to open image: %s", path);
-        return NULL;
+        printf("Failed to open image: %s", image->path);
+        return false;
     }
 
     spng_ctx *ctx = spng_ctx_new(0);
     if (!ctx) {
         printf("Failed to create SPNG context!");
         fclose(fp);
-        return NULL;
+        return false;
     }
     int result = 0;
     if ((result = spng_set_png_file(ctx, fp))) {
         printf("Failed to set PNG file! %s", spng_strerror(result));
         spng_ctx_free(ctx);
         fclose(fp);
-        return NULL;
+        return false;
     }
     struct spng_ihdr ihdr;
     if ((result = spng_get_ihdr(ctx, &ihdr))) {
         printf("Failed to fetch IHDR! %s", spng_strerror(result));
         spng_ctx_free(ctx);
         fclose(fp);
-        return NULL;
+        return false;
     }    
     
     if (ihdr.color_type != SPNG_COLOR_TYPE_INDEXED) {
-        printf("Image %s is not paletted! %d", path, ihdr.color_type);
+        printf("Image %s is not paletted! %d", image->path, ihdr.color_type);
         spng_ctx_free(ctx);
         fclose(fp);
-        return NULL;
+        return false;
     }
 
     printf("width: %u\nheight: %u\nbit depth: %u\ncolor type: %u:\n",
@@ -55,10 +66,9 @@ struct image *create_image(const char *path) {
         printf("Error decoding image: %d", result);
         spng_ctx_free(ctx);
         fclose(fp);
-        return NULL;
+        return false;
     }
 
-    struct image *image = (struct image *)calloc(1, sizeof(struct image));
     image->width = ihdr.width;
     image->height = ihdr.height; 
     image->pitch = get_pitch(ihdr.width);
@@ -117,15 +127,15 @@ struct image *create_image(const char *path) {
         printf("Expected EOI, got %d", result);
         spng_ctx_free(ctx);
         fclose(fp);
-        return NULL;
+        return false;
     }
     spng_ctx_free(ctx);
     fclose(fp);
 
-    return image;
+    return true;
 }
 
-void destroy_image(struct image *image) {
+void destroy_image(pt_image *image) {
     if (!image) {
         return;
     }

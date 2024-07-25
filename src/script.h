@@ -3,5 +3,6 @@
 
 void script_init();
 int script_exec();
+void script_draw();
 
 #endif

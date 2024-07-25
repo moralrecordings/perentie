@@ -26,6 +26,8 @@ inline byte *vga_ptr() {
     return (byte *)0xA0000 + __djgpp_conventional_base;
 }
 
+byte *framebuffer = NULL;
+
 void video_shutdown();
 
 void video_init() {
@@ -39,10 +41,20 @@ void video_init() {
     regs.h.ah = 0x00;
     regs.h.al = 0x13;
     int86(0x10, &regs, &regs);
+
+    framebuffer = (byte *)calloc(SCREEN_WIDTH * SCREEN_HEIGHT, sizeof(byte));
     atexit(video_shutdown);
 }
 
-void video_blit_image(struct image *image, int16_t x, int16_t y) {
+void video_clear() {
+    if (!framebuffer)
+        return;
+    memset(framebuffer, 0, SCREEN_WIDTH*SCREEN_HEIGHT);
+}
+
+void video_blit_image(pt_image *image, int16_t x, int16_t y) {
+    if (!framebuffer)
+        return;
     if (!image) {
         printf("WARNING: Tried to blit nothing ya dingus");
         return;
@@ -57,12 +69,10 @@ void video_blit_image(struct image *image, int16_t x, int16_t y) {
         return;
     }
    
-    byte *VGA = vga_ptr();
-
     int16_t width = rect_width(ir);
     for (int yi = ir->top; yi < ir->bottom; ) {
         memcpy(
-            (VGA + (y << 8) + (y << 6) + x),
+            (framebuffer + (y << 8) + (y << 6) + x),
             (image->data + (yi * image->pitch) + ir->left),
             width
         );
@@ -73,19 +83,17 @@ void video_blit_image(struct image *image, int16_t x, int16_t y) {
     destroy_rect(crop);
 }
 
-void video_flip() {
+bool video_is_vblank() {
     // sleep until the start of the next vertical blanking interval
     // CRT mode and status - CGA/EGA/VGA input status 1 register - in vertical retrace
-    if (inportb(0x3da) & 8) {
-        // in the middle of a vblank, wait until the next draw 
-        do {
-            __dpmi_yield();
-        } while (inportb(0x3da) & 8);
-    }
-    // in the middle of a draw, wait for the start of the next vblank
-    do {
-        __dpmi_yield();
-    } while (!(inportb(0x3da) & 8));
+    return inportb(0x3da) & 8; 
+}
+
+void video_flip() {
+    // copy the framebuffer
+    if (!framebuffer)
+        return;
+    memcpy(vga_ptr(), framebuffer, SCREEN_WIDTH*SCREEN_HEIGHT);
 }
 
 void video_shutdown() {
@@ -96,8 +104,16 @@ void video_shutdown() {
     int86(0x10, &regs, &regs);
     // Fine, maybe we should stop being unsafe
     __djgpp_nearptr_disable();
+    free(framebuffer);
+    framebuffer = NULL;
 }
 
+bool sys_idle(int (*idle_callback)(), int idle_callback_period) {
+    __dpmi_yield();
+    if (idle_callback && (timer_millis() % idle_callback_period == 0))
+        return idle_callback() > 0;
+    return 1;
+}
 
 // Timer interupt replacement
 // Adapted from PCTIMER 1.4 by Chih-Hao Tsai

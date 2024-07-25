@@ -1,11 +1,53 @@
 
--- Initial engine setup
+--- Initial engine setup
 
 --- Get the version number of the Perentie engine.
 -- @treturn string Version string.
 PTVersion = function ()
     return _PTVersion();
 end
+
+--- Object constructors
+
+--- Create a new image.
+-- @tparam string path Path of the image (must be indexed PNG).
+-- @tresult table The new image.
+PTImage = function (path) 
+    return {_type="PTImage", ptr=_PTImage(path)};
+end
+
+--- Create a new room.
+-- @tparam string name Name of the room.
+-- @tparam int width Width of the room in pixels.
+-- @tparam int height Height of the room in pixels.
+-- @tresult table The new room.
+PTRoom = function (name, width, height)
+    return {_type="PTRoom", name=name, width=width, height=height, render_list={}};
+end
+
+PTRoomAddObject = function (room, object)
+    table.insert(room.render_list, object);
+end
+
+_PTRender = function ()
+    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+        return;
+    end
+    table.sort(_PTCurrentRoom.render_list, function (a, b)
+        return a.z < b.z;
+    end);
+    _PTClearScreen();
+    for obj in _PTCurrentRoom.render_list do
+        _PTDrawImage(obj.image.ptr, obj.x, obj.y);
+    end
+end
+
+
+PTBackground = function (image, x, y, z)
+    return {_type="PTBackground", image=image, x=x, y=y, z=z};
+end
+
+
 
 --- Get the number of milliseconds elapsed since the engine started.
 -- @treturn int Number of milliseconds.
@@ -36,6 +78,7 @@ PTOnlyRunOnce = function (name)
     end
     _PTOnlyRunOnce[name] = 1;
 end
+
 
 --- Start a function in a new thread.
 -- Perentie runs threads with cooperative multitasking; that is,
@@ -106,8 +149,8 @@ PTOnRoomExit = function (name, func)
     _PTOnRoomExitHandlers[name] = func;
 end
 
---- Return the name of the current room
--- @treturn string Name of the room.
+--- Return the current room
+-- @treturn table Room data.
 PTCurrentRoom = function ()
     return _PTCurrentRoom;
 end
@@ -115,15 +158,15 @@ end
 --- Switch the current room.
 -- Will call the callbacks specified by PTOnRoomEnter and
 -- PTOnRoomExit.
--- @tparam name string Name of the room.
+-- @tparam room table Room object.
 -- @tparam ctx any Optional Context data to pass to the callbacks.
-PTSwitchRoom = function (name, ctx)
-    if (_PTCurrentRoom and _PTOnRoomExitHandlers[_PTCurrentRoom]) then
-        _PTOnRoomExitHandlers[_PTCurrentRoom](ctx);
+PTSwitchRoom = function (room, ctx)
+    if (_PTCurrentRoom and _PTOnRoomExitHandlers[_PTCurrentRoom.name]) then
+        _PTOnRoomExitHandlers[_PTCurrentRoom.name](ctx);
     end
-    _PTCurrentRoom = name;
-    if (_PTCurrentRoom and _PTOnRoomEnterHandlers[_PTCurrentRoom]) then
-        _PTOnRoomEnterHandlers[_PTCurrentRoom](ctx);
+    _PTCurrentRoom = room;
+    if (_PTCurrentRoom and _PTOnRoomEnterHandlers[_PTCurrentRoom.name]) then
+        _PTOnRoomEnterHandlers[_PTCurrentRoom.name](ctx);
     end
 end
 

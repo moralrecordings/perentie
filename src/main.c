@@ -15,7 +15,23 @@ int main(int argc, char **argv) {
     while (script_exec()) {
         timer_sleep(10);
     }
+    bool running = true;
 
+    while (!running) {
+        // sleep until the start of the next vertical blanking interval
+        if (video_is_vblank()) {
+            // in the middle of a vblank, wait until the next draw 
+            do {
+                running = sys_idle(script_exec, 10);
+            } while (video_is_vblank());
+        }
+        // in the middle of a draw, wait for the start of the next vblank
+        do {
+            running = sys_idle(script_exec, 10);
+        } while (!video_is_vblank());
+        video_flip();
+        script_draw();
+    }
     //serial_test();
 
     /*
@@ -34,7 +50,6 @@ int main(int argc, char **argv) {
     uint32_t after = timer_millis();
     video_shutdown();
     destroy_image(image);
-//    luaL_dofile(L, "test.lua");
     timer_sleep(1000);
     printf("Render cycle took %d millis", after - before);*/
     timer_shutdown();
