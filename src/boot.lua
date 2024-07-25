@@ -178,6 +178,15 @@ PTToggleWatchdog = function (enable)
     _PTToggleWatchdog = enable;
 end
 
+local _PTWatchdogLimit = 10000;
+--- Set the number of Lua instructions that need to elapse without a sleep
+-- before the watchdog targets a thread.
+-- Defaults to 10000.
+-- @tparam int count Number of instructions.
+PTSetWatchdogLimit = function (count)
+    _PTWatchdogLimit = count;
+end
+
 -- Stuff called by the C engine main loop. 
 
 --- Hook callback for when a thread runs too many instructions
@@ -205,7 +214,7 @@ _PTRunThreads = function ()
         if is_awake then
             -- Tell the watchdog to chomp the thread if we take longer than 10000 instructions.
             if _PTToggleWatchdog then
-                debug.sethook(thread, _PTWatchdog, "", 10000);
+                debug.sethook(thread, _PTWatchdog, "", _PTWatchdogLimit);
             end
             -- Resume the thread, let it run until the next sleep command
             success, result = coroutine.resume(thread);
