@@ -7,6 +7,7 @@
 
 #include "dos.h"
 #include "image.h"
+#include "log.h"
 #include "version.h"
 
 
@@ -54,7 +55,15 @@ static int lua_pt_image_gc(lua_State *L) {
 
 static int lua_pt_image(lua_State *L) {
     const char *path = lua_strcpy(L, 1, NULL);
-    pt_image *image = create_image(path);
+    int16_t origin_x = 0;
+    int16_t origin_y = 0;
+    if (lua_gettop(L) == 3) {
+        origin_x = luaL_checkinteger(L, 2);
+        origin_y = luaL_checkinteger(L, 3);
+    }
+    log_print("image: %d %d %d", lua_gettop(L), origin_x, origin_y);
+
+    pt_image *image = create_image(path, origin_x, origin_y);
     // create a table
     pt_image **target = lua_newuserdatauv(L, sizeof(pt_image *), 1);
     *target = image;
@@ -67,19 +76,31 @@ static int lua_pt_image(lua_State *L) {
     return 1;
 }
 
-static int lua_pt_clear_screen(lua_State *L) {
+static int lua_pt_clear_screen(lua_State *L) { 
     video_clear();
     return 0;
 }
 
 static int lua_pt_draw_image(lua_State *L) {
-    pt_image **imageptr = (pt_image **)luaL_checkudata(L, 1, "PTImage");
+    //pt_image **imageptr = (pt_image **)luaL_checkudata(L, 1, "PTImage");
+    pt_image **imageptr = (pt_image **)lua_touserdata(L, 1);
     uint16_t x = luaL_checkinteger(L, 2);
     uint16_t y = luaL_checkinteger(L, 3);
     video_blit_image(*imageptr, x, y);
     return 0;
 }
 
+static int lua_pt_log(lua_State *L) {
+    const char *line = luaL_checkstring(L, 1);
+    log_print("%s\n", line);
+    return 0;
+}
+
+static int lua_pt_get_mouse_pos(lua_State *L) {
+    lua_pushinteger(L, mouse_get_x()); 
+    lua_pushinteger(L, mouse_get_y()); 
+    return 2;
+};
 
 static const struct luaL_Reg lua_funcs [] = {
     {"_PTVersion", lua_pt_version},
@@ -89,6 +110,8 @@ static const struct luaL_Reg lua_funcs [] = {
     {"_PTImage", lua_pt_image},
     {"_PTClearScreen", lua_pt_clear_screen},
     {"_PTDrawImage", lua_pt_draw_image},
+    {"_PTLog", lua_pt_log},
+    {"_PTGetMousePos", lua_pt_get_mouse_pos},
     {NULL, NULL},
 };
 
@@ -109,7 +132,7 @@ void script_draw() {
 
 void script_init() {
     if (main_thread) {
-        printf("script_init(): already started!");
+        log_print("script_init(): already started!");
         return;
     }
     main_thread = luaL_newstate();
@@ -122,16 +145,16 @@ void script_init() {
         funcs_ptr++;
     }
     if (luaL_dofile(main_thread, "boot.lua") != LUA_OK) {
-        printf("script_init(): boot.lua: %s\n", lua_tostring(main_thread, -1));
+        log_print("script_init(): boot.lua: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);
-        printf("%s", lua_tostring(main_thread, 1));
+        log_print("%s", lua_tostring(main_thread, 1));
         lua_pop(main_thread, 1);
         exit(1);
     }
     if (luaL_dofile(main_thread, "test.lua") != LUA_OK) {
-        printf("script_init(): test.lua: %s\n", lua_tostring(main_thread, -1));
+        log_print("script_init(): test.lua: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);
-        printf("%s", lua_tostring(main_thread, 1));
+        log_print("%s", lua_tostring(main_thread, 1));
         lua_pop(main_thread, 1);
         exit(1);
     }

@@ -15,6 +15,7 @@
 
 #include "dos.h"
 #include "image.h"
+#include "log.h"
 #include "rect.h"
 
 typedef unsigned char byte;
@@ -26,14 +27,14 @@ inline byte *vga_ptr() {
     return (byte *)0xA0000 + __djgpp_conventional_base;
 }
 
-byte *framebuffer = NULL;
+static byte *framebuffer = NULL;
 
 void video_shutdown();
 
 void video_init() {
     // Memory protection is for chumps
     if (__djgpp_nearptr_enable() == 0) {
-        printf("Couldn't access the first 640K of memory. Boourns.");
+        log_print("Couldn't access the first 640K of memory. Boourns.");
         exit(-1);
     }
     // Mode 13h - raster, 256 colours, 320x200
@@ -53,22 +54,29 @@ void video_clear() {
 }
 
 void video_blit_image(pt_image *image, int16_t x, int16_t y) {
-    if (!framebuffer)
+    if (!framebuffer) {
+        log_print("framebuffer missing ya dingus!\n");
+
         return;
+    }
     if (!image) {
-        printf("WARNING: Tried to blit nothing ya dingus");
+        log_print("WARNING: Tried to blit nothing ya dingus");
         return;
     }
 
     struct rect *ir = create_rect_dims(image->width, image->height);
+    
     struct rect *crop = create_rect_dims(SCREEN_WIDTH, SCREEN_HEIGHT);
+    x -= image->origin_x;
+    y -= image->origin_y;
     if (!rect_blit_clip(&x, &y, ir, crop)) {
-        printf("Rectangle off screen");
+        log_print("Rectangle off screen");
         destroy_rect(ir);
         destroy_rect(crop);
         return;
     }
    
+    //log_print("Blitting %s to %d,%d %dx%d\n", image->path, x, y, image->width, image->height);
     int16_t width = rect_width(ir);
     for (int yi = ir->top; yi < ir->bottom; ) {
         memcpy(
@@ -338,21 +346,6 @@ void pcspeaker_stop() {
     outportb(0x61, inportb(0x61) & 0xfc);
 }
 
-// Mouse
-// Adapted from the Allegro 4.4 mouse code
-
-void mouse_shutdown();
-
-void mouse_init() {
-
-
-    atexit(mouse_shutdown);
-}
-
-void mouse_shutdown() {
-
-}
-
 // Serial port
 
 void serial_test() {
@@ -360,13 +353,13 @@ void serial_test() {
     // Rely on DJGPP's POSIX compatibility layer for doing all the work.
     int port = open("COM4", O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (port < 0) {
-        printf("Couldn't open serial (%d): %s", errno, strerror(errno));
+        log_print("Couldn't open serial (%d): %s", errno, strerror(errno));
         return;
     }
     // adjust the termios settings for our COM port
     struct termios tty;
     if (!tcgetattr(port, &tty)) {
-        printf("Couldn't fetch termios settings for port (%d): %s", errno, strerror(errno));
+        log_print("Couldn't fetch termios settings for port (%d): %s", errno, strerror(errno));
         close(port);
         return;
     }
@@ -383,21 +376,21 @@ void serial_test() {
     tty.c_cflag |= CLOCAL;
 
     if (!tcsetattr(port, TCSANOW, &tty)) {
-        printf("Couldn't set termios settings for port (%d): %s", errno, strerror(errno));
+        log_print("Couldn't set termios settings for port (%d): %s", errno, strerror(errno));
         close(port);
         return;
     }
 
     FILE *ttyfp = fdopen(port, "r+");
     if (!ttyfp) {
-        printf("Couldn't get file pointer for port (%d): %s", errno, strerror(errno));
+        log_print("Couldn't get file pointer for port (%d): %s", errno, strerror(errno));
         close(port);
         return;
     }
 
 
     for (int i = 0; i < 20; i++) {
-        fprintf(ttyfp, "Debug line %d\n", i);
+        log_print("Debug line %d\n", i);
         fflush(ttyfp);
         sleep(1);
     }
@@ -405,3 +398,73 @@ void serial_test() {
 
 }
 
+// Mouse handler
+// Adapted from lovedos
+
+int mouse_inited;
+int mouse_x, mouse_y;
+int mouse_lastX, mouse_lastY;
+int mouse_buttonStates[MOUSE_BUTTON_MAX];
+
+void mouse_init() {
+    union REGS regs = {};
+    // INT 33h AH=0 Mouse - Reset driver and read status
+    int86(0x33, &regs, &regs);
+    mouse_inited = regs.x.ax ? 1 : 0;
+}
+
+void mouse_update() {
+    if (!mouse_inited) {
+        return;
+    }
+
+    /* Update mouse position */
+    union REGS regs = {};
+    regs.x.ax = 3;
+    int86(0x33, &regs, &regs);
+    mouse_x = regs.x.cx >> 1;
+    mouse_y = regs.x.dx;
+
+    /* Do moved event if mouse moved */
+    /*if (mouse_x != mouse_lastX || mouse_y != mouse_lastY) {
+        event_t e;
+        e.type = EVENT_MOUSE_MOVED;
+        e.mouse.x = mouse_x;
+        e.mouse.y = mouse_y;
+        e.mouse.dx = mouse_x - mouse_lastX;
+        e.mouse.dy = mouse_y - mouse_lastY;
+        event_push(&e);
+    }*/
+
+    /* Update last position */
+    mouse_lastX = mouse_x;
+    mouse_lastY = mouse_y;
+
+    /* Update button states and push pressed/released events */
+    int i, t;
+    for (i = 0; i < MOUSE_BUTTON_MAX; i++) {
+        for (t = 0; t < 2; t++) {
+            memset(&regs, 0, sizeof(regs));
+            regs.x.ax = 5 + t;
+            regs.x.bx = i;
+            int86(0x33, &regs, &regs);
+            if (regs.x.bx) {
+                /* Push event */
+                /*event_t e;
+                e.type = t == 0 ? EVENT_MOUSE_PRESSED : EVENT_MOUSE_RELEASED;
+                e.mouse.button = i;
+                e.mouse.x = mouse_x;
+                e.mouse.y = mouse_y;
+                event_push(&e);*/
+                /* Set state */
+                mouse_buttonStates[i] = t == 0 ? 1 : 0;
+            }
+        }
+    }
+}
+
+int mouse_is_down(int button) { return mouse_buttonStates[button]; }
+
+int mouse_get_x() { return mouse_x; }
+
+int mouse_get_y() { return mouse_y; }

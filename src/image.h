@@ -10,12 +10,14 @@ struct pt_image {
     const char *path;
     byte *data;
     byte *palette;
-    uint32_t width;
-    uint32_t height;
-    uint32_t pitch;
+    uint16_t width;
+    uint16_t height;
+    int16_t origin_x;
+    int16_t origin_y;
+    uint16_t pitch;
 };
 
-pt_image *create_image(const char *path);
+pt_image *create_image(const char *path, int16_t origin_x, int16_t origin_y);
 bool image_load(pt_image *image);
 void destroy_image(pt_image *image);
 

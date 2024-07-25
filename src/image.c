@@ -6,16 +6,19 @@
 
 #include "spng/spng.h"
 
+#include "log.h"
 #include "image.h"
 
-inline uint8_t get_pitch(uint32_t width) {
+inline uint16_t get_pitch(uint32_t width) {
     return (width % 4) == 0 ? width : width + 4 - (width % 4);
 }
 
 
-pt_image *create_image(const char *path) {
+pt_image *create_image(const char *path, int16_t origin_x, int16_t origin_y) {
     pt_image *image = (pt_image *)calloc(1, sizeof(pt_image));
     image->path = path;
+    image->origin_x = origin_x;
+    image->origin_y = origin_y;
     image_load(image);
     return image;
 }
@@ -26,44 +29,44 @@ bool image_load(pt_image *image) {
 
     FILE *fp = fopen(image->path, "rb");
     if (!fp) {
-        printf("Failed to open image: %s", image->path);
+        log_print("Failed to open image: %s", image->path);
         return false;
     }
 
     spng_ctx *ctx = spng_ctx_new(0);
     if (!ctx) {
-        printf("Failed to create SPNG context!");
+        log_print("Failed to create SPNG context!");
         fclose(fp);
         return false;
     }
     int result = 0;
     if ((result = spng_set_png_file(ctx, fp))) {
-        printf("Failed to set PNG file! %s", spng_strerror(result));
+        log_print("Failed to set PNG file! %s", spng_strerror(result));
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
     }
     struct spng_ihdr ihdr;
     if ((result = spng_get_ihdr(ctx, &ihdr))) {
-        printf("Failed to fetch IHDR! %s", spng_strerror(result));
+        log_print("Failed to fetch IHDR! %s", spng_strerror(result));
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
     }    
     
     if (ihdr.color_type != SPNG_COLOR_TYPE_INDEXED) {
-        printf("Image %s is not paletted! %d", image->path, ihdr.color_type);
+        log_print("Image %s is not paletted! %d", image->path, ihdr.color_type);
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
     }
 
-    printf("width: %u\nheight: %u\nbit depth: %u\ncolor type: %u:\n",
+    log_print("width: %u\nheight: %u\nbit depth: %u\ncolor type: %u:\n",
            ihdr.width, ihdr.height, ihdr.bit_depth, ihdr.color_type);
 
     result = spng_decode_image(ctx, NULL, 0, SPNG_FMT_PNG, SPNG_DECODE_PROGRESSIVE);
     if (result) {
-        printf("Error decoding image: %d", result);
+        log_print("Error decoding image: %d", result);
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
@@ -117,14 +120,14 @@ bool image_load(pt_image *image) {
                 }
                 break;
              default:
-                printf("How the hell do you have a %d bit image", ihdr.bit_depth);
+                log_print("How the hell do you have a %d bit image", ihdr.bit_depth);
                 break;
         }
     }
     while (!result);
     free(row_buffer);
     if (result != SPNG_EOI) {
-        printf("Expected EOI, got %d", result);
+        log_print("Expected EOI, got %d", result);
         spng_ctx_free(ctx);
         fclose(fp);
         return false;

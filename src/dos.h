@@ -28,6 +28,18 @@ void pcspeaker_stop();
 
 void mouse_init();
 void mouse_shutdown();
+void mouse_update(); 
+int mouse_is_down(int button);
+int mouse_get_x();
+int mouse_get_y();
+
+enum {
+  MOUSE_BUTTON_LEFT,
+  MOUSE_BUTTON_RIGHT,
+  MOUSE_BUTTON_MIDDLE,
+  MOUSE_BUTTON_MAX
+};
+
 
 void serial_test();
 

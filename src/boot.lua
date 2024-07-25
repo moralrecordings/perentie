@@ -12,8 +12,9 @@ end
 --- Create a new image.
 -- @tparam string path Path of the image (must be indexed PNG).
 -- @tresult table The new image.
-PTImage = function (path) 
-    return {_type="PTImage", ptr=_PTImage(path)};
+PTImage = function (path, ...)
+    _PTLog(tostring(arg));
+    return {_type="PTImage", ptr=_PTImage(path, ...)};
 end
 
 --- Create a new room.
@@ -29,24 +30,22 @@ PTRoomAddObject = function (room, object)
     table.insert(room.render_list, object);
 end
 
-_PTRender = function ()
-    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
-        return;
-    end
-    table.sort(_PTCurrentRoom.render_list, function (a, b)
-        return a.z < b.z;
-    end);
-    _PTClearScreen();
-    for obj in _PTCurrentRoom.render_list do
-        _PTDrawImage(obj.image.ptr, obj.x, obj.y);
-    end
-end
-
 
 PTBackground = function (image, x, y, z)
     return {_type="PTBackground", image=image, x=x, y=y, z=z};
 end
 
+PTSprite = function (x, y, z)
+    return {_type="PTSprite", x=x, y=y, z=z, animations={}};
+end
+
+PTAnimation = function (name, rate, frames)
+    return {_type="PTAnimation", name=name, rate=rate, looping=false, bounce=false, frames=frames};
+end
+
+PTGetMousePos = function ()
+    return _PTGetMousePos();
+end
 
 
 --- Get the number of milliseconds elapsed since the engine started.
@@ -133,7 +132,7 @@ local _PTOnRoomExitHandlers = {};
 -- for context data.
 PTOnRoomEnter = function (name, func)
     if _PTOnRoomEnterHandlers[name] then
-        print(string.format("PTOnRoomEnter: overwriting handler for %s"));
+        _PTLog(string.format("PTOnRoomEnter: overwriting handler for %s"));
     end
     _PTOnRoomEnterHandlers[name] = func;
 end
@@ -144,7 +143,7 @@ end
 -- for context data.
 PTOnRoomExit = function (name, func)
     if _PTOnRoomExitHandlers[name] then
-        print(string.format("PTOnRoomExit: overwriting handler for %s"));
+        _PTLog(string.format("PTOnRoomExit: overwriting handler for %s"));
     end
     _PTOnRoomExitHandlers[name] = func;
 end
@@ -161,6 +160,7 @@ end
 -- @tparam room table Room object.
 -- @tparam ctx any Optional Context data to pass to the callbacks.
 PTSwitchRoom = function (room, ctx)
+    _PTLog(string.format("PTSwitchRoom %s, %s", tostring(room), tostring(_PTCurrentRoom)));
     if (_PTCurrentRoom and _PTOnRoomExitHandlers[_PTCurrentRoom.name]) then
         _PTOnRoomExitHandlers[_PTCurrentRoom.name](ctx);
     end
@@ -168,6 +168,7 @@ PTSwitchRoom = function (room, ctx)
     if (_PTCurrentRoom and _PTOnRoomEnterHandlers[_PTCurrentRoom.name]) then
         _PTOnRoomEnterHandlers[_PTCurrentRoom.name](ctx);
     end
+    _PTLog(string.format("PTSwitchRoom %s, %s", tostring(room), tostring(_PTCurrentRoom)));
 end
 
 local _PTToggleWatchdog = true;
@@ -225,12 +226,12 @@ _PTRunThreads = function ()
 
             -- Handle the response from the execution run.
             if not success then
-                print(string.format("PTRunThreads(): Thread %s errored:\n  %s", name, result));
+                _PTLog(string.format("PTRunThreads(): Thread %s errored:\n  %s", name, result));
                 debug.traceback(_PTThreads[name]);
             end
             status = coroutine.status(thread);
             if status == "dead" then
-                print(string.format("PTRunThreads(): Thread %s terminated", name));
+                _PTLog(string.format("PTRunThreads(): Thread %s terminated", name));
                 coroutine.close(_PTThreads[name]);
                 _PTThreads[name] = nil;
             else
@@ -242,3 +243,27 @@ _PTRunThreads = function ()
     end
     return count;
 end
+
+local _PTMouseSprite = nil;
+PTSetMouseSprite = function (sprite)
+    _PTMouseSprite = sprite;
+end
+
+_PTRender = function ()
+    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+        return;
+    end
+    table.sort(_PTCurrentRoom.render_list, function (a, b)
+        return a.z < b.z;
+    end);
+    --_PTClearScreen();
+    for i, obj in pairs(_PTCurrentRoom.render_list) do
+        _PTDrawImage(obj.image.ptr, obj.x, obj.y);
+    end
+    if _PTMouseSprite then
+        mouse_x, mouse_y = _PTGetMousePos();
+        _PTDrawImage(_PTMouseSprite.image.ptr, mouse_x, mouse_y);
+    end
+end
+
+

@@ -5,19 +5,19 @@
 #include "stb/stb_ds.h"
 
 #include "dos.h"
+#include "log.h"
 #include "image.h"
 #include "script.h"
 
 int main(int argc, char **argv) {
+    log_init();
     timer_init();
+    video_init();
+    mouse_init();
     script_init();
-
-    while (script_exec()) {
-        timer_sleep(10);
-    }
     bool running = true;
 
-    while (!running) {
+    while (running) {
         // sleep until the start of the next vertical blanking interval
         if (video_is_vblank()) {
             // in the middle of a vblank, wait until the next draw 
@@ -30,9 +30,15 @@ int main(int argc, char **argv) {
             running = sys_idle(script_exec, 10);
         } while (!video_is_vblank());
         video_flip();
+        mouse_update();
         script_draw();
     }
     //serial_test();
+/*    while (script_exec()) {
+        timer_sleep(10);
+    }*/
+
+
 
     /*
     struct image *image = create_image("test.png");
@@ -48,10 +54,12 @@ int main(int argc, char **argv) {
         video_flip();
     }
     uint32_t after = timer_millis();
-    video_shutdown();
     destroy_image(image);
     timer_sleep(1000);
     printf("Render cycle took %d millis", after - before);*/
+    
+    video_shutdown();
     timer_shutdown();
+    log_shutdown();
     return 0;
 }
