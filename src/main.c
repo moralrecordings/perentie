@@ -13,11 +13,9 @@
 
 int main(int argc, char **argv) {
     log_init();
-    pt_font *font = create_font("eagle.fnt");
-    const char *payload = "testing alignment of a shitload of text"; 
-    pt_text *text = create_text((byte *)payload, strlen(payload), font, 200, ALIGN_LEFT);
-
-    return 0;
+    //pt_font *font = create_font("eagle.fnt");
+    //const char *payload = "testing alignment of a shitload of text"; 
+    //pt_text *text = create_text((byte *)payload, strlen(payload), font, 200, ALIGN_LEFT);
     timer_init();
     video_init();
     mouse_init();

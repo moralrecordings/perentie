@@ -6,13 +6,27 @@
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 200
 
+typedef uint8_t byte;
 typedef struct pt_image pt_image;
+typedef struct pt_image_vga pt_image_vga;
+
+struct pt_image_vga {
+    byte *bitmap;
+    byte *mask;
+    uint16_t width;
+    uint16_t height;
+    uint16_t pitch;
+};
 
 void video_init();
 void video_clear();
 void video_blit_image(pt_image *image, int16_t x, int16_t y);
 bool video_is_vblank();
 void video_flip();
+void video_load_palette_colour(int idx);
+uint8_t video_map_colour(uint8_t r, uint8_t g, uint8_t b);
+pt_image_vga *video_convert_image(pt_image *image, int colourkey);
+void video_destroy_hw_image(void *hw_image);
 void video_shutdown();
 
 bool sys_idle(int (*idle_callback)(), int idle_callback_period);

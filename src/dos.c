@@ -18,44 +18,28 @@
 #include "log.h"
 #include "rect.h"
 
-typedef unsigned char byte;
-typedef unsigned short word;
-
-typedef struct pt_image_vga pt_image_vga;
-struct pt_image_vga {
-    byte *data;
-    uint16_t width;
-    uint16_t height;
-    int16_t origin_x;
-    int16_t origin_y;
-    uint16_t pitch; 
-};
-
-
-uint8_t video_map_colour(uint8_t r, uint8_t b, uint8_t g) {
-    
-}
-
-pt_image_vga *video_convert_image(pt_image *image) {
-    pt_image_vga *result = (pt_image_vga *)calloc(1, sizeof(pt_image_vga));
-    result->width = image->width;
-    result->height = image->height;
-    result->origin_x = image->origin_x;
-    result->origin_y = image->origin_y;
-    result->pitch = image->pitch;
-    result->data = (byte *)calloc(result->pitch * result->height, sizeof(byte));
-    // inform the DOS driver what the colour palette is from the image
-    // - driver updates free palette slots as required
-    // - if we're out of colour slots, the driver should return the nearest match
-    // generate a lookup table for mapping old palette to new palette
-    // - for every colour in the old palette, find the index in the new palette
-    //
-    return result;
-}
-
-
 
 // VGA blitter
+
+static byte vga_palette[256*3] = {
+    0, 0, 0, 
+    0, 0, 42,
+    0, 42, 0,
+    0, 42, 42,
+    42, 0, 0,
+    42, 0, 42,
+    42, 21, 0,
+    42, 42, 42,
+    21, 21, 21,
+    21, 21, 63,
+    21, 63, 21,
+    21, 63, 63,
+    63, 21, 21,
+    63, 21, 63,
+    63, 63, 21,
+    63, 63, 63,
+};
+static int vga_palette_top = 16;
 
 inline byte *vga_ptr() {
     return (byte *)0xA0000 + __djgpp_conventional_base;
@@ -68,7 +52,7 @@ void video_shutdown();
 void video_init() {
     // Memory protection is for chumps
     if (__djgpp_nearptr_enable() == 0) {
-        log_print("Couldn't access the first 640K of memory. Boourns.");
+        log_print("Couldn't access the first 640K of memory. Boourns.\n");
         exit(-1);
     }
     // Mode 13h - raster, 256 colours, 320x200
@@ -98,7 +82,13 @@ void video_blit_image(pt_image *image, int16_t x, int16_t y) {
         return;
     }
 
-    struct rect *ir = create_rect_dims(image->width, image->height);
+    if (!image->hw_image) {
+        image->hw_image = (void *)video_convert_image(image, 0);
+    }
+
+    pt_image_vga *hw_image = (pt_image_vga *)image->hw_image;
+
+    struct rect *ir = create_rect_dims(hw_image->width, hw_image->height);
     
     struct rect *crop = create_rect_dims(SCREEN_WIDTH, SCREEN_HEIGHT);
     x -= image->origin_x;
@@ -111,15 +101,16 @@ void video_blit_image(pt_image *image, int16_t x, int16_t y) {
     }
    
     //log_print("Blitting %s to %d,%d %dx%d\n", image->path, x, y, image->width, image->height);
-    int16_t width = rect_width(ir);
-    for (int yi = ir->top; yi < ir->bottom; ) {
-        memcpy(
-            (framebuffer + (y << 8) + (y << 6) + x),
-            (image->data + (yi * image->pitch) + ir->left),
-            width
-        );
-        yi++;
+    int16_t x_start = x;
+    for (int yi = ir->top; yi < ir->bottom; yi++) {
+        for (int xi = ir->left; xi < ir->right; xi++) {
+            if (hw_image->mask[(yi * hw_image->pitch) + xi])
+                *(framebuffer + (y << 8) + (y << 6) + x) = 
+                    *(hw_image->bitmap + (yi * hw_image->pitch) + xi);
+            x++;
+        }
         y++;
+        x = x_start;
     }
     destroy_rect(ir);
     destroy_rect(crop);
@@ -136,6 +127,92 @@ void video_flip() {
     if (!framebuffer)
         return;
     memcpy(vga_ptr(), framebuffer, SCREEN_WIDTH*SCREEN_HEIGHT);
+}
+
+void video_load_palette_colour(int idx) {
+    disable();
+    outportb(0x3c6, 0xff);
+    outportb(0x3c8, (uint8_t)idx);
+    outportb(0x3c9, vga_palette[3*idx]);
+    outportb(0x3c9, vga_palette[3*idx+1]);
+    outportb(0x3c9, vga_palette[3*idx+2]);
+    enable();
+}
+
+uint8_t video_map_colour(uint8_t r, uint8_t g, uint8_t b) {
+    byte r_v = r >> 2;
+    byte g_v = g >> 2;
+    byte b_v = b >> 2;
+    for (int i = 0; i < vga_palette_top; i++) {
+        if (vga_palette[3*i] == r_v && vga_palette[3*i + 1] == g_v && vga_palette[3*i + 2] == b_v)
+            return i;
+    }
+    // add a new colour
+    if (vga_palette_top < 256) {
+        int idx = vga_palette_top;
+        vga_palette_top++;
+        vga_palette[3*idx] = r_v;
+        vga_palette[3*idx + 1] = g_v;
+        vga_palette[3*idx + 2] = b_v;
+        video_load_palette_colour(idx);
+        log_print("video_map_colour: vga_palette[%d] = %d, %d, %d\n", idx, r_v, g_v, b_v);
+        return idx;
+    }
+    // Out of palette slots; need to macguyver the nearest colour.
+    // Formula borrowed from ScummVM's palette code.
+    uint8_t best_color = 0;
+    uint32_t min = 0xffffffff;
+    for (int i = 0; i < 256; ++i) {
+        int rmean = (vga_palette[3 * i + 0] + r_v) / 2;
+        int dr = vga_palette[3 * i + 0] - r_v;
+        int dg = vga_palette[3 * i + 1] - g_v;
+        int db = vga_palette[3 * i + 2] - b_v;
+
+        uint32_t dist_squared = (((512 + rmean) * dr * dr) >> 8) + 4 * dg * dg + (((767 - rmean) * db * db) >> 8);
+        if (dist_squared < min) {
+            best_color = i;
+            min = dist_squared;
+        }
+    }
+    return best_color; 
+}
+
+pt_image_vga *video_convert_image(pt_image *image, int colourkey) {
+    pt_image_vga *result = (pt_image_vga *)calloc(1, sizeof(pt_image_vga));
+    result->width = image->width;
+    result->height = image->height;
+    result->pitch = image->pitch;
+    result->bitmap = (byte *)calloc(result->pitch * result->height, sizeof(byte));
+    result->mask = (byte *)calloc(result->pitch * result->height, sizeof(byte));
+    
+    byte palette_map[256];
+    for (int i = 0; i < 256; i++) {
+        palette_map[i] = video_map_colour(image->palette[3*i], image->palette[3*i + 1], image->palette[3*i + 2]); 
+    }
+
+    for (int y = 0; y < result->height; y++) {
+        for (int x = 0; x < result->width; x++) {
+            result->bitmap[y*result->pitch + x] = palette_map[image->data[y*result->pitch + x]];
+            result->mask[y*result->pitch + x] = image->data[y*result->pitch + x] == colourkey ? 0x00 : 0xff;
+        }
+    }
+
+    return result;
+}
+
+void video_destroy_hw_image(void *hw_image) {
+    pt_image_vga *image = (pt_image_vga *)hw_image;
+    if (!image)
+        return;
+    if (image->bitmap) {
+        free(image->bitmap);
+        image->bitmap = NULL;
+    }
+    if (image->mask) {
+        free(image->mask);
+        image->mask = NULL;
+    }
+    free(image);
 }
 
 void video_shutdown() {

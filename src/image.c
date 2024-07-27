@@ -6,6 +6,7 @@
 
 #include "spng/spng.h"
 
+#include "dos.h"
 #include "log.h"
 #include "image.h"
 
@@ -78,6 +79,22 @@ bool image_load(pt_image *image) {
     image->pitch = get_pitch(ihdr.width);
     image->data = (byte *)calloc(image->height * image->pitch, sizeof(byte));
     image->palette = (byte *)calloc(256*3, sizeof(byte));
+   
+    if (ihdr.color_type == SPNG_COLOR_TYPE_INDEXED) {
+        struct spng_plte pal;
+        spng_get_plte(ctx, &pal);
+        for (size_t i = 0; i < pal.n_entries; i++) {
+            image->palette[3*i] = pal.entries[i].red;
+            image->palette[3*i + 1] = pal.entries[i].green;
+            image->palette[3*i + 2] = pal.entries[i].blue;
+        }
+    } else if (ihdr.color_type == SPNG_COLOR_TYPE_GRAYSCALE) {
+        for (size_t i = 0; i < 256; i++) {
+            image->palette[3*i] = i;
+            image->palette[3*i + 1] = i;
+            image->palette[3*i + 2] = i;
+        } 
+    }
 
     byte *row_buffer = (byte *)calloc(image->width, sizeof(byte));
 
@@ -143,9 +160,17 @@ void destroy_image(pt_image *image) {
     if (!image) {
         return;
     }
-    if (image->data)
+    if (image->data) {
         free(image->data);
-    if (image->palette)
+        image->data = NULL;
+    }
+    if (image->palette) {
         free(image->palette);
+        image->palette = NULL;
+    }
+    if (image->hw_image) {
+        video_destroy_hw_image(image->hw_image);
+        image->hw_image = NULL;
+    }
     free(image);
 }
