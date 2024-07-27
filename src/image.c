@@ -24,7 +24,7 @@ pt_image *create_image(const char *path, int16_t origin_x, int16_t origin_y) {
 }
 
 bool image_load(pt_image *image) {
-    if (!image)
+    if (!image || !image->path)
         return false;
 
     FILE *fp = fopen(image->path, "rb");
@@ -54,8 +54,9 @@ bool image_load(pt_image *image) {
         return false;
     }    
     
-    if (ihdr.color_type != SPNG_COLOR_TYPE_INDEXED) {
-        log_print("Image %s is not paletted! %d\n", image->path, ihdr.color_type);
+    if ((ihdr.color_type != SPNG_COLOR_TYPE_INDEXED) &&
+        (ihdr.color_type != SPNG_COLOR_TYPE_GRAYSCALE)) {
+        log_print("Image %s is not grayscale or paletted! %d\n", image->path, ihdr.color_type);
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
