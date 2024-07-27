@@ -86,12 +86,14 @@ void font_load_chars_block(FILE *fp, size_t size, pt_font *font) {
         font->chars[i].id = fread_u32le(fp);
         font->chars[i].x = fread_u16le(fp);
         font->chars[i].y = fread_u16le(fp);
-        font->chars[i].width = fread_u32le(fp);
-        font->chars[i].height = fread_u32le(fp);
-        font->chars[i].xoffset = fread_i32le(fp);
-        font->chars[i].yoffset = fread_i32le(fp);
+        font->chars[i].width = fread_u16le(fp);
+        font->chars[i].height = fread_u16le(fp);
+        font->chars[i].xoffset = fread_i16le(fp);
+        font->chars[i].yoffset = fread_i16le(fp);
+        font->chars[i].xadvance = fread_i16le(fp);
         font->chars[i].page = fread_u8(fp);
         font->chars[i].chnl = fread_u8(fp);
+        //log_print("font_load_chars_block: id=%d, x=%d, y=%d, width=%d, height=%d\n", font->chars[i].id, font->chars[i].x, font->chars[i].y, font->chars[i].width, font->chars[i].height);
     }
 }
 
