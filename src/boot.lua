@@ -7,13 +7,20 @@ PTVersion = function ()
     return _PTVersion();
 end
 
+--- Print a message to the logging device. Use this instead of
+-- Lua's print().
+-- @tparam string formatstring Format string in sprintf syntax.
+-- @tparam any arg .
+PTLog = function (...)
+    return _PTLog(string.format(...));
+end
+
 --- Object constructors
 
 --- Create a new image.
 -- @tparam string path Path of the image (must be indexed PNG).
 -- @tresult table The new image.
 PTImage = function (path, ...)
-    _PTLog(tostring(arg));
     return {_type="PTImage", ptr=_PTImage(path, ...)};
 end
 
@@ -35,12 +42,12 @@ PTBackground = function (image, x, y, z)
     return {_type="PTBackground", image=image, x=x, y=y, z=z};
 end
 
-PTSprite = function (x, y, z)
-    return {_type="PTSprite", x=x, y=y, z=z, animations={}};
+PTSprite = function (x, y, z, animations)
+    return {_type="PTSprite", x=x, y=y, z=z, animations=animations, current_animation=nil};
 end
 
-PTAnimation = function (name, rate, frames)
-    return {_type="PTAnimation", name=name, rate=rate, looping=false, bounce=false, frames=frames};
+PTAnimation = function (rate, frames)
+    return {_type="PTAnimation", rate=rate, looping=false, bounce=false, frames=frames, current_frame=0, next_wait=0};
 end
 
 PTGetMousePos = function ()
@@ -112,7 +119,7 @@ end
 -- Not doing so will cause the scripting engine to freeze up.
 -- @tparam int delay Time to wait in milliseconds.
 PTSleep = function (millis)
-    thread, _ = coroutine.running();
+    local thread, _ = coroutine.running();
     for k, v in pairs(_PTThreads) do
         if v == thread then
             _PTThreadsSleepUntil[k] = PTGetMillis() + millis;
@@ -132,7 +139,7 @@ local _PTOnRoomExitHandlers = {};
 -- for context data.
 PTOnRoomEnter = function (name, func)
     if _PTOnRoomEnterHandlers[name] then
-        _PTLog(string.format("PTOnRoomEnter: overwriting handler for %s"));
+        PTLog("PTOnRoomEnter: overwriting handler for %s", name);
     end
     _PTOnRoomEnterHandlers[name] = func;
 end
@@ -143,7 +150,7 @@ end
 -- for context data.
 PTOnRoomExit = function (name, func)
     if _PTOnRoomExitHandlers[name] then
-        _PTLog(string.format("PTOnRoomExit: overwriting handler for %s"));
+        PTLog("PTOnRoomExit: overwriting handler for %s", name);
     end
     _PTOnRoomExitHandlers[name] = func;
 end
@@ -160,7 +167,7 @@ end
 -- @tparam room table Room object.
 -- @tparam ctx any Optional Context data to pass to the callbacks.
 PTSwitchRoom = function (room, ctx)
-    _PTLog(string.format("PTSwitchRoom %s, %s", tostring(room), tostring(_PTCurrentRoom)));
+    PTLog("PTSwitchRoom %s, %s", tostring(room), tostring(_PTCurrentRoom));
     if (_PTCurrentRoom and _PTOnRoomExitHandlers[_PTCurrentRoom.name]) then
         _PTOnRoomExitHandlers[_PTCurrentRoom.name](ctx);
     end
@@ -168,7 +175,7 @@ PTSwitchRoom = function (room, ctx)
     if (_PTCurrentRoom and _PTOnRoomEnterHandlers[_PTCurrentRoom.name]) then
         _PTOnRoomEnterHandlers[_PTCurrentRoom.name](ctx);
     end
-    _PTLog(string.format("PTSwitchRoom %s, %s", tostring(room), tostring(_PTCurrentRoom)));
+    PTLog("PTSwitchRoom %s, %s", tostring(room), tostring(_PTCurrentRoom));
 end
 
 local _PTToggleWatchdog = true;
@@ -192,19 +199,20 @@ end
 
 --- Hook callback for when a thread runs too many instructions
 -- without sleeping. Throws an error.
+-- @tparam string event Event provided by the debug layer. Should always be "count".
 _PTWatchdog = function (event)
     if event == "count" then
-        info = debug.getinfo(2, "Sl");
+        local info = debug.getinfo(2, "Sl");
         error(string.format("PTWatchdog(): woof! woooooff!!! %s:%d took too long", info.source, info.currentline));
     end
 end
 --- Run and handle execution for all of the threads.
 -- @treturn int Number of threads still alive.
 _PTRunThreads = function ()
-    count = 0;
+    local count = 0;
     for name, thread in pairs(_PTThreads) do
         -- Check if the thread is supposed to be asleep
-        is_awake = true;
+        local is_awake = true;
         if _PTThreadsSleepUntil[name] then
             if _PTThreadsSleepUntil[name] > _PTGetMillis() then
                 is_awake = false
@@ -218,7 +226,7 @@ _PTRunThreads = function ()
                 debug.sethook(thread, _PTWatchdog, "", _PTWatchdogLimit);
             end
             -- Resume the thread, let it run until the next sleep command
-            success, result = coroutine.resume(thread);
+            local success, result = coroutine.resume(thread);
             -- Pet the watchdog for a job well done
             if _PTToggleWatchdog then
                 debug.sethook(thread);
@@ -226,12 +234,12 @@ _PTRunThreads = function ()
 
             -- Handle the response from the execution run.
             if not success then
-                _PTLog(string.format("PTRunThreads(): Thread %s errored:\n  %s", name, result));
+                PTLog("PTRunThreads(): Thread %s errored:\n  %s", name, result);
                 debug.traceback(_PTThreads[name]);
             end
-            status = coroutine.status(thread);
+            local status = coroutine.status(thread);
             if status == "dead" then
-                _PTLog(string.format("PTRunThreads(): Thread %s terminated", name));
+                PTLog("PTRunThreads(): Thread %s terminated", name);
                 coroutine.close(_PTThreads[name]);
                 _PTThreads[name] = nil;
             else
@@ -249,6 +257,25 @@ PTSetMouseSprite = function (sprite)
     _PTMouseSprite = sprite;
 end
 
+PTGetAnimationFrame = function (object) 
+    if object and object._type == "PTSprite" then 
+        anim = object.animations[object.current_animation];
+        if anim then
+            if anim.current_frame == 0 then 
+                anim.current_frame = 1;
+                anim.next_wait = PTGetMillis() + (1000/anim.rate);
+            elseif PTGetMillis() > anim.next_wait then
+                anim.current_frame = ((anim.current_frame) % #anim.frames) + 1;
+                anim.next_wait = PTGetMillis() + (1000/anim.rate);
+            end
+            return anim.frames[anim.current_frame];
+        end
+    elseif object and object._type == "PTBackground" then
+        return object.image;
+    end
+    return nil
+end
+
 _PTRender = function ()
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
         return;
@@ -258,11 +285,17 @@ _PTRender = function ()
     end);
     --_PTClearScreen();
     for i, obj in pairs(_PTCurrentRoom.render_list) do
-        _PTDrawImage(obj.image.ptr, obj.x, obj.y);
+        frame = PTGetAnimationFrame(obj);
+        if frame then 
+            _PTDrawImage(frame.ptr, obj.x, obj.y);
+        end
     end
     if _PTMouseSprite then
         mouse_x, mouse_y = _PTGetMousePos();
-        _PTDrawImage(_PTMouseSprite.image.ptr, mouse_x, mouse_y);
+        frame = PTGetAnimationFrame(_PTMouseSprite);
+        if frame then
+            _PTDrawImage(frame.ptr, mouse_x, mouse_y);
+        end
     end
 end
 

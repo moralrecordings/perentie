@@ -29,33 +29,33 @@ bool image_load(pt_image *image) {
 
     FILE *fp = fopen(image->path, "rb");
     if (!fp) {
-        log_print("Failed to open image: %s", image->path);
+        log_print("Failed to open image: %s\n", image->path);
         return false;
     }
 
     spng_ctx *ctx = spng_ctx_new(0);
     if (!ctx) {
-        log_print("Failed to create SPNG context!");
+        log_print("Failed to create SPNG context!\n");
         fclose(fp);
         return false;
     }
     int result = 0;
     if ((result = spng_set_png_file(ctx, fp))) {
-        log_print("Failed to set PNG file! %s", spng_strerror(result));
+        log_print("Failed to set PNG file! %s\n", spng_strerror(result));
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
     }
     struct spng_ihdr ihdr;
     if ((result = spng_get_ihdr(ctx, &ihdr))) {
-        log_print("Failed to fetch IHDR! %s", spng_strerror(result));
+        log_print("Failed to fetch IHDR! %s\n", spng_strerror(result));
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
     }    
     
     if (ihdr.color_type != SPNG_COLOR_TYPE_INDEXED) {
-        log_print("Image %s is not paletted! %d", image->path, ihdr.color_type);
+        log_print("Image %s is not paletted! %d\n", image->path, ihdr.color_type);
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
@@ -72,8 +72,8 @@ bool image_load(pt_image *image) {
         return false;
     }
 
-    image->width = ihdr.width;
-    image->height = ihdr.height; 
+    image->width = (int16_t)ihdr.width;
+    image->height = (int16_t)ihdr.height; 
     image->pitch = get_pitch(ihdr.width);
     image->data = (byte *)calloc(image->height * image->pitch, sizeof(byte));
     image->palette = (byte *)calloc(256*3, sizeof(byte));

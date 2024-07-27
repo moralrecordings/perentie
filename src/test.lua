@@ -2,10 +2,10 @@ PTOnlyRunOnce("test.lua");
 
 play_sweep = function ()
     for j = 1, 10 do
-        delay = 250/j;
-        _PTLog(string.format("play_sweep: loop %d, delay %f\n", j, delay));
+        local delay = 250/j;
+        PTLog("play_sweep: loop %d, delay %f\n", j, delay);
         for i = 0, 24 do 
-            freq = 220.0 * (2 ^ (i/12.0));
+            local freq = 220.0 * (2 ^ (i/12.0));
             PTPlayBeep(freq);
             PTSleep(delay);
             PTStopBeep();
@@ -15,17 +15,17 @@ end
 
 print_crap = function ()
     for i = 1, 100 do
-        _PTLog(string.format("print_crap: %d\n", i));
+        PTLog("print_crap: %d\n", i);
         PTSleep(200);
     end
 end
 
 taunt_watchdog = function ()
-    limit = 100000;
-    _PTLog(string.format("taunt_watchdog: I'm going to count all the way to %d, you can't stop me", limit));
+    local limit = 100000;
+    PTLog("taunt_watchdog: I'm going to count all the way to %d, you can't stop me", limit);
     for i = 0, limit do
         if i % 1000 == 0 then
-            _PTLog(string.format("taunt_watchdog: %d!", i))
+            PTLog("taunt_watchdog: %d!", i);
         end
     end
 end
@@ -33,8 +33,6 @@ end
 
 -- Create a room
 test_room = PTRoom("test", 320, 200);
-
-
 
 
 -- the C blitter would then zero the screen,
@@ -62,18 +60,25 @@ graphics_room = PTRoom("graphics", 320, 200);
 test_img = PTImage("test.png");
 test_bg = PTBackground(test_img, 32, 32, 0);
 
-cursor_img = PTImage("cursor.png", 8, 8);
-cursor_sp = PTBackground(cursor_img, 0, 0, 0);
+cursor_sp = PTSprite(0, 0, 0, {
+    default=PTAnimation(
+        4, {
+            PTImage("cursor.png", 8, 8),
+            PTImage("cursor2.png", 8, 8),
+            PTImage("cursor3.png", 8, 8),
+            PTImage("cursor4.png", 8, 8),
+        }),
+    });
+cursor_sp.current_animation = "default";
 PTSetMouseSprite(cursor_sp);
 
 -- Assign the background image to the room
 PTRoomAddObject(graphics_room, test_bg);
-_PTLog(tostring(graphics_room));
 
 draw_things = function ()
     for i = 1, 1000 do
-        test_bg.x = math.random(-64, 320);
-        test_bg.y = math.random(-64, 200);
+        test_bg.x = math.random(-63, 320);
+        test_bg.y = math.random(-63, 200);
         PTSleep(20);
     end
 end

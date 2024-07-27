@@ -15,6 +15,7 @@ struct pt_image {
     int16_t origin_x;
     int16_t origin_y;
     uint16_t pitch;
+    void *hw_image;
 };
 
 pt_image *create_image(const char *path, int16_t origin_x, int16_t origin_y);

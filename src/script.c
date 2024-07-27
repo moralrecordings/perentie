@@ -16,8 +16,8 @@ lua_State *main_thread = NULL;
 inline const char *lua_strcpy(lua_State *L, int index, size_t *size) {
     size_t n;
     const char *name_src = lua_tolstring(L, index, &n);
-    char *dest = (char *)calloc(n, sizeof(char));
-    memcpy(dest, name_src, n*sizeof(char));
+    char *dest = (char *)calloc(n+1, sizeof(char));
+    memcpy(dest, name_src, n);
     if (size)
         *size = n;
     return dest;
@@ -61,9 +61,9 @@ static int lua_pt_image(lua_State *L) {
         origin_x = luaL_checkinteger(L, 2);
         origin_y = luaL_checkinteger(L, 3);
     }
-    log_print("image: %d %d %d", lua_gettop(L), origin_x, origin_y);
 
     pt_image *image = create_image(path, origin_x, origin_y);
+    log_print("lua_pt_create_image: %p %d %d\n", image, image->width, image->height);
     // create a table
     pt_image **target = lua_newuserdatauv(L, sizeof(pt_image *), 1);
     *target = image;
@@ -84,8 +84,9 @@ static int lua_pt_clear_screen(lua_State *L) {
 static int lua_pt_draw_image(lua_State *L) {
     //pt_image **imageptr = (pt_image **)luaL_checkudata(L, 1, "PTImage");
     pt_image **imageptr = (pt_image **)lua_touserdata(L, 1);
-    uint16_t x = luaL_checkinteger(L, 2);
-    uint16_t y = luaL_checkinteger(L, 3);
+    int16_t x = luaL_checkinteger(L, 2);
+    int16_t y = luaL_checkinteger(L, 3);
+    //log_print("lua_pt_draw_image: %p %d %d\n", *imageptr, x, y);
     video_blit_image(*imageptr, x, y);
     return 0;
 }

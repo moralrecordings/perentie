@@ -21,6 +21,40 @@
 typedef unsigned char byte;
 typedef unsigned short word;
 
+typedef struct pt_image_vga pt_image_vga;
+struct pt_image_vga {
+    byte *data;
+    uint16_t width;
+    uint16_t height;
+    int16_t origin_x;
+    int16_t origin_y;
+    uint16_t pitch; 
+};
+
+
+uint8_t video_map_colour(uint8_t r, uint8_t b, uint8_t g) {
+    
+}
+
+pt_image_vga *video_convert_image(pt_image *image) {
+    pt_image_vga *result = (pt_image_vga *)calloc(1, sizeof(pt_image_vga));
+    result->width = image->width;
+    result->height = image->height;
+    result->origin_x = image->origin_x;
+    result->origin_y = image->origin_y;
+    result->pitch = image->pitch;
+    result->data = (byte *)calloc(result->pitch * result->height, sizeof(byte));
+    // inform the DOS driver what the colour palette is from the image
+    // - driver updates free palette slots as required
+    // - if we're out of colour slots, the driver should return the nearest match
+    // generate a lookup table for mapping old palette to new palette
+    // - for every colour in the old palette, find the index in the new palette
+    //
+    return result;
+}
+
+
+
 // VGA blitter
 
 inline byte *vga_ptr() {
@@ -60,7 +94,7 @@ void video_blit_image(pt_image *image, int16_t x, int16_t y) {
         return;
     }
     if (!image) {
-        log_print("WARNING: Tried to blit nothing ya dingus");
+        log_print("WARNING: Tried to blit nothing ya dingus\n");
         return;
     }
 
@@ -70,7 +104,7 @@ void video_blit_image(pt_image *image, int16_t x, int16_t y) {
     x -= image->origin_x;
     y -= image->origin_y;
     if (!rect_blit_clip(&x, &y, ir, crop)) {
-        log_print("Rectangle off screen");
+        log_print("Rectangle off screen\n");
         destroy_rect(ir);
         destroy_rect(crop);
         return;
