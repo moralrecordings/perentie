@@ -101,28 +101,27 @@ static int lua_pt_font(lua_State *L) {
     return 1;
 }
 
-static int lua_pt_text_gc(lua_State *L) {
-    pt_text **target = (pt_text **)lua_touserdata(L, 1);
-    if (target && *target) {
-        destroy_text(*target);
-        *target = NULL;
-    }
-    return 0;
-}
-
 static int lua_pt_text(lua_State *L) {
     size_t len = 0;
     const byte *string = (const byte *)luaL_checklstring(L, 1, &len);
     pt_font **fontptr = (pt_font **)lua_touserdata(L, 2);
     uint16_t width = luaL_checkinteger(L, 3);
+    enum pt_text_align align = (enum pt_text_align)luaL_checkinteger(L, 4);
+    uint8_t r = (uint8_t)luaL_checkinteger(L, 5);
+    uint8_t g = (uint8_t)luaL_checkinteger(L, 6);
+    uint8_t b = (uint8_t)luaL_checkinteger(L, 7);
 
     pt_text *text = create_text(string, len, *fontptr, width, ALIGN_CENTER);
-    pt_text **target = lua_newuserdatauv(L, sizeof(pt_text *), 1);
-    *target = text;
+    pt_image *image = text_to_image(text, r, g, b);
+    destroy_text(text);
+
+    // same as the lua_pt_image code
+    pt_image **target = lua_newuserdatauv(L, sizeof(pt_image *), 1);
+    *target = image;
     lua_newtable(L);
-    lua_pushstring(L, "PTText");
+    lua_pushstring(L, "PTImage");
     lua_setfield(L, -2, "__name");
-    lua_pushcfunction(L, lua_pt_text_gc);
+    lua_pushcfunction(L, lua_pt_image_gc);
     lua_setfield(L, -2, "__gc");
     lua_setmetatable(L, -1);
     return 1;
@@ -161,7 +160,7 @@ static const struct luaL_Reg lua_funcs [] = {
     {"_PTPlayBeep", lua_pt_play_beep},
     {"_PTStopBeep", lua_pt_stop_beep},
     {"_PTImage", lua_pt_image},
-    {"_PTFont", lua_pt_text},
+    {"_PTFont", lua_pt_font},
     {"_PTText", lua_pt_text},
     {"_PTClearScreen", lua_pt_clear_screen},
     {"_PTDrawImage", lua_pt_draw_image},

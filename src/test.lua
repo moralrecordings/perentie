@@ -60,6 +60,11 @@ graphics_room = PTRoom("graphics", 320, 200);
 test_img = PTImage("test.png");
 test_bg = PTBackground(test_img, 32, 32, 0);
 
+font = PTFont("eagle.fnt");
+some_text_img = PTText("testing alignment of an ABSOLUTE SMÖRGÅSBORD of text └┴┬├─┼╞╟╚╔╩╦╠═╬╧", font, 240, "center", {0xed, 0xb1, 0x00});
+some_text = PTBackground(some_text_img, 16, 16, 10);
+PTRoomAddObject(graphics_room, some_text);
+
 cursor_sp = PTSprite(0, 0, 0, {
     default=PTAnimation(
         4, {

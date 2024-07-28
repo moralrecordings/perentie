@@ -45,9 +45,9 @@ struct pt_text {
 };
 
 enum pt_text_align {
-  ALIGN_LEFT,
-  ALIGN_CENTER,
-  ALIGN_RIGHT,
+  ALIGN_LEFT = 1,
+  ALIGN_CENTER = 2,
+  ALIGN_RIGHT = 3,
 };
 
 pt_text_word *create_text_word(const byte *string, size_t length, pt_font *font);

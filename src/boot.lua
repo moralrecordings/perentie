@@ -19,9 +19,57 @@ end
 
 --- Create a new image.
 -- @tparam string path Path of the image (must be indexed PNG).
+-- @tparam int origin_x Origin x coordinate, relative to top-left corner. Default is 0.
+-- @tparam int origin_y Origin y coordinate, relative to top-left corner. Default is 0.
 -- @tresult table The new image.
-PTImage = function (path, ...)
-    return {_type="PTImage", ptr=_PTImage(path, ...)};
+PTImage = function (path, origin_x, origin_y)
+    if not origin_x then 
+        origin_x = 0;
+    end
+    if not origin_y then 
+        origin_y = 0;
+    end
+    return {_type="PTImage", ptr=_PTImage(path, origin_x, origin_y)};
+end
+
+--- Create a new bitmap font.
+-- @tparam string path Path of the bitmap font (must be BMFont V3 binary).
+-- @tresult table The new font.
+PTFont = function (path)
+    return {_type="PTFont", ptr=_PTFont(path)};
+end
+
+--- Create an new image containing rendered text.
+-- @tparam string text Unicode text to render.
+-- @tparam table font Font object to use.
+-- @tparam int width Width of bounding area in pixels. Default is 200.
+-- @tparam str align Text alignment; one of "left", "center" or "right". Defaults to "left". 
+-- @tparam table colour Inner colour; list of 3 8-bit numbers. Default is white.
+-- @tresult table The new image.
+PTText = function (text, font, width, align, colour)
+    if not width then
+        width = 200
+    end
+    local align_enum = 1;
+    if (align == "center") then
+        align_enum = 2;
+    elseif (align == "right") then
+        align_enum = 3;
+    end
+    local r = 0xff;
+    local g = 0xff;
+    local b = 0xff;
+    if colour and colour[1] then
+        r = colour[1];
+    end
+    if colour and colour[2] then
+        g = colour[2];
+    end
+    if colour and colour[3] then
+        b = colour[3];
+    end
+    
+    return {_type="PTImage", ptr=_PTText(text, font.ptr, width, align_enum, r, g, b)}
 end
 
 --- Create a new room.

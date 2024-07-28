@@ -253,7 +253,11 @@ pt_image *text_to_image(pt_text *text, uint8_t r, uint8_t g, uint8_t b) {
                 }
                 //log_print("rect: %d %d %d %d\n", char_rect->left, char_rect->top, char_rect->right, char_rect->bottom);
 
-                int16_t x_start = x; 
+                int16_t x_start = x;
+                // BMFont will produce greyscale PNG images; colours are one of:
+                // 0x00 (mask), 0x7f (outline) or 0xff (body).
+                // Using bitwise OR means we can merge adjacent characters together 
+                // (e.g. two letters with a shared outline pixel) 
                 for (int yi = char_rect->top; yi < char_rect->bottom; yi++) {
                     for (int xi = char_rect->left; xi < char_rect->right; xi++) {
                         byte src = page->data[page->pitch*(yi + fchar->y) + (xi + fchar->x)];
