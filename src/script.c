@@ -6,8 +6,10 @@
 #include "lua/lualib.h"
 
 #include "dos.h"
+#include "font.h"
 #include "image.h"
 #include "log.h"
+#include "text.h"
 #include "version.h"
 
 
@@ -76,6 +78,56 @@ static int lua_pt_image(lua_State *L) {
     return 1;
 }
 
+static int lua_pt_font_gc(lua_State *L) {
+    pt_font **target = (pt_font **)lua_touserdata(L, 1);
+    if (target && *target) {
+        destroy_font(*target);
+        *target = NULL;
+    }
+    return 0;
+}
+
+static int lua_pt_font(lua_State *L) {
+    const char *path = lua_strcpy(L, 1, NULL);
+    pt_font *font = create_font(path);
+    pt_font **target = lua_newuserdatauv(L, sizeof(pt_font *), 1);
+    *target = font;
+    lua_newtable(L);
+    lua_pushstring(L, "PTFont");
+    lua_setfield(L, -2, "__name");
+    lua_pushcfunction(L, lua_pt_font_gc);
+    lua_setfield(L, -2, "__gc");
+    lua_setmetatable(L, -1);
+    return 1;
+}
+
+static int lua_pt_text_gc(lua_State *L) {
+    pt_text **target = (pt_text **)lua_touserdata(L, 1);
+    if (target && *target) {
+        destroy_text(*target);
+        *target = NULL;
+    }
+    return 0;
+}
+
+static int lua_pt_text(lua_State *L) {
+    size_t len = 0;
+    const byte *string = (const byte *)luaL_checklstring(L, 1, &len);
+    pt_font **fontptr = (pt_font **)lua_touserdata(L, 2);
+    uint16_t width = luaL_checkinteger(L, 3);
+
+    pt_text *text = create_text(string, len, *fontptr, width, ALIGN_CENTER);
+    pt_text **target = lua_newuserdatauv(L, sizeof(pt_text *), 1);
+    *target = text;
+    lua_newtable(L);
+    lua_pushstring(L, "PTText");
+    lua_setfield(L, -2, "__name");
+    lua_pushcfunction(L, lua_pt_text_gc);
+    lua_setfield(L, -2, "__gc");
+    lua_setmetatable(L, -1);
+    return 1;
+}
+
 static int lua_pt_clear_screen(lua_State *L) { 
     video_clear();
     return 0;
@@ -109,6 +161,8 @@ static const struct luaL_Reg lua_funcs [] = {
     {"_PTPlayBeep", lua_pt_play_beep},
     {"_PTStopBeep", lua_pt_stop_beep},
     {"_PTImage", lua_pt_image},
+    {"_PTFont", lua_pt_text},
+    {"_PTText", lua_pt_text},
     {"_PTClearScreen", lua_pt_clear_screen},
     {"_PTDrawImage", lua_pt_draw_image},
     {"_PTLog", lua_pt_log},

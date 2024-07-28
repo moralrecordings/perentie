@@ -9,7 +9,7 @@ typedef struct pt_image pt_image;
 struct pt_image {
     const char *path;
     byte *data;
-    byte *palette;
+    byte palette[3 * 256];
     uint16_t width;
     uint16_t height;
     int16_t origin_x;
@@ -18,6 +18,10 @@ struct pt_image {
 
     void *hw_image;
 };
+
+inline uint16_t get_pitch(uint32_t width) {
+    return (width % 4) == 0 ? width : width + 4 - (width % 4);
+}
 
 pt_image *create_image(const char *path, int16_t origin_x, int16_t origin_y);
 bool image_load(pt_image *image);

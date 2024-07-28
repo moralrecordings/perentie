@@ -10,10 +10,6 @@
 #include "log.h"
 #include "image.h"
 
-inline uint16_t get_pitch(uint32_t width) {
-    return (width % 4) == 0 ? width : width + 4 - (width % 4);
-}
-
 
 pt_image *create_image(const char *path, int16_t origin_x, int16_t origin_y) {
     pt_image *image = (pt_image *)calloc(1, sizeof(pt_image));
@@ -78,7 +74,6 @@ bool image_load(pt_image *image) {
     image->height = (int16_t)ihdr.height; 
     image->pitch = get_pitch(ihdr.width);
     image->data = (byte *)calloc(image->height * image->pitch, sizeof(byte));
-    image->palette = (byte *)calloc(256*3, sizeof(byte));
    
     if (ihdr.color_type == SPNG_COLOR_TYPE_INDEXED) {
         struct spng_plte pal;
@@ -163,10 +158,6 @@ void destroy_image(pt_image *image) {
     if (image->data) {
         free(image->data);
         image->data = NULL;
-    }
-    if (image->palette) {
-        free(image->palette);
-        image->palette = NULL;
     }
     if (image->hw_image) {
         video_destroy_hw_image(image->hw_image);

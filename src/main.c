@@ -13,15 +13,15 @@
 
 int main(int argc, char **argv) {
     log_init();
-    //pt_font *font = create_font("eagle.fnt");
-    //const char *payload = "testing alignment of a shitload of text"; 
-    //pt_text *text = create_text((byte *)payload, strlen(payload), font, 200, ALIGN_LEFT);
+    pt_font *font = create_font("eagle.fnt");
+    const char *payload = "testing alignment of an ABSOLUTE SMÖRGÅSBORD of text └┴┬├─┼╞╟╚╔╩╦╠═╬╧"; 
+    pt_text *text = create_text((byte *)payload, strlen(payload), font, 200, ALIGN_CENTER);
+    pt_image *img = text_to_image(text, 0xed, 0xb1, 0x00); 
     timer_init();
     video_init();
     mouse_init();
     script_init();
     bool running = true;
-
     while (running) {
         // sleep until the start of the next vertical blanking interval
         if (video_is_vblank()) {
@@ -37,14 +37,16 @@ int main(int argc, char **argv) {
         video_flip();
         mouse_update();
         script_draw();
+        video_blit_image(img, 16, 16);
     }
     //serial_test();
 /*    while (script_exec()) {
         timer_sleep(10);
     }*/
 
-
-
+    destroy_image(img);
+    destroy_text(text);
+    destroy_font(font);
     /*
     struct image *image = create_image("test.png");
 

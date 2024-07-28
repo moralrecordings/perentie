@@ -18,14 +18,14 @@ void font_load_info_block(FILE *fp, size_t size, pt_font *font) {
     font->char_set = fread_u8(fp);
     font->stretch_h = fread_u16le(fp);
     font->aa = fread_u8(fp);
-    font->padding_up = fread_u16le(fp);
-    font->padding_right = fread_u16le(fp);
-    font->padding_down = fread_u16le(fp);
-    font->padding_left = fread_u16le(fp);
-    font->spacing_horiz = fread_u16le(fp);
-    font->spacing_vert = fread_u16le(fp);
+    font->padding_up = fread_u8(fp);
+    font->padding_right = fread_u8(fp);
+    font->padding_down = fread_u8(fp);
+    font->padding_left = fread_u8(fp);
+    font->spacing_horiz = fread_u8(fp);
+    font->spacing_vert = fread_u8(fp);
     font->outline = fread_u8(fp);
-    size -= 20;
+    size -= 14;
     font->font_name = (char *)calloc(size, sizeof(char));
     fread(font->font_name, sizeof(char), size, fp);
 }
