@@ -11,8 +11,8 @@ typedef struct pt_image pt_image;
 typedef struct pt_image_vga pt_image_vga;
 
 struct pt_image_vga {
-    byte *bitmap;
-    byte *mask;
+    byte* bitmap;
+    byte* mask;
     uint16_t width;
     uint16_t height;
     uint16_t pitch;
@@ -20,13 +20,13 @@ struct pt_image_vga {
 
 void video_init();
 void video_clear();
-void video_blit_image(pt_image *image, int16_t x, int16_t y);
+void video_blit_image(pt_image* image, int16_t x, int16_t y);
 bool video_is_vblank();
 void video_flip();
 void video_load_palette_colour(int idx);
 uint8_t video_map_colour(uint8_t r, uint8_t g, uint8_t b);
-pt_image_vga *video_convert_image(pt_image *image, int colourkey);
-void video_destroy_hw_image(void *hw_image);
+pt_image_vga* video_convert_image(pt_image* image, int colourkey);
+void video_destroy_hw_image(void* hw_image);
 void video_shutdown();
 
 bool sys_idle(int (*idle_callback)(), int idle_callback_period);
@@ -42,18 +42,12 @@ void pcspeaker_stop();
 
 void mouse_init();
 void mouse_shutdown();
-void mouse_update(); 
+void mouse_update();
 int mouse_is_down(int button);
 int mouse_get_x();
 int mouse_get_y();
 
-enum {
-  MOUSE_BUTTON_LEFT,
-  MOUSE_BUTTON_RIGHT,
-  MOUSE_BUTTON_MIDDLE,
-  MOUSE_BUTTON_MAX
-};
-
+enum { MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_MAX };
 
 void serial_test();
 

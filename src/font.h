@@ -1,12 +1,12 @@
 #ifndef PERENTIE_FONT_H
 #define PERENTIE_FONT_H
 
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "image.h"
 
-// Bitmap fonts in Perentie use BMFont format. 
+// Bitmap fonts in Perentie use BMFont format.
 // See http://www.angelcode.com/products/bmfont/doc/file_format.html
 
 typedef struct pt_font_page pt_font_page;
@@ -55,18 +55,18 @@ struct pt_font {
     uint8_t spacing_horiz;
     uint8_t spacing_vert;
     uint8_t outline;
-    char *font_name;
+    char* font_name;
 
     pt_font_common common;
 
-    pt_image **pages; 
+    pt_image** pages;
     size_t page_count;
 
-    pt_font_char *chars; 
+    pt_font_char* chars;
     size_t char_count;
 };
 
-pt_font *create_font(const char *path);
-void destroy_font(pt_font *font);
+pt_font* create_font(const char* path);
+void destroy_font(pt_font* font);
 
 #endif

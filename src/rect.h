@@ -2,28 +2,31 @@
 #ifndef PERENTIE_RECT_H
 #define PERENTIE_RECT_H
 
-#include <stdlib.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 struct rect {
     int16_t top, left;
     int16_t bottom, right;
 };
 
-inline struct rect *create_rect() {
-    return (struct rect *)calloc(1, sizeof(struct rect));
+inline struct rect* create_rect()
+{
+    return (struct rect*)calloc(1, sizeof(struct rect));
 }
 
-inline struct rect *create_rect_dims(int16_t w, int16_t h) {
-    struct rect *result = (struct rect *)calloc(1, sizeof(struct rect));
+inline struct rect* create_rect_dims(int16_t w, int16_t h)
+{
+    struct rect* result = (struct rect*)calloc(1, sizeof(struct rect));
     result->right = w;
     result->bottom = h;
     return result;
 }
 
-inline struct rect *create_rect_bounds(int16_t t, int16_t l, int16_t b, int16_t r) {
-    struct rect *result = (struct rect *)calloc(1, sizeof(struct rect));
+inline struct rect* create_rect_bounds(int16_t t, int16_t l, int16_t b, int16_t r)
+{
+    struct rect* result = (struct rect*)calloc(1, sizeof(struct rect));
     result->top = t;
     result->left = l;
     result->right = r;
@@ -31,48 +34,58 @@ inline struct rect *create_rect_bounds(int16_t t, int16_t l, int16_t b, int16_t 
     return result;
 }
 
-inline void destroy_rect(struct rect *rect) {
+inline void destroy_rect(struct rect* rect)
+{
     if (rect)
         free(rect);
 }
 
-inline int rect_width(struct rect *rect) {
+inline int rect_width(struct rect* rect)
+{
     if (!rect)
         return 0;
     return rect->right - rect->left;
 }
 
-inline int rect_height(struct rect *rect) {
+inline int rect_height(struct rect* rect)
+{
     if (!rect)
         return 0;
     return rect->bottom - rect->top;
 }
 
-inline bool rect_contains_point(struct rect *rect, int16_t x, int16_t y) {
+inline bool rect_contains_point(struct rect* rect, int16_t x, int16_t y)
+{
     if (!rect)
         return false;
     return (rect->left <= x) && (x < rect->right) && (rect->top <= y) && (y < rect->bottom);
 }
 
-inline bool rect_contains_rect(struct rect *rect, struct rect *target) {
+inline bool rect_contains_rect(struct rect* rect, struct rect* target)
+{
     if (!rect || !target)
         return false;
-    return (rect->left <= target->left) && (target->right <= rect->right) && (rect->top <= target->top) && (target->bottom <= rect->bottom);
+    return (rect->left <= target->left) && (target->right <= rect->right) && (rect->top <= target->top)
+        && (target->bottom <= rect->bottom);
 }
 
-inline bool rect_equals_rect(struct rect *rect, struct rect *target) {
+inline bool rect_equals_rect(struct rect* rect, struct rect* target)
+{
     if (!rect || !target)
         return false;
-    return (rect->left == target->left) && (rect->right == target->right) && (rect->top == target->top) && (rect->bottom == target->bottom);
+    return (rect->left == target->left) && (rect->right == target->right) && (rect->top == target->top)
+        && (rect->bottom == target->bottom);
 }
 
-inline bool rect_is_empty(struct rect *rect) {
+inline bool rect_is_empty(struct rect* rect)
+{
     if (!rect)
         return true;
     return (rect->left >= rect->right || rect->top >= rect->bottom);
 }
 
-inline void rect_move_to(struct rect *rect, int16_t x, int16_t y) {
+inline void rect_move_to(struct rect* rect, int16_t x, int16_t y)
+{
     if (!rect)
         return;
     rect->bottom += y - rect->top;
@@ -81,14 +94,18 @@ inline void rect_move_to(struct rect *rect, int16_t x, int16_t y) {
     rect->left = x;
 }
 
-inline void rect_translate(struct rect *rect, int16_t dx, int16_t dy) {
+inline void rect_translate(struct rect* rect, int16_t dx, int16_t dy)
+{
     if (!rect)
         return;
-    rect->left += dx; rect->right += dx;
-    rect->top += dy; rect->bottom += dy;
+    rect->left += dx;
+    rect->right += dx;
+    rect->top += dy;
+    rect->bottom += dy;
 }
 
-inline bool rect_blit_clip(int16_t *x, int16_t *y, struct rect *src, struct rect *clip) {
+inline bool rect_blit_clip(int16_t* x, int16_t* y, struct rect* src, struct rect* clip)
+{
     if (!x || !y || !src || !clip)
         return false;
     if (*x < clip->left) {

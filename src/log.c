@@ -1,20 +1,23 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-static FILE *log_output = NULL;
+static FILE* log_output = NULL;
 
-void log_init() {
+void log_init()
+{
     log_output = fopen("perentie.log", "w");
 }
 
-void log_shutdown() {
+void log_shutdown()
+{
     if (log_output) {
         fclose(log_output);
         log_output = NULL;
     }
 }
 
-int log_print(const char *format, ...) {
+int log_print(const char* format, ...)
+{
     va_list args;
     va_start(args, format);
     int result = 0;

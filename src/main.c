@@ -1,17 +1,18 @@
+#include "stb/stb_ds.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "stb/stb_ds.h"
 
 #include "dos.h"
 #include "font.h"
-#include "log.h"
 #include "image.h"
+#include "log.h"
 #include "script.h"
 #include "text.h"
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv)
+{
     log_init();
     timer_init();
     video_init();
@@ -21,7 +22,7 @@ int main(int argc, char **argv) {
     while (running) {
         // sleep until the start of the next vertical blanking interval
         if (video_is_vblank()) {
-            // in the middle of a vblank, wait until the next draw 
+            // in the middle of a vblank, wait until the next draw
             do {
                 running = sys_idle(script_exec, 10);
             } while (video_is_vblank());
@@ -34,10 +35,10 @@ int main(int argc, char **argv) {
         mouse_update();
         script_draw();
     }
-    //serial_test();
-/*    while (script_exec()) {
-        timer_sleep(10);
-    }*/
+    // serial_test();
+    /*    while (script_exec()) {
+            timer_sleep(10);
+        }*/
 
     /*
     struct image *image = create_image("test.png");
@@ -45,7 +46,7 @@ int main(int argc, char **argv) {
     video_init();
     uint32_t before = timer_millis();
     for (int i = 0; i < 500; i++) {
-        video_blit_image(image, 
+        video_blit_image(image,
             (int)(rand()%(SCREEN_WIDTH + image->width)) - (int)image->width,
             (int)(rand()%(SCREEN_HEIGHT + image->height)) - (int)image->height
         );
@@ -56,7 +57,7 @@ int main(int argc, char **argv) {
     destroy_image(image);
     timer_sleep(1000);
     printf("Render cycle took %d millis", after - before);*/
-    
+
     video_shutdown();
     timer_shutdown();
     log_shutdown();
