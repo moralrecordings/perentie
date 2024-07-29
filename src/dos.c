@@ -108,10 +108,12 @@ void video_blit_image(pt_image* image, int16_t x, int16_t y)
     // log_print("Blitting %s to %d,%d %dx%d\n", image->path, x, y, image->width, image->height);
     int16_t x_start = x;
     for (int yi = ir->top; yi < ir->bottom; yi++) {
-        for (int xi = ir->left; xi < ir->right; xi++) {
-            if (hw_image->mask[(yi * hw_image->pitch) + xi])
-                *(framebuffer + (y << 8) + (y << 6) + x) = *(hw_image->bitmap + (yi * hw_image->pitch) + xi);
-            x++;
+        for (int xi = ir->left; xi < ir->right; xi += sizeof(uint8_t)) {
+            size_t hw_offset = (yi * hw_image->pitch) + xi;
+            uint8_t mask = *(uint8_t *)(hw_image->mask + hw_offset);
+            uint8_t *ptr = (uint8_t *)(framebuffer + (y << 8) + (y << 6) + x);
+            *ptr = (*ptr & ~mask) | (*(uint8_t *)(hw_image->bitmap + hw_offset) & mask);
+            x += sizeof(uint8_t);
         }
         y++;
         x = x_start;
