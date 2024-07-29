@@ -34,31 +34,18 @@ int main(int argc, char** argv)
             running = sys_idle(script_exec, 10);
         } while (!video_is_vblank());
         video_flip();
+        keyboard_update();
         mouse_update();
-        script_draw();
+        script_events();
+        script_render();
     }
+
+    //
+
     // serial_test();
     /*    while (script_exec()) {
             timer_sleep(10);
         }*/
-
-    /*
-    struct image *image = create_image("test.png");
-
-    video_init();
-    uint32_t before = timer_millis();
-    for (int i = 0; i < 500; i++) {
-        video_blit_image(image,
-            (int)(rand()%(SCREEN_WIDTH + image->width)) - (int)image->width,
-            (int)(rand()%(SCREEN_HEIGHT + image->height)) - (int)image->height
-        );
-        //timer_sleep(1000/70);
-        video_flip();
-    }
-    uint32_t after = timer_millis();
-    destroy_image(image);
-    timer_sleep(1000);
-    printf("Render cycle took %d millis", after - before);*/
 
     video_shutdown();
     mouse_shutdown();

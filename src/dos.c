@@ -561,12 +561,11 @@ void mouse_update()
 
     // If the mouse moved, push a movement event
     if (mouse_x != mouse_last_x || mouse_y != mouse_last_y) {
-        pt_event* ev = create_event(EVENT_MOUSE_MOVED);
+        pt_event* ev = event_push(EVENT_MOUSE_MOVE);
         ev->mouse.x = mouse_x;
         ev->mouse.y = mouse_y;
         ev->mouse.dx = mouse_x - mouse_last_x;
         ev->mouse.dy = mouse_y - mouse_last_y;
-        event_push(ev);
     }
 
     // Keep track of last seen mouse position
@@ -586,11 +585,10 @@ void mouse_update()
 
             if (regs.x.bx) {
                 // Push event to queue
-                pt_event* ev = create_event(t == 0 ? EVENT_MOUSE_PRESSED : EVENT_MOUSE_RELEASED);
+                pt_event* ev = event_push(t == 0 ? EVENT_MOUSE_DOWN : EVENT_MOUSE_UP);
                 ev->mouse.button = i;
                 ev->mouse.x = mouse_x;
                 ev->mouse.y = mouse_y;
-                event_push(ev);
                 // Save the button states
                 mouse_button_states[i] = t == 0 ? 1 : 0;
             }
@@ -768,10 +766,9 @@ void keyboard_update()
     // Move keyevents from the circular buffer to the event pipeline
     while (keyevent_buffer.readi != keyevent_buffer.writei) {
         keyevent* ke = &keyevent_buffer.data[keyevent_buffer.readi++ & KEY_BUFFER_MASK];
-        pt_event* ev = create_event(ke->type == KEYPRESSED ? EVENT_KEYBOARD_PRESSED : EVENT_KEYBOARD_RELEASED);
+        pt_event* ev = event_push(ke->type == KEYPRESSED ? EVENT_KEY_DOWN : EVENT_KEY_UP);
         ev->keyboard.key = DOS_SCANCODES[ke->code];
         ev->keyboard.isrepeat = ke->isrepeat;
-        event_push(ev);
     }
 }
 

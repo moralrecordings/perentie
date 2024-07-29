@@ -328,6 +328,20 @@ PTGetAnimationFrame = function(object)
     return nil
 end
 
+local _PTEventConsumers = {}
+
+_PTEvents = function()
+    local ev = _PTPumpEvent()
+    while ev do
+        if _PTEventConsumers[ev.type] then
+            for i, cons in pairs(_PTEventConsumers[ev.type]) do
+                cons(ev)
+            end
+        end
+        ev = _PTPumpEvent()
+    end
+end
+
 _PTRender = function()
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
         return

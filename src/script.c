@@ -6,6 +6,7 @@
 #include "lua/lualib.h"
 
 #include "dos.h"
+#include "event.h"
 #include "font.h"
 #include "image.h"
 #include "log.h"
@@ -160,6 +161,79 @@ static int lua_pt_log(lua_State* L)
     return 0;
 }
 
+static int lua_pt_pump_event(lua_State* L)
+{
+    pt_event* ev = event_pop();
+    if (!ev) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_createtable(L, 0, 6);
+    lua_pushstring(L, "PTEvent");
+    lua_setfield(L, -2, "_type");
+    switch (ev->type) {
+    case EVENT_NULL:
+        lua_pushstring(L, "null");
+        lua_setfield(L, -2, "type");
+        break;
+    case EVENT_QUIT:
+        lua_pushstring(L, "quit");
+        lua_setfield(L, -2, "type");
+        lua_pushinteger(L, ev->quit.status);
+        lua_setfield(L, -2, "status");
+        break;
+    case EVENT_KEY_DOWN:
+        lua_pushstring(L, "keyDown");
+        lua_setfield(L, -2, "type");
+        lua_pushstring(L, ev->keyboard.key);
+        lua_setfield(L, -2, "key");
+        lua_pushboolean(L, ev->keyboard.isrepeat);
+        lua_setfield(L, -2, "isRepeat");
+        break;
+    case EVENT_KEY_UP:
+        lua_pushstring(L, "keyUp");
+        lua_setfield(L, -2, "type");
+        lua_pushstring(L, ev->keyboard.key);
+        lua_setfield(L, -2, "key");
+        break;
+    case EVENT_MOUSE_MOVE:
+        lua_pushstring(L, "mouseMove");
+        lua_setfield(L, -2, "type");
+        lua_pushinteger(L, ev->mouse.x);
+        lua_setfield(L, -2, "x");
+        lua_pushinteger(L, ev->mouse.y);
+        lua_setfield(L, -2, "y");
+        lua_pushinteger(L, ev->mouse.dx);
+        lua_setfield(L, -2, "dx");
+        lua_pushinteger(L, ev->mouse.dy);
+        lua_setfield(L, -2, "dy");
+        break;
+    case EVENT_MOUSE_DOWN:
+        lua_pushstring(L, "mouseDown");
+        lua_setfield(L, -2, "type");
+        lua_pushinteger(L, ev->mouse.x);
+        lua_setfield(L, -2, "x");
+        lua_pushinteger(L, ev->mouse.y);
+        lua_setfield(L, -2, "y");
+        lua_pushinteger(L, ev->mouse.button);
+        lua_setfield(L, -2, "button");
+        break;
+    case EVENT_MOUSE_UP:
+        lua_pushstring(L, "mouseUp");
+        lua_setfield(L, -2, "type");
+        lua_pushinteger(L, ev->mouse.x);
+        lua_setfield(L, -2, "x");
+        lua_pushinteger(L, ev->mouse.y);
+        lua_setfield(L, -2, "y");
+        lua_pushinteger(L, ev->mouse.button);
+        lua_setfield(L, -2, "button");
+        break;
+    default:
+        break;
+    }
+    return 1;
+}
+
 static int lua_pt_get_mouse_pos(lua_State* L)
 {
     lua_pushinteger(L, mouse_get_x());
@@ -178,6 +252,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTClearScreen", lua_pt_clear_screen },
     { "_PTDrawImage", lua_pt_draw_image },
     { "_PTLog", lua_pt_log },
+    { "_PTPumpEvent", lua_pt_pump_event },
     { "_PTGetMousePos", lua_pt_get_mouse_pos },
     { NULL, NULL },
 };
@@ -193,7 +268,13 @@ int script_exec()
     return result;
 }
 
-void script_draw()
+void script_events()
+{
+    lua_getglobal(main_thread, "_PTEvents");
+    lua_call(main_thread, 0, 0);
+}
+
+void script_render()
 {
     lua_getglobal(main_thread, "_PTRender");
     lua_call(main_thread, 0, 0);

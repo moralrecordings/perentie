@@ -3,6 +3,7 @@
 
 void script_init();
 int script_exec();
-void script_draw();
+void script_events();
+void script_render();
 
 #endif
