@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "dos.h"
+#include "event.h"
 #include "image.h"
 #include "log.h"
 #include "rect.h"
@@ -110,9 +111,9 @@ void video_blit_image(pt_image* image, int16_t x, int16_t y)
     for (int yi = ir->top; yi < ir->bottom; yi++) {
         for (int xi = ir->left; xi < ir->right; xi += sizeof(uint8_t)) {
             size_t hw_offset = (yi * hw_image->pitch) + xi;
-            uint8_t mask = *(uint8_t *)(hw_image->mask + hw_offset);
-            uint8_t *ptr = (uint8_t *)(framebuffer + (y << 8) + (y << 6) + x);
-            *ptr = (*ptr & ~mask) | (*(uint8_t *)(hw_image->bitmap + hw_offset) & mask);
+            uint8_t mask = *(uint8_t*)(hw_image->mask + hw_offset);
+            uint8_t* ptr = (uint8_t*)(framebuffer + (y << 8) + (y << 6) + x);
+            *ptr = (*ptr & ~mask) | (*(uint8_t*)(hw_image->bitmap + hw_offset) & mask);
             x += sizeof(uint8_t);
         }
         y++;
@@ -337,7 +338,7 @@ void _int_8h_real()
 
 void _int_8h_real_lock()
 {
-    // Lock the memory page that contains _int_8h_prot()
+    // Lock the memory page that contains _int_8h_real()
     _go32_dpmi_lock_code(_int_8h_real, (uint32_t)(_int_8h_real_lock - _int_8h_real));
 }
 
@@ -534,8 +535,8 @@ void serial_test()
 
 int mouse_inited;
 int mouse_x, mouse_y;
-int mouse_lastX, mouse_lastY;
-int mouse_buttonStates[MOUSE_BUTTON_MAX];
+int mouse_last_x, mouse_last_y;
+int mouse_button_states[MOUSE_BUTTON_MAX];
 
 void mouse_init()
 {
@@ -551,46 +552,47 @@ void mouse_update()
         return;
     }
 
-    /* Update mouse position */
+    // INT 33h AH=3 - Return position and button status
     union REGS regs = {};
     regs.x.ax = 3;
     int86(0x33, &regs, &regs);
     mouse_x = regs.x.cx >> 1;
     mouse_y = regs.x.dx;
 
-    /* Do moved event if mouse moved */
-    /*if (mouse_x != mouse_lastX || mouse_y != mouse_lastY) {
-        event_t e;
-        e.type = EVENT_MOUSE_MOVED;
-        e.mouse.x = mouse_x;
-        e.mouse.y = mouse_y;
-        e.mouse.dx = mouse_x - mouse_lastX;
-        e.mouse.dy = mouse_y - mouse_lastY;
-        event_push(&e);
-    }*/
+    // If the mouse moved, push a movement event
+    if (mouse_x != mouse_last_x || mouse_y != mouse_last_y) {
+        pt_event* ev = create_event(EVENT_MOUSE_MOVED);
+        ev->mouse.x = mouse_x;
+        ev->mouse.y = mouse_y;
+        ev->mouse.dx = mouse_x - mouse_last_x;
+        ev->mouse.dy = mouse_y - mouse_last_y;
+        event_push(ev);
+    }
 
-    /* Update last position */
-    mouse_lastX = mouse_x;
-    mouse_lastY = mouse_y;
+    // Keep track of last seen mouse position
+    mouse_last_x = mouse_x;
+    mouse_last_y = mouse_y;
 
-    /* Update button states and push pressed/released events */
     int i, t;
     for (i = 0; i < MOUSE_BUTTON_MAX; i++) {
         for (t = 0; t < 2; t++) {
+
+            // INT 33h AH=5 - Return button press data
+            // INT 33h AH=6 - Return button release data
             memset(&regs, 0, sizeof(regs));
             regs.x.ax = 5 + t;
             regs.x.bx = i;
             int86(0x33, &regs, &regs);
+
             if (regs.x.bx) {
-                /* Push event */
-                /*event_t e;
-                e.type = t == 0 ? EVENT_MOUSE_PRESSED : EVENT_MOUSE_RELEASED;
-                e.mouse.button = i;
-                e.mouse.x = mouse_x;
-                e.mouse.y = mouse_y;
-                event_push(&e);*/
-                /* Set state */
-                mouse_buttonStates[i] = t == 0 ? 1 : 0;
+                // Push event to queue
+                pt_event* ev = create_event(t == 0 ? EVENT_MOUSE_PRESSED : EVENT_MOUSE_RELEASED);
+                ev->mouse.button = i;
+                ev->mouse.x = mouse_x;
+                ev->mouse.y = mouse_y;
+                event_push(ev);
+                // Save the button states
+                mouse_button_states[i] = t == 0 ? 1 : 0;
             }
         }
     }
@@ -598,7 +600,7 @@ void mouse_update()
 
 int mouse_is_down(int button)
 {
-    return mouse_buttonStates[button];
+    return mouse_button_states[button];
 }
 
 int mouse_get_x()
@@ -609,4 +611,174 @@ int mouse_get_x()
 int mouse_get_y()
 {
     return mouse_y;
+}
+
+void mouse_shutdown()
+{
+    // noop
+}
+
+// Keyboard handler
+// Adapted from lovedos
+
+// clang-format off
+static const char *DOS_SCANCODES[] = {
+    [0] = "?",        [1] = "escape",     [2] = "1",           [3] = "2",
+    [4] = "3",        [5] = "4",          [6] = "5",           [7] = "6",
+    [8] = "7",        [9] = "8",          [10] = "9",          [11] = "0",
+    [12] = "-",       [13] = "=",         [14] = "backspace",  [15] = "tab",
+    [16] = "q",       [17] = "w",         [18] = "e",          [19] = "r",
+    [20] = "t",       [21] = "y",         [22] = "u",          [23] = "i",
+    [24] = "o",       [25] = "p",         [26] = "[",          [27] = "]",
+    [28] = "return",  [29] = "lctrl",     [30] = "a",          [31] = "s",
+    [32] = "d",       [33] = "f",         [34] = "g",          [35] = "h",
+    [36] = "j",       [37] = "k",         [38] = "l",          [39] = ";",
+    [40] = "\"",      [41] = "`",         [42] = "lshift",     [43] = "\\",
+    [44] = "z",       [45] = "x",         [46] = "c",          [47] = "v",
+    [48] = "b",       [49] = "n",         [50] = "m",          [51] = ",",
+    [52] = ".",       [53] = "/",         [54] = "rshift",     [55] = "*",
+    [56] = "lalt",    [57] = "space",     [58] = "capslock",   [59] = "f1",
+    [60] = "f2",      [61] = "f3",        [62] = "f4",         [63] = "f5",
+    [64] = "f6",      [65] = "f7",        [66] = "f8",         [67] = "f9",
+    [68] = "f10",     [69] = "numlock",   [70] = "scrolllock", [71] = "home",
+    [72] = "up",      [73] = "pageup",    [74] = "-",          [75] = "left",
+    [76] = "5",       [77] = "right",     [78] = "+",          [79] = "end",
+    [80] = "down",    [81] = "pagedown",  [82] = "insert",     [83] = "delete",
+    [84] = "?",       [85] = "?",         [86] = "?",          [87] = "?",
+    [88] = "f12",     [89] = "?",         [90] = "?",          [91] = "?",
+    [92] = "?",       [93] = "?",         [94] = "?",          [95] = "?",
+    [96] = "enter",   [97] = "lctrl",     [98] = "/",          [99] = "f12",
+    [100] = "rctrl",  [101] = "pause",    [102] = "home",      [103] = "up",
+    [104] = "pageup", [105] = "left",     [106] = "right",     [107] = "end",
+    [108] = "down",   [109] = "pagedown", [110] = "insert",    [111] = "?",
+    [112] = "?",      [113] = "?",        [114] = "?",         [115] = "?",
+    [116] = "?",      [117] = "?",        [118] = "?",         [119] = "pause",
+    [120] = "?",      [121] = "?",        [122] = "?",         [123] = "?",
+    [124] = "?",      [125] = "?",        [126] = "?",         [127] = "?",
+    [128] = NULL,
+};
+// clang-format on
+
+#define KEY_MAX 128
+#define KEY_BUFFER_SIZE 32
+#define KEY_BUFFER_MASK (KEY_BUFFER_SIZE - 1)
+
+static bool keyboard_allow_key_repeat = false;
+static char keyboard_key_states[KEY_MAX];
+
+enum { KEYPRESSED, KEYRELEASED };
+typedef struct {
+    unsigned char type, code, isrepeat;
+} keyevent;
+
+// Circular buffer for keyboard events from the interrupt handler.
+struct {
+    keyevent data[KEY_BUFFER_SIZE];
+    uint8_t readi, writei;
+} keyevent_buffer;
+
+_go32_dpmi_seginfo old_keyb_handler_seginfo, new_keyb_handler_seginfo;
+
+void _int_9h_prot()
+{
+    // If the buffer is full, drop the event
+    if (keyevent_buffer.readi == ((keyevent_buffer.writei + 1) % KEY_BUFFER_SIZE)) {
+        return;
+    }
+
+    // INT 9H - IRQ1 - Keyboard Data Ready
+    static uint8_t code;
+    // KB controller data output buffer
+    code = inportb(0x60);
+
+    if (code != 224) {
+        keyevent* e;
+        if (code & 0x80) {
+            // Key up event
+            code &= ~0x80;
+            keyboard_key_states[code] = 0;
+            e = &keyevent_buffer.data[keyevent_buffer.writei & KEY_BUFFER_MASK];
+            e->type = KEYRELEASED;
+            e->code = code;
+            e->isrepeat = 0;
+            keyevent_buffer.writei++;
+
+        } else {
+            // Key down event
+            int isrepeat = keyboard_key_states[code];
+            if (!isrepeat || keyboard_allow_key_repeat) {
+                keyboard_key_states[code] = 1;
+                e = &keyevent_buffer.data[keyevent_buffer.writei & KEY_BUFFER_MASK];
+                e->type = KEYPRESSED;
+                e->code = code;
+                e->isrepeat = isrepeat;
+                keyevent_buffer.writei++;
+            }
+        }
+    }
+
+    // PIC1 command register - end of interrupt
+    outportb(0x20, 0x20);
+}
+
+void _int_9h_prot_lock()
+{
+    // Lock the memory page that contains _int_9h_prot()
+    _go32_dpmi_lock_code(_int_9h_prot, (uint32_t)(_int_9h_prot_lock - _int_9h_prot));
+}
+
+void keyboard_init()
+{
+    // Disable all interrupts while installing the new timer
+    disable();
+
+    // Zero out the key event buffer
+    memset(&keyevent_buffer, 0, sizeof(keyevent_buffer));
+
+    // Lock code memory used by the new handler
+    _int_9h_prot_lock();
+
+    _go32_dpmi_lock_data((char*)&keyboard_key_states, KEY_MAX);
+    _go32_dpmi_lock_data((char*)&keyevent_buffer, sizeof(keyevent_buffer));
+
+    // Chain the new protected mode handler to 9h
+    _go32_dpmi_get_protected_mode_interrupt_vector(9, &old_keyb_handler_seginfo);
+    new_keyb_handler_seginfo.pm_offset = (int)_int_9h_prot;
+    _go32_dpmi_chain_protected_mode_interrupt_vector(9, &new_keyb_handler_seginfo);
+    enable();
+}
+
+void keyboard_set_key_repeat(bool allow)
+{
+    keyboard_allow_key_repeat = allow;
+}
+
+bool keyboard_is_down(const char* key)
+{
+    for (int i = 0; DOS_SCANCODES[i]; i++) {
+        if (!strcmp(DOS_SCANCODES[i], key)) {
+            return keyboard_key_states[i] == 1;
+        }
+    }
+    return false;
+}
+
+void keyboard_update()
+{
+    // Move keyevents from the circular buffer to the event pipeline
+    while (keyevent_buffer.readi != keyevent_buffer.writei) {
+        keyevent* ke = &keyevent_buffer.data[keyevent_buffer.readi++ & KEY_BUFFER_MASK];
+        pt_event* ev = create_event(ke->type == KEYPRESSED ? EVENT_KEYBOARD_PRESSED : EVENT_KEYBOARD_RELEASED);
+        ev->keyboard.key = DOS_SCANCODES[ke->code];
+        ev->keyboard.isrepeat = ke->isrepeat;
+        event_push(ev);
+    }
+}
+
+void keyboard_shutdown()
+{
+    disable();
+    // Restore protected mode 9h handler
+    _go32_dpmi_set_protected_mode_interrupt_vector(9, &old_keyb_handler_seginfo);
+    enable();
 }

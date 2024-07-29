@@ -41,13 +41,19 @@ void pcspeaker_tone(float freq);
 void pcspeaker_stop();
 
 void mouse_init();
-void mouse_shutdown();
 void mouse_update();
 int mouse_is_down(int button);
 int mouse_get_x();
 int mouse_get_y();
+void mouse_shutdown();
 
 enum { MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_MAX };
+
+void keyboard_init();
+void keyboard_set_key_repeat(bool allow);
+bool keyboard_is_down(const char* key);
+void keyboard_update();
+void keyboard_shutdown();
 
 void serial_test();
 

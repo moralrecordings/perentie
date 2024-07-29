@@ -5,7 +5,7 @@
 #include <unistd.h>
 
 #include "dos.h"
-#include "font.h"
+#include "event.h"
 #include "image.h"
 #include "log.h"
 #include "script.h"
@@ -14,9 +14,11 @@
 int main(int argc, char** argv)
 {
     log_init();
+    event_init();
     timer_init();
     video_init();
     mouse_init();
+    keyboard_init();
     script_init();
     bool running = true;
     while (running) {
@@ -59,7 +61,10 @@ int main(int argc, char** argv)
     printf("Render cycle took %d millis", after - before);*/
 
     video_shutdown();
+    mouse_shutdown();
+    keyboard_shutdown();
     timer_shutdown();
+    event_shutdown();
     log_shutdown();
     return 0;
 }
