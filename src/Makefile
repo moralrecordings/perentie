@@ -9,14 +9,16 @@ RANLIB = $(CROSS_PREFIX)ranlib
 PATH_LUA = lua
 PATH_SPNG = spng
 PATH_MINIZ = miniz
+PATH_LINENOISE = linenois
 LIB_LUA = $(PATH_LUA)/liblua.a
 LIB_SPNG = $(PATH_SPNG)/libspng.a
 LIB_MINIZ = $(PATH_MINIZ)/libminiz.a
+LIB_LINENOISE = $(PATH_LINENOISE)/libln.a
 
 CFLAGS = -O2 -g
-LDFLAGS = -lm -L./$(PATH_LUA) -llua -L./$(PATH_SPNG) -lspng -L./$(PATH_MINIZ) -lminiz
+LDFLAGS = -lm -L./$(PATH_LUA) -llua -L./$(PATH_SPNG) -lspng -L./$(PATH_MINIZ) -lminiz -L./$(PATH_LINENOISE) -lln
 
-OBJECTS = dos.o main.o image.o script.o log.o font.o text.o event.o stb/stb.o
+OBJECTS = dos.o main.o image.o script.o log.o font.o text.o event.o repl.o stb/stb.o
 
 all: perentie.exe
 
@@ -40,6 +42,13 @@ $(LIB_SPNG): $(PATH_SPNG)/spng.o
 	$(AR) rc $@ $?
 	$(RANLIB) $@ 
 
+$(PATH_LINENOISE)/%.o : $(PATH_LINENOISE)/%.c
+	$(CC) $(CFLAGS) -c $? -o $@
+
+linenoise: $(LIB_LINENOISE)
+$(LIB_LINENOISE): $(PATH_LINENOISE)/linenois.o
+	$(AR) rc $@ $?
+	$(RANLIB) $@
 
 stb: stb/stb.o
 stb/stb.o: stb/stb.c
@@ -48,10 +57,10 @@ stb/stb.o: stb/stb.c
 %.o : %.c
 	$(CC) $(CFLAGS) -g -c $? -o $@
 
-perentie.exe : $(OBJECTS) $(LIB_LUA) $(LIB_SPNG) $(LIB_MINIZ)
+perentie.exe : $(OBJECTS) $(LIB_LUA) $(LIB_SPNG) $(LIB_MINIZ) $(LIB_LINENOISE)
 	$(CC) $(CFLAGS) $(OBJECTS) $(LDFLAGS) -o perentie.exe
 
-distclean: clean-lua clean-miniz clean-spng clean
+distclean: clean-lua clean-stb clean-miniz clean-spng clean-linenoise clean
 
 clean-lua:
 	$(MAKE) -C $(PATH_LUA) -f makefile clean
@@ -64,6 +73,9 @@ clean-miniz:
 
 clean-spng:
 	rm spng/*.o spng/*.a
+
+clean-linenoise:
+	rm linenois/*.o linenois/*.a
 
 clean:
 	rm *.o

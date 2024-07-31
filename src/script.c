@@ -10,6 +10,7 @@
 #include "font.h"
 #include "image.h"
 #include "log.h"
+#include "repl.h"
 #include "text.h"
 #include "version.h"
 
@@ -274,6 +275,10 @@ void script_events()
     lua_call(main_thread, 0, 0);
 }
 
+void script_repl() {
+    repl_update(main_thread);
+}
+
 void script_render()
 {
     lua_getglobal(main_thread, "_PTRender");
@@ -309,4 +314,5 @@ void script_init()
         lua_pop(main_thread, 1);
         exit(1);
     }
+    repl_init();
 }

@@ -1,4 +1,4 @@
-exclude: (?x)^src/(lua/.+|miniz/.+|spng/.+|stb/.+)$
+exclude: (?x)^src/(lua/.+|miniz/.+|spng/.+|stb/.+|linenois/.+)$
 repos:
   - repo: https://github.com/pocc/pre-commit-hooks
     rev: v1.3.5
@@ -7,7 +7,7 @@ repos:
         args: ["--style=file:.clang-format", "-i"]
       # not really working because DOS code
       #- id: clang-tidy
-      #   exclude: (?x)^src/(lua/.+|miniz/.+|spng/.+|stb/.+)$
+      #   exclude: (?x)^src/(lua/.+|miniz/.+|spng/.+|stb/.+|linenois/.+)$
   - repo: https://github.com/JohnnyMorganz/StyLua
     rev: v0.20.0
     hooks:
