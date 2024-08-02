@@ -486,7 +486,9 @@ void pcspeaker_stop()
 
 #define COM4_PORT 0x2e8
 #define SERIAL_RBR_THR 0
+#define SERIAL_IER 1
 #define SERIAL_IIR_FCR 2
+#define SERIAL_LCR 3
 #define SERIAL_MCR 4
 #define SERIAL_LSR 5
 #define SERIAL_MSR 6
@@ -498,6 +500,19 @@ void serial_init()
     // - Clear Receive FIFO
     // - Enable FIFO
     outportb(COM4_PORT + SERIAL_IIR_FCR, 0x07);
+
+    // COM4 - Line Control Register
+    // Enable DLAB bit
+    outportb(COM4_PORT + SERIAL_LCR, 0x80);
+
+    // COM4 - Divisor Latches
+    // Crank this baby to 115200bps
+    outportb(COM4_PORT + SERIAL_RBR_THR, 0x01);
+    outportb(COM4_PORT + SERIAL_IER, 0x00);
+
+    // COM4 - Line Control Register
+    // Disable DLAB bit
+    outportb(COM4_PORT + SERIAL_LCR, 0x00);
 }
 
 bool serial_rx_ready()
@@ -518,12 +533,12 @@ bool serial_tx_ready()
 {
     // COM4 - Line Status Register
     // TX Holding Register empty bit
-    if ((inportb(COM4_PORT + SERIAL_LSR) & 0x20) != 0)
+    if ((inportb(COM4_PORT + SERIAL_LSR) & 0x20) == 0)
         return false;
 
     // COM4 - Modem Status Register
     // Data set ready + Clear to send bits
-    if ((inportb(COM4_PORT + SERIAL_MSR) & 0x30) != 0)
+    if ((inportb(COM4_PORT + SERIAL_MSR) & 0x30) != 0x30)
         return false;
 
     return true;
@@ -560,6 +575,27 @@ void serial_putc(byte data)
     outportb(COM4_PORT + SERIAL_RBR_THR, data);
 }
 
+size_t serial_write(const void* buffer, size_t size)
+{
+    // COM4 - Modem Control Register
+    // Data terminal ready + Request to send bits
+    outportb(COM4_PORT + SERIAL_MCR, 0x03);
+
+    size_t result = 0;
+    while (result < size) {
+        __dpmi_yield();
+        if (serial_tx_ready()) {
+            serial_putc(((byte*)buffer)[result]);
+            result++;
+        }
+    }
+
+    // COM4 - Modem Control Register
+    // Clear request to send bit
+    outportb(COM4_PORT + SERIAL_MCR, 0x01);
+    return result;
+}
+
 int serial_printf(const char* format, ...)
 {
     va_list args;
@@ -568,21 +604,7 @@ int serial_printf(const char* format, ...)
     char buffer[1024];
     int result = vsnprintf(buffer, sizeof(buffer), format, args);
 
-    // COM4 - Modem Control Register
-    // Data terminal ready + Request to send bits
-    outportb(COM4_PORT + SERIAL_MCR, 0x03);
-
-    for (int i = 0; i < result;) {
-        __dpmi_yield();
-        if (serial_tx_ready()) {
-            serial_putc(buffer[i]);
-            i++;
-        }
-    }
-
-    // COM4 - Modem Control Register
-    // Clear request to send bit
-    outportb(COM4_PORT + SERIAL_MCR, 0x01);
+    result = serial_write(buffer, result);
     va_end(args);
     return result;
 }

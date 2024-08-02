@@ -61,6 +61,7 @@ bool serial_tx_ready();
 byte serial_getc();
 int serial_gets(byte* buffer, size_t length);
 void serial_putc(byte data);
+size_t serial_write(const void* buffer, size_t size);
 int serial_printf(const char* format, ...);
 void serial_test();
 void serial_shutdown();

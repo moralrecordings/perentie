@@ -41,8 +41,8 @@ void repl_init()
 static void l_message(const char* pname, const char* msg)
 {
     if (pname)
-        lua_writestringerror("%s: ", pname);
-    lua_writestringerror("%s\n", msg);
+        serial_printf("%s: ", pname);
+    serial_printf("%s\n", msg);
 }
 
 /*
@@ -61,6 +61,22 @@ static int report(lua_State* L, int status)
     return status;
 }
 
+static int lua_serial_print(lua_State* L)
+{
+    int n = lua_gettop(L); /* number of arguments */
+    int i;
+    for (i = 1; i <= n; i++) { /* for each argument */
+        size_t l;
+        const char* s = luaL_tolstring(L, i, &l); /* convert it to string */
+        if (i > 1) /* not the first element? */
+            serial_write("\t", 1); /* add a tab before it */
+        serial_write(s, l); /* print it */
+        lua_pop(L, 1); /* pop result */
+    }
+    serial_write("\n", 1);
+    return 0;
+}
+
 /*
 ** Prints (calling the Lua 'print' function) any values on the stack
 */
@@ -69,10 +85,10 @@ static void l_print(lua_State* L)
     int n = lua_gettop(L);
     if (n > 0) { /* any result to be printed? */
         luaL_checkstack(L, LUA_MINSTACK, "too many results to print");
-        lua_getglobal(L, "print");
+        lua_pushcfunction(L, lua_serial_print);
         lua_insert(L, 1);
         if (lua_pcall(L, n, 0, 0) != LUA_OK)
-            l_message(PROGNAME, lua_pushfstring(L, "error calling 'print' (%s)", lua_tostring(L, -1)));
+            l_message(PROGNAME, lua_pushfstring(L, "error printing the output (%s)", lua_tostring(L, -1)));
     }
 }
 
@@ -191,33 +207,35 @@ void repl_update(lua_State* L)
 
     // Poll the file descriptor to see if there are any incoming bytes.
 
+    // Check the serial port to see if there's any input.
+    // We're using telnet, so this should be buffered client-side
+    // until they hit Enter.
     if (serial_rx_ready()) {
-        log_print("reading serial input\n");
         line_end = serial_gets(line_buffer, sizeof(line_buffer));
-        log_print("holding serial input\n");
     }
 
     if (line_end > 0) {
         line_buffer[line_end] = '\0';
-        log_print("we got something!! %d %s", line_end, line_buffer);
 
         for (int i = 0; i < line_end; i++) {
             log_print("%02X ", line_buffer[i]);
         }
         log_print("\n");
-        // We've opened up telnet and typed a single character;
+        // We've opened up telnet and typed something for the first time;
         // show a welcome message and the prompt.
         if (!repl_activated) {
-            log_print("activating the repl...\n");
             repl_activated = true;
-            // log_print("hid\n");
+            // Intercept the "print" function to dump to the console
+            lua_pushcfunction(L, lua_serial_print);
+            lua_setglobal(L, "print");
+            // Show prompt
             serial_printf("┈┅━┥ Perentie v%s - Console ┝━┅┈\n", VERSION);
             serial_printf("%s\n\n", LUA_COPYRIGHT);
-            // log_print("shown\n");
-            log_print("repl activated...\n");
+            serial_printf("%s", repl_in_multiline ? " ... > " : ">> ");
+            log_print("repl_update: console activated!\n");
+            line_end = 0;
+            return;
         }
-
-        serial_printf("%s", repl_in_multiline ? " ... >" : "perentie >");
 
         log_print("line_buffer: %s\n", line_buffer);
 
@@ -278,7 +296,11 @@ void repl_update(lua_State* L)
                 report(L, status);
             }
         }
+
+        serial_printf("%s", repl_in_multiline ? " ... > " : ">> ");
     }
+    // reset the buffer
+    line_end = 0;
 }
 
 void repl_shutdown()
