@@ -1,3 +1,4 @@
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <go32.h>
+#include <signal.h>
 #include <sys/nearptr.h>
 #include <termios.h>
 #include <unistd.h>
@@ -480,54 +482,113 @@ void pcspeaker_stop()
 }
 
 // Serial port
+// Info: https://www.lammertbies.nl/comm/info/serial-uart
 
-void serial_test()
+#define COM4_PORT 0x2e8
+#define SERIAL_RBR_THR 0
+#define SERIAL_IIR_FCR 2
+#define SERIAL_MCR 4
+#define SERIAL_LSR 5
+#define SERIAL_MSR 6
+
+void serial_init()
 {
-    // Used for debug console.
-    // Rely on DJGPP's POSIX compatibility layer for doing all the work.
-    int port = open("COM4", O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (port < 0) {
-        log_print("Couldn't open serial (%d): %s", errno, strerror(errno));
-        return;
-    }
-    // adjust the termios settings for our COM port
-    struct termios tty;
-    if (!tcgetattr(port, &tty)) {
-        log_print("Couldn't fetch termios settings for port (%d): %s", errno, strerror(errno));
-        close(port);
-        return;
-    }
-    // Disable parity bit
-    tty.c_cflag &= ~PARENB;
-    // 1 stop bit
-    tty.c_cflag &= ~CSTOPB;
-    // 8 bits per byte
-    tty.c_cflag &= ~CSIZE;
-    tty.c_cflag |= CS8;
-    // 38400 baud, fastest speed known to science
-    tty.c_cflag |= B38400;
-    // Begone, worthless modem control lines
-    tty.c_cflag |= CLOCAL;
+    // COM4 - FIFO Control Register
+    // - Clear Transmit FIFO
+    // - Clear Receive FIFO
+    // - Enable FIFO
+    outportb(COM4_PORT + SERIAL_IIR_FCR, 0x07);
+}
 
-    if (!tcsetattr(port, TCSANOW, &tty)) {
-        log_print("Couldn't set termios settings for port (%d): %s", errno, strerror(errno));
-        close(port);
-        return;
+bool serial_rx_ready()
+{
+    // COM4 - Modem Status Register
+    // Data set ready bit
+    if ((inportb(COM4_PORT + SERIAL_MSR) & 0x20) == 0)
+        return false;
+
+    // COM4 - Line Status Register
+    // Data available bit
+    if ((inportb(COM4_PORT + SERIAL_LSR) & 0x01) == 0)
+        return false;
+    return true;
+}
+
+bool serial_tx_ready()
+{
+    // COM4 - Line Status Register
+    // TX Holding Register empty bit
+    if ((inportb(COM4_PORT + SERIAL_LSR) & 0x20) != 0)
+        return false;
+
+    // COM4 - Modem Status Register
+    // Data set ready + Clear to send bits
+    if ((inportb(COM4_PORT + SERIAL_MSR) & 0x30) != 0)
+        return false;
+
+    return true;
+}
+
+int serial_gets(byte* buffer, size_t length)
+{
+    size_t result = 0;
+    // COM4 - Modem Control Register
+    // Data terminal ready + Request to send bits
+    outportb(COM4_PORT + SERIAL_MCR, 0x03);
+    uint32_t millis = timer_millis();
+    while ((result < length) && (timer_millis() < millis + 10)) {
+        if (!serial_rx_ready()) {
+            __dpmi_yield();
+            continue;
+        }
+        buffer[result] = serial_getc();
+        result++;
+        millis = timer_millis();
+    }
+    return result;
+}
+
+byte serial_getc()
+{
+    // COM4 - Receiver Buffer Register
+    return inportb(COM4_PORT + SERIAL_RBR_THR);
+}
+
+void serial_putc(byte data)
+{
+    // COM4 - Transmitter Holding Buffer
+    outportb(COM4_PORT + SERIAL_RBR_THR, data);
+}
+
+int serial_printf(const char* format, ...)
+{
+    va_list args;
+    va_start(args, format);
+
+    char buffer[1024];
+    int result = vsnprintf(buffer, sizeof(buffer), format, args);
+
+    // COM4 - Modem Control Register
+    // Data terminal ready + Request to send bits
+    outportb(COM4_PORT + SERIAL_MCR, 0x03);
+
+    for (int i = 0; i < result;) {
+        __dpmi_yield();
+        if (serial_tx_ready()) {
+            serial_putc(buffer[i]);
+            i++;
+        }
     }
 
-    FILE* ttyfp = fdopen(port, "r+");
-    if (!ttyfp) {
-        log_print("Couldn't get file pointer for port (%d): %s", errno, strerror(errno));
-        close(port);
-        return;
-    }
+    // COM4 - Modem Control Register
+    // Clear request to send bit
+    outportb(COM4_PORT + SERIAL_MCR, 0x01);
+    va_end(args);
+    return result;
+}
 
-    for (int i = 0; i < 20; i++) {
-        log_print("Debug line %d\n", i);
-        fflush(ttyfp);
-        sleep(1);
-    }
-    fclose(ttyfp);
+void serial_shutdown()
+{
 }
 
 // Mouse handler

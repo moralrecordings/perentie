@@ -12,6 +12,8 @@ uint32_t iter_utf8(const byte** str)
         return 0;
     const byte* ptr = *str;
 
+    // UTF-8 1 byte codepoint - U+0000 to U+007F
+    // 0xxxxxxx
     if ((ptr[0] & 0x80) == 0x00) {
         result = ptr[0];
         (*str)++;
@@ -22,8 +24,14 @@ uint32_t iter_utf8(const byte** str)
         (*str) += 2;
         return result;
     }
+    // UTF-8 2 byte codepoint - U+0080 to U+07FF
+    // 110xxxxx 10xxxxxx
     if (((ptr[0] & 0xe0) == 0xc0) && ((ptr[1] & 0xc0) == 0x80)) {
         result = ((ptr[0] & 0x1f) << 6) + (ptr[1] & 0x3f);
+        if (!(result & 0x780)) {
+            log_print("iter_utf8: invalid 2-byte codepoint value %d\n", result);
+            result = 0;
+        }
         (*str) += 2;
         return result;
     }
@@ -32,8 +40,14 @@ uint32_t iter_utf8(const byte** str)
         (*str) += 3;
         return result;
     }
+    // UTF-8 3 byte codepoint - U+0800 to U+FFFF
+    // 1110xxxx 10xxxxxx 10xxxxxx
     if (((ptr[0] & 0xf0) == 0xe0) && ((ptr[1] & 0xc0) == 0x80) && ((ptr[2] & 0xc0) == 0x80)) {
         result = ((ptr[0] & 0x0f) << 12) + ((ptr[1] & 0x3f) << 6) + (ptr[2] & 0x3f);
+        if (!(result & 0xf800)) {
+            log_print("iter_utf8: invalid 3-byte codepoint value %d\n", result);
+            result = 0;
+        }
         (*str) += 3;
         return result;
     }
@@ -42,9 +56,15 @@ uint32_t iter_utf8(const byte** str)
         (*str) += 4;
         return result;
     }
+    // UTF-8 4 byte codepoint - U+010000 to U+10FFFF
+    // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
     if (((ptr[0] & 0xf8) == 0xf0) && ((ptr[1] & 0xc0) == 0x80) && ((ptr[2] & 0xc0) == 0x80)
         && ((ptr[3] & 0xc0) == 0x80)) {
         result = ((ptr[0] & 0x07) << 18) + ((ptr[1] & 0x3f) << 12) + ((ptr[2] & 0x3f) << 6) + (ptr[3] & 0x3f);
+        if (!(result & 0x1f0000)) {
+            log_print("iter_utf8: invalid 4-byte codepoint value %d\n", result);
+            result = 0;
+        }
         (*str) += 4;
         return result;
     }

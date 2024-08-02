@@ -55,6 +55,14 @@ bool keyboard_is_down(const char* key);
 void keyboard_update();
 void keyboard_shutdown();
 
+void serial_init();
+bool serial_rx_ready();
+bool serial_tx_ready();
+byte serial_getc();
+int serial_gets(byte* buffer, size_t length);
+void serial_putc(byte data);
+int serial_printf(const char* format, ...);
 void serial_test();
+void serial_shutdown();
 
 #endif
