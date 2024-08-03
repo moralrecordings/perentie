@@ -18,7 +18,7 @@ LIB_LINENOISE = $(PATH_LINENOISE)/libln.a
 CFLAGS = -O2 -g
 LDFLAGS = -lm -L./$(PATH_LUA) -llua -L./$(PATH_SPNG) -lspng -L./$(PATH_MINIZ) -lminiz -L./$(PATH_LINENOISE) -lln
 
-OBJECTS = dos.o main.o image.o script.o log.o font.o text.o event.o repl.o stb/stb.o
+OBJECTS = dos.o main.o image.o script.o log.o font.o text.o event.o repl.o musicrad.o stb/stb.o
 
 all: perentie.exe
 
