@@ -176,6 +176,56 @@ static int docall(lua_State* L, int narg, int nres)
     return status;
 }
 
+void repl_process_line(lua_State* L, char* line, size_t size)
+{
+    int status = -1;
+
+    // User has hit enter.
+    if (!repl_in_multiline) {
+        // We're in single line edit mode.
+        // Push line to Lua stack
+        repl_pushline(L, line_buffer);
+
+        status = repl_addreturn(L);
+        lua_remove(L, 1);
+        lua_assert(lua_gettop(L) == 1);
+        if (status != LUA_OK) {
+            repl_in_multiline = true;
+            // Stash the line in a global
+            lua_setglobal(L, "_repl_buffer");
+        }
+    } else {
+        // We're in multi-line edit mode.
+        repl_pushline(L, line_buffer);
+        // Get the multi-line input from the buffer
+        lua_getglobal(L, "_repl_buffer");
+        size_t len;
+        const char* chunk = lua_tolstring(L, 1, &len);
+        // Try compiling it to a chunk
+        status = luaL_loadbuffer(L, chunk, len, "=repl");
+        if (!repl_incomplete(L, status)) {
+            lua_setglobal(L, "_repl_buffer");
+            // add to history
+        } else {
+            // Statement complete; join it up
+            lua_pushliteral(L, "\n"); /* add newline... */
+            lua_insert(L, -2); /* ...between the two lines */
+            lua_concat(L, 3); /* join them */
+        }
+    }
+
+    // If the status is okay, we must have a single stack
+    // item containing the block of code to run.
+    if (status == LUA_OK) {
+        status = docall(L, 0, LUA_MULTRET);
+        if (status == LUA_OK) {
+            l_print(L);
+        } else {
+            report(L, status);
+        }
+    }
+}
+
 void repl_update(lua_State* L)
 {
     char* line;
@@ -239,63 +289,20 @@ void repl_update(lua_State* L)
 
         log_print("line_buffer: %s\n", line_buffer);
 
-        /*// There's some data in the file descriptor, let linenoise process it
-        line = linenoiseEditFeed(&ln_state);
-        if (line == linenoiseEditMore) {
-            // user hasn't hit enter yet, we need more!
-            log_print("not enough...\n");
-            return;
-        } else if (line == NULL) {
-            // user has entered Ctrl-C or Ctrl-D
-            return;
-        }*/
-
-        int status = -1;
-
-        // User has hit enter.
-        if (!repl_in_multiline) {
-            // We're in single line edit mode.
-            // Push line to Lua stack
-            repl_pushline(L, line_buffer);
-
-            status = repl_addreturn(L);
-            lua_remove(L, 1);
-            lua_assert(lua_gettop(L) == 1);
-            if (status != LUA_OK) {
-                repl_in_multiline = true;
-                // Stash the line in a global
-                lua_setglobal(L, "_repl_buffer");
+        int idx_start = 0;
+        int idx = 0;
+        while (idx < line_end) {
+            if (line_buffer[idx] == '\0')
+                break;
+            if (line_buffer[idx] == '\n') {
+                repl_process_line(L, line_buffer + idx_start, idx - idx_start + 1);
+                idx_start = idx + 1;
             }
-        } else {
-            // We're in multi-line edit mode.
-            repl_pushline(L, line_buffer);
-            // Get the multi-line input from the buffer
-            lua_getglobal(L, "_repl_buffer");
-            size_t len;
-            const char* chunk = lua_tolstring(L, 1, &len);
-            // Try compiling it to a chunk
-            status = luaL_loadbuffer(L, chunk, len, "=repl");
-            if (!repl_incomplete(L, status)) {
-                lua_setglobal(L, "_repl_buffer");
-                // add to history
-            } else {
-                // Statement complete; join it up
-                lua_pushliteral(L, "\n"); /* add newline... */
-                lua_insert(L, -2); /* ...between the two lines */
-                lua_concat(L, 3); /* join them */
-            }
+
+            idx++;
         }
-
-        // If the status is okay, we must have a single stack
-        // item containing the block of code to run.
-        if (status == LUA_OK) {
-            status = docall(L, 0, LUA_MULTRET);
-            if (status == LUA_OK) {
-                l_print(L);
-            } else {
-                report(L, status);
-            }
-        }
+        if (idx - idx_start)
+            repl_process_line(L, line_buffer + idx_start, idx - idx_start + 1);
 
         serial_printf("%s", repl_in_multiline ? " ... > " : ">> ");
     }
