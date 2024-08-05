@@ -16,6 +16,7 @@ int main(int argc, char** argv)
     log_init();
     event_init();
     timer_init();
+    serial_init();
     video_init();
     mouse_init();
     keyboard_init();
@@ -38,18 +39,13 @@ int main(int argc, char** argv)
         mouse_update();
         script_events();
         script_render();
+        script_repl();
     }
-
-    //
-
-    // serial_test();
-    /*    while (script_exec()) {
-            timer_sleep(10);
-        }*/
 
     video_shutdown();
     mouse_shutdown();
     keyboard_shutdown();
+    serial_shutdown();
     timer_shutdown();
     event_shutdown();
     log_shutdown();

@@ -93,34 +93,25 @@ static void l_print(lua_State* L)
 }
 
 // Push the current line onto the Lua stack.
-static void repl_pushline(lua_State* L, char* line)
+static void repl_pushline(lua_State* L, char* line, size_t l)
 {
-    size_t l = strlen(line);
     if (l > 0 && line[l - 1] == '\n') // line ends with newline?
         line[--l] = '\0'; // remove it
     lua_pushlstring(L, line, l);
 }
 
 // Try to compile line on the stack as 'return <line>;'; on return, stack
-// has either compiled chunk or original line (if compilation failed).
+// has original line and the compiled chunk/error message.
 static int repl_addreturn(lua_State* L)
 {
     const char* line = lua_tostring(L, -1); /* original line */
     const char* retline = lua_pushfstring(L, "return %s;", line);
     int status = luaL_loadbuffer(L, retline, strlen(retline), "=stdin");
-    if (status == LUA_OK) {
-        lua_remove(L, -2); /* remove modified line */
-        if (line[0] != '\0') { /* non empty? */
-            // TODO: add to history
-        }
-    } else
-        lua_pop(L, 2); /* pop result from 'luaL_loadbuffer' and modified line */
+    lua_remove(L, -2); // remove modified line
+
     return status;
 }
 
-/* mark in error messages for incomplete statements */
-#define EOFMARK "<eof>"
-#define marklen (sizeof(EOFMARK) / sizeof(char) - 1)
 
 /*
 ** Check whether 'status' signals a syntax error and the error
@@ -132,8 +123,8 @@ static int repl_incomplete(lua_State* L, int status)
     if (status == LUA_ERRSYNTAX) {
         size_t lmsg;
         const char* msg = lua_tolstring(L, -1, &lmsg);
-        if (lmsg >= marklen && strcmp(msg + lmsg - marklen, EOFMARK) == 0) {
-            lua_pop(L, 1);
+        log_print("finding the mistake: %s\n", msg);
+        if (strstr(msg, "<eof> expected") || strstr(msg, "near <eof>")) {
             return 1;
         }
     }
@@ -184,45 +175,76 @@ void repl_process_line(lua_State* L, char* line, size_t size)
     if (!repl_in_multiline) {
         // We're in single line edit mode.
         // Push line to Lua stack
-        repl_pushline(L, line_buffer);
+        repl_pushline(L, line, size);
 
         status = repl_addreturn(L);
-        lua_remove(L, 1);
-        lua_assert(lua_gettop(L) == 1);
-        if (status != LUA_OK) {
+        if (lua_gettop(L) != 2) {
+            log_print("repl_process_line: expected 2 elements, got %d", lua_gettop(L));
+            exit(1);
+        }
+        if (repl_incomplete(L, status)) {
+            //log_print("incomplete, stashing\n");
             repl_in_multiline = true;
+            // Ditch the error message
+            lua_remove(L, -1);
             // Stash the line in a global
             lua_setglobal(L, "_repl_buffer");
+            return;
         }
+        // Remove the original line
+        lua_remove(L, -2);
     } else {
         // We're in multi-line edit mode.
-        repl_pushline(L, line_buffer);
         // Get the multi-line input from the buffer
         lua_getglobal(L, "_repl_buffer");
+        // Add a newline
+        lua_pushliteral(L, "\n");
+        // Get the newest line
+        repl_pushline(L, line, size);
+        // Join them up
+        lua_concat(L, 3);
+        if (lua_gettop(L) != 1) {
+            log_print("repl_process_line: expected 1 element, got %d", lua_gettop(L));
+            exit(1);
+        }
+
         size_t len;
         const char* chunk = lua_tolstring(L, 1, &len);
+        //log_print("trying chunk: %s\n", chunk);
         // Try compiling it to a chunk
         status = luaL_loadbuffer(L, chunk, len, "=repl");
-        if (!repl_incomplete(L, status)) {
+        // Message incomplete, still needs more 
+        if (repl_incomplete(L, status)) {
+            //log_print("incomplete, stashing\n");
+            // Ditch the error message
+            lua_remove(L, -1);
+            // Stash the line in a global
             lua_setglobal(L, "_repl_buffer");
             // add to history
+            return;
         } else {
-            // Statement complete; join it up
-            lua_pushliteral(L, "\n"); /* add newline... */
-            lua_insert(L, -2); /* ...between the two lines */
-            lua_concat(L, 3); /* join them */
+            // Either a success or an error, leave multiline
+            repl_in_multiline = false;
+            // Remove the original line
+            lua_remove(L, -2);
         }
     }
-
+    
+    //log_print("check result: %d\n", status);
     // If the status is okay, we must have a single stack
     // item containing the block of code to run.
     if (status == LUA_OK) {
         status = docall(L, 0, LUA_MULTRET);
-        if (status == LUA_OK) {
-            l_print(L);
-        } else {
-            report(L, status);
-        }
+        //log_print("do result: %d\n", status);
+    }
+    if (status == LUA_OK) {
+        l_print(L); // print and remove anything that's on the stack
+    } else {
+        report(L, status); // print and remove the error message
+    }
+    if (lua_gettop(L) != 0) {
+        log_print("repl_process_line: expected 0 elements, got %d", lua_gettop(L));
+        exit(1);
     }
 }
 
@@ -267,10 +289,10 @@ void repl_update(lua_State* L)
     if (line_end > 0) {
         line_buffer[line_end] = '\0';
 
-        for (int i = 0; i < line_end; i++) {
-            log_print("%02X ", line_buffer[i]);
-        }
-        log_print("\n");
+        //for (int i = 0; i < line_end; i++) {
+        //    log_print("%02X ", line_buffer[i]);
+        //}
+        //log_print("\n");
         // We've opened up telnet and typed something for the first time;
         // show a welcome message and the prompt.
         if (!repl_activated) {
