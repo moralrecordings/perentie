@@ -226,7 +226,7 @@ pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b)
 {
     if (!text)
         return NULL;
-    pt_image* image = create_image(NULL, 0, 0);
+    pt_image* image = create_image(NULL, 0, 0, 0);
     image->width = text->width;
     image->height = text->height;
     image->pitch = get_pitch(text->width);

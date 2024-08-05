@@ -25,7 +25,7 @@ bool video_is_vblank();
 void video_flip();
 void video_load_palette_colour(int idx);
 uint8_t video_map_colour(uint8_t r, uint8_t g, uint8_t b);
-pt_image_vga* video_convert_image(pt_image* image, int colourkey);
+pt_image_vga* video_convert_image(pt_image* image);
 void video_destroy_hw_image(void* hw_image);
 void video_shutdown();
 

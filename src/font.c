@@ -64,7 +64,7 @@ void font_load_pages_block(FILE* fp, size_t size, pt_font* font)
             font->pages = realloc(font->pages, sizeof(pt_image*) * (font->page_count + 1));
             char* path = (char*)calloc(strlen(buffer), sizeof(char));
             memcpy(path, buffer, strlen(buffer));
-            font->pages[font->page_count] = create_image(path, 0, 0);
+            font->pages[font->page_count] = create_image(path, 0, 0, 0);
             font->page_count++;
             memset(buffer, 0, 256);
             ptr = buffer;

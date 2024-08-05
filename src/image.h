@@ -16,6 +16,7 @@ struct pt_image {
     int16_t origin_x;
     int16_t origin_y;
     uint16_t pitch;
+    int16_t colourkey;
 
     void* hw_image;
 };
@@ -25,7 +26,7 @@ inline uint16_t get_pitch(uint32_t width)
     return (width % 4) == 0 ? width : width + 4 - (width % 4);
 }
 
-pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y);
+pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey);
 bool image_load(pt_image* image);
 void destroy_image(pt_image* image);
 

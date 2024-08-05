@@ -67,13 +67,17 @@ static int lua_pt_image(lua_State* L)
     const char* path = lua_strcpy(L, 1, NULL);
     int16_t origin_x = 0;
     int16_t origin_y = 0;
-    if (lua_gettop(L) == 3) {
+    int16_t colourkey = -1;
+    if (lua_gettop(L) >= 3) {
         origin_x = luaL_checkinteger(L, 2);
         origin_y = luaL_checkinteger(L, 3);
     }
+    if (lua_gettop(L) == 4) {
+        colourkey = luaL_checkinteger(L, 4);
+    }
 
-    pt_image* image = create_image(path, origin_x, origin_y);
-    log_print("lua_pt_create_image: %p %d %d\n", image, image->width, image->height);
+    pt_image* image = create_image(path, origin_x, origin_y, colourkey);
+    log_print("lua_pt_create_image: %p %d %d %d\n", image, image->width, image->height, image->colourkey);
     // create a table
     pt_image** target = lua_newuserdatauv(L, sizeof(pt_image*), 1);
     *target = image;

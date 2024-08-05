@@ -10,12 +10,13 @@
 #include "image.h"
 #include "log.h"
 
-pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y)
+pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey)
 {
     pt_image* image = (pt_image*)calloc(1, sizeof(pt_image));
     image->path = path;
     image->origin_x = origin_x;
     image->origin_y = origin_y;
+    image->colourkey = colourkey;
     image_load(image);
     return image;
 }

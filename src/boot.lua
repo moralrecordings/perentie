@@ -21,14 +21,17 @@ end
 -- @tparam int origin_x Origin x coordinate, relative to top-left corner. Default is 0.
 -- @tparam int origin_y Origin y coordinate, relative to top-left corner. Default is 0.
 -- @tresult table The new image.
-PTImage = function(path, origin_x, origin_y)
+PTImage = function(path, origin_x, origin_y, colourkey)
     if not origin_x then
         origin_x = 0
     end
     if not origin_y then
         origin_y = 0
     end
-    return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y) }
+    if not colourkey then
+        colourkey = -1
+    end
+    return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey) }
 end
 
 --- Create a new bitmap font.
@@ -342,6 +345,15 @@ _PTEvents = function()
     end
 end
 
+
+
+local _PTAutoClearScreen = true 
+--- Set whether to clear the screen at the start of every frame
+-- @tparam bool val true if the screen is to be cleared, false otherwise.
+PTSetAutoClearScreen = function (val)
+    _PTAutoClearScreen = val
+end
+
 _PTRender = function()
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
         return
@@ -349,7 +361,9 @@ _PTRender = function()
     table.sort(_PTCurrentRoom.render_list, function(a, b)
         return a.z < b.z
     end)
-    --_PTClearScreen();
+    if _PTAutoClearScreen then
+        _PTClearScreen();
+    end
     for i, obj in pairs(_PTCurrentRoom.render_list) do
         frame = PTGetAnimationFrame(obj)
         if frame then
