@@ -331,13 +331,17 @@ void script_init()
         lua_register(main_thread, funcs_ptr->name, funcs_ptr->func);
         funcs_ptr++;
     }
-    if (luaL_dofile(main_thread, "boot.lua") != LUA_OK) {
-        log_print("script_init(): boot.lua: %s\n", lua_tostring(main_thread, -1));
+    // load perentie Lua code
+    int result;
+#include "boot.h"
+    if (result != LUA_OK) {
+        log_print("script_init(): boot: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);
         log_print("%s", lua_tostring(main_thread, 1));
         lua_pop(main_thread, 1);
         exit(1);
     }
+
     if (luaL_dofile(main_thread, "test.lua") != LUA_OK) {
         log_print("script_init(): test.lua: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);

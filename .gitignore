@@ -1,3 +1,5 @@
+src/boot.h
+src/boot.lo
 **.o
 **.a
 **.exe

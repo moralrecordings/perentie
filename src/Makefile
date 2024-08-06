@@ -5,6 +5,8 @@ AR = $(CROSS_PREFIX)ar
 LD = $(CROSS_PREFIX)ld
 STRIP = $(CROSS_PREFIX)strip
 RANLIB = $(CROSS_PREFIX)ranlib
+LUAC = luac
+LUA = lua
 
 PATH_LUA = lua
 PATH_SPNG = spng
@@ -53,6 +55,15 @@ $(LIB_LINENOISE): $(PATH_LINENOISE)/linenois.o
 stb: stb/stb.o
 stb/stb.o: stb/stb.c
 	$(CC) $(CFLAGS) -c stb/stb.c -o stb/stb.o  
+
+boot.lo: boot.lua
+	$(LUAC) -o boot.lo boot.lua
+
+boot.h: boot.lo
+	$(LUA) bin2c.lua boot.lo > boot.h
+
+script.o: boot.h
+	$(CC) $(CFLAGS) -g -c script.c -o script.o
 
 %.o : %.c
 	$(CC) $(CFLAGS) -g -c $? -o $@
