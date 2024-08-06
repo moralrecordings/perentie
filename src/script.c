@@ -15,6 +15,18 @@
 #include "version.h"
 
 lua_State* main_thread = NULL;
+static bool has_quit = false;
+static int quit_status = 0;
+
+bool script_has_quit()
+{
+    return has_quit;
+}
+
+int script_quit_status()
+{
+    return quit_status;
+}
 
 inline const char* lua_strcpy(lua_State* L, int index, size_t* size)
 {
@@ -186,6 +198,10 @@ static int lua_pt_pump_event(lua_State* L)
         lua_setfield(L, -2, "type");
         lua_pushinteger(L, ev->quit.status);
         lua_setfield(L, -2, "status");
+        // if something's raised the quit event,
+        // quit the engine after the current loop
+        has_quit = true;
+        quit_status = ev->quit.status;
         break;
     case EVENT_KEY_DOWN:
         lua_pushstring(L, "keyDown");
@@ -194,6 +210,8 @@ static int lua_pt_pump_event(lua_State* L)
         lua_setfield(L, -2, "key");
         lua_pushboolean(L, ev->keyboard.isrepeat);
         lua_setfield(L, -2, "isRepeat");
+        lua_pushinteger(L, ev->keyboard.flags);
+        lua_setfield(L, -2, "flags");
         break;
     case EVENT_KEY_UP:
         lua_pushstring(L, "keyUp");
@@ -246,6 +264,13 @@ static int lua_pt_get_mouse_pos(lua_State* L)
     return 2;
 };
 
+static int lua_pt_quit(lua_State* L)
+{
+    pt_event* ev = event_push(EVENT_QUIT);
+    ev->quit.status = luaL_checkinteger(L, 1);
+    return 0;
+};
+
 static const struct luaL_Reg lua_funcs[] = {
     { "_PTVersion", lua_pt_version },
     { "_PTGetMillis", lua_pt_get_millis },
@@ -259,6 +284,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTLog", lua_pt_log },
     { "_PTPumpEvent", lua_pt_pump_event },
     { "_PTGetMousePos", lua_pt_get_mouse_pos },
+    { "_PTQuit", lua_pt_quit },
     { NULL, NULL },
 };
 
@@ -279,7 +305,8 @@ void script_events()
     lua_call(main_thread, 0, 0);
 }
 
-void script_repl() {
+void script_repl()
+{
     repl_update(main_thread);
 }
 

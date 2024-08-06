@@ -464,6 +464,9 @@ void timer_shutdown()
 {
     if (_timer.installed) {
         disable();
+        // Silence the PC speaker
+        pcspeaker_stop();
+
         // PIT control register -
         outportb(0x43, 0x36);
         // PIT0 data port - zero it out
@@ -783,6 +786,7 @@ static const char *DOS_SCANCODES[] = {
 
 static bool keyboard_allow_key_repeat = false;
 static char keyboard_key_states[KEY_MAX];
+static uint8_t keyboard_flags = 0;
 
 enum { KEYPRESSED, KEYRELEASED };
 typedef struct {
@@ -795,10 +799,11 @@ struct {
     uint8_t readi, writei;
 } keyevent_buffer;
 
-_go32_dpmi_seginfo old_keyb_handler_seginfo, new_keyb_handler_seginfo;
+_go32_dpmi_seginfo keyboard_handler_old, keyboard_handler_new;
 
 void _int_9h_prot()
 {
+    disable();
     // If the buffer is full, drop the event
     if (keyevent_buffer.readi == ((keyevent_buffer.writei + 1) % KEY_BUFFER_SIZE)) {
         return;
@@ -832,11 +837,18 @@ void _int_9h_prot()
                 e->isrepeat = isrepeat;
                 keyevent_buffer.writei++;
             }
+            if (code == 0x3a) { // caps lock
+                keyboard_flags ^= KEY_FLAG_CAPS;
+            } else if (code == 0x45) { // num lock
+                keyboard_flags ^= KEY_FLAG_NUM;
+            } else if (code == 0x46) { // scroll lock
+                keyboard_flags ^= KEY_FLAG_SCRL;
+            }
         }
     }
-
     // PIC1 command register - end of interrupt
     outportb(0x20, 0x20);
+    enable();
 }
 
 void _int_9h_prot_lock()
@@ -857,13 +869,21 @@ void keyboard_init()
     _int_9h_prot_lock();
 
     _go32_dpmi_lock_data((char*)&keyboard_key_states, KEY_MAX);
+    _go32_dpmi_lock_data((char*)&keyboard_flags, sizeof(uint8_t));
     _go32_dpmi_lock_data((char*)&keyevent_buffer, sizeof(keyevent_buffer));
 
-    // Chain the new protected mode handler to 9h
-    _go32_dpmi_get_protected_mode_interrupt_vector(9, &old_keyb_handler_seginfo);
-    new_keyb_handler_seginfo.pm_offset = (int)_int_9h_prot;
-    _go32_dpmi_chain_protected_mode_interrupt_vector(9, &new_keyb_handler_seginfo);
+    // Replace the protected mode keyboard handler
+    _go32_dpmi_get_protected_mode_interrupt_vector(9, &keyboard_handler_old);
+    memset(&keyboard_handler_new, 0, sizeof(_go32_dpmi_seginfo));
+    keyboard_handler_new.pm_offset = (uint32_t)_int_9h_prot;
+    keyboard_handler_new.pm_selector = (uint32_t)_go32_my_cs();
+    _go32_dpmi_chain_protected_mode_interrupt_vector(9, &keyboard_handler_new);
     enable();
+
+    // Reset the keyboard LEDs
+    // Keyboard Controller - set/reset mode indicators
+    outportb(0x60, 0xed);
+    outportb(0x60, 0x00);
 }
 
 void keyboard_set_key_repeat(bool allow)
@@ -889,6 +909,16 @@ void keyboard_update()
         pt_event* ev = event_push(ke->type == KEYPRESSED ? EVENT_KEY_DOWN : EVENT_KEY_UP);
         ev->keyboard.key = DOS_SCANCODES[ke->code];
         ev->keyboard.isrepeat = ke->isrepeat;
+        ev->keyboard.flags = keyboard_flags;
+        if (keyboard_key_states[0x1d] || keyboard_key_states[0x64]) { // lctrl | rctrl
+            ev->keyboard.flags |= KEY_FLAG_CTRL;
+        }
+        if (keyboard_key_states[0x38]) { // lalt
+            ev->keyboard.flags |= KEY_FLAG_ALT;
+        }
+        if (keyboard_key_states[0x2a] || keyboard_key_states[0x36]) { // rshift
+            ev->keyboard.flags |= KEY_FLAG_SHIFT;
+        }
     }
 }
 
@@ -896,6 +926,6 @@ void keyboard_shutdown()
 {
     disable();
     // Restore protected mode 9h handler
-    _go32_dpmi_set_protected_mode_interrupt_vector(9, &old_keyb_handler_seginfo);
+    _go32_dpmi_set_protected_mode_interrupt_vector(9, &keyboard_handler_old);
     enable();
 }

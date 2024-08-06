@@ -22,7 +22,7 @@ int main(int argc, char** argv)
     keyboard_init();
     script_init();
     bool running = true;
-    while (running) {
+    while (!script_has_quit()) {
         // sleep until the start of the next vertical blanking interval
         if (video_is_vblank()) {
             // in the middle of a vblank, wait until the next draw
@@ -49,5 +49,5 @@ int main(int argc, char** argv)
     timer_shutdown();
     event_shutdown();
     log_shutdown();
-    return 0;
+    return script_quit_status();
 }

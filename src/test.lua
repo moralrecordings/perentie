@@ -83,6 +83,12 @@ PTSetMouseSprite(cursor_sp)
 -- Assign the background image to the room
 PTRoomAddObject(graphics_room, test_bg)
 
+PTGlobalOnEvent("keyDown", function(ev)
+    if ev.key == "q" then
+        PTQuit()
+    end
+end)
+
 draw_things = function()
     for i = 1, 1000 do
         test_bg.x = math.random(-63, 320)

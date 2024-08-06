@@ -250,6 +250,15 @@ PTSetWatchdogLimit = function(count)
     _PTWatchdogLimit = count
 end
 
+--- Quit Perentie.
+-- @param int retcode Return code. Defaults to 0.
+PTQuit = function(retcode)
+    if not retcode then
+        retcode = 0
+    end
+    _PTQuit(retcode)
+end
+
 -- Stuff called by the C engine main loop.
 
 --- Hook callback for when a thread runs too many instructions
@@ -331,26 +340,26 @@ PTGetAnimationFrame = function(object)
     return nil
 end
 
-local _PTEventConsumers = {}
+local _PTGlobalEventConsumers = {}
+PTGlobalOnEvent = function(type, callback)
+    _PTGlobalEventConsumers[type] = callback
+end
 
 _PTEvents = function()
     local ev = _PTPumpEvent()
     while ev do
-        if _PTEventConsumers[ev.type] then
-            for i, cons in pairs(_PTEventConsumers[ev.type]) do
-                cons(ev)
-            end
+        local result = 0
+        if _PTGlobalEventConsumers[ev.type] then
+            result = _PTGlobalEventConsumers[ev.type](ev)
         end
         ev = _PTPumpEvent()
     end
 end
 
-
-
-local _PTAutoClearScreen = true 
+local _PTAutoClearScreen = true
 --- Set whether to clear the screen at the start of every frame
 -- @tparam bool val true if the screen is to be cleared, false otherwise.
-PTSetAutoClearScreen = function (val)
+PTSetAutoClearScreen = function(val)
     _PTAutoClearScreen = val
 end
 
@@ -362,7 +371,7 @@ _PTRender = function()
         return a.z < b.z
     end)
     if _PTAutoClearScreen then
-        _PTClearScreen();
+        _PTClearScreen()
     end
     for i, obj in pairs(_PTCurrentRoom.render_list) do
         frame = PTGetAnimationFrame(obj)
