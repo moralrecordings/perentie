@@ -26,8 +26,37 @@ inline uint16_t get_pitch(uint32_t width)
     return (width % 4) == 0 ? width : width + 4 - (width % 4);
 }
 
+inline int16_t image_left(pt_image* image)
+{
+    if (!image)
+        return 0;
+    return -image->origin_x;
+}
+
+inline int16_t image_top(pt_image* image)
+{
+    if (!image)
+        return 0;
+    return -image->origin_y;
+}
+
+inline int16_t image_right(pt_image* image)
+{
+    if (!image)
+        return 0;
+    return image->width - image->origin_x;
+}
+
+inline int16_t image_bottom(pt_image* image)
+{
+    if (!image)
+        return 0;
+    return image->height - image->origin_y;
+}
+
 pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey);
 bool image_load(pt_image* image);
+bool image_test_collision(pt_image* image, int16_t x, int16_t y, bool mask);
 void destroy_image(pt_image* image);
 
 #endif

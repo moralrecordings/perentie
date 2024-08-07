@@ -20,6 +20,7 @@ end
 -- @tparam string path Path of the image (must be indexed PNG).
 -- @tparam int origin_x Origin x coordinate, relative to top-left corner. Default is 0.
 -- @tparam int origin_y Origin y coordinate, relative to top-left corner. Default is 0.
+-- @tparam int colourkey Palette index to use as colourkey. Default is -1.
 -- @tresult table The new image.
 PTImage = function(path, origin_x, origin_y, colourkey)
     if not origin_x then
@@ -32,6 +33,27 @@ PTImage = function(path, origin_x, origin_y, colourkey)
         colourkey = -1
     end
     return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey) }
+end
+
+PTGetImageDims = function(image)
+    if not image or image._type ~= "PTImage" then
+        return 0, 0
+    end
+    return _PTGetImageDims(image.ptr)
+end
+
+PTGetImageOrigin = function(image)
+    if not image or image._type ~= "PTImage" then
+        return 0, 0
+    end
+    return _PTGetImageOrigin(image.ptr)
+end
+
+PTSetImageOrigin = function(image, x, y)
+    if not image or image._type ~= "PTImage" then
+        return
+    end
+    return _PTSetImageOrigin(image.ptr, x, y)
 end
 
 --- Create a new bitmap font.
@@ -74,6 +96,16 @@ PTText = function(text, font, width, align, colour)
     return { _type = "PTImage", ptr = _PTText(text, font.ptr, width, align_enum, r, g, b) }
 end
 
+_PTGlobalRenderList = {}
+PTGlobalAddObject = function(object)
+    if object then
+        table.insert(_PTGlobalRenderList, object)
+    end
+    table.sort(_PTGlobalRenderList, function(a, b)
+        return a.z < b.z
+    end)
+end
+
 --- Create a new room.
 -- @tparam string name Name of the room.
 -- @tparam int width Width of the room in pixels.
@@ -84,15 +116,31 @@ PTRoom = function(name, width, height)
 end
 
 PTRoomAddObject = function(room, object)
-    table.insert(room.render_list, object)
+    if not room then
+        return
+    end
+    if object then
+        table.insert(room.render_list, object)
+    end
+    table.sort(room.render_list, function(a, b)
+        return a.z < b.z
+    end)
 end
 
 PTBackground = function(image, x, y, z)
-    return { _type = "PTBackground", image = image, x = x, y = y, z = z }
+    return { _type = "PTBackground", image = image, x = x, y = y, z = z, collision = false }
 end
 
 PTSprite = function(x, y, z, animations)
-    return { _type = "PTSprite", x = x, y = y, z = z, animations = animations, current_animation = nil }
+    return {
+        _type = "PTSprite",
+        x = x,
+        y = y,
+        z = z,
+        animations = animations,
+        current_animation = nil,
+        collision = false,
+    }
 end
 
 PTAnimation = function(rate, frames)
@@ -325,7 +373,12 @@ PTGetAnimationFrame = function(object)
     if object and object._type == "PTSprite" then
         anim = object.animations[object.current_animation]
         if anim then
-            if anim.current_frame == 0 then
+            if anim.rate == 0 then
+                -- Rate is 0, don't automatically change frames
+                if anim.current_frame == 0 then
+                    anim.current_frame = 1
+                end
+            elseif anim.current_frame == 0 then
                 anim.current_frame = 1
                 anim.next_wait = PTGetMillis() + (1000 / anim.rate)
             elseif PTGetMillis() > anim.next_wait then
@@ -345,6 +398,69 @@ PTGlobalOnEvent = function(type, callback)
     _PTGlobalEventConsumers[type] = callback
 end
 
+local _PTAutoClearScreen = true
+--- Set whether to clear the screen at the start of every frame
+-- @tparam bool val true if the screen is to be cleared, false otherwise.
+PTSetAutoClearScreen = function(val)
+    _PTAutoClearScreen = val
+end
+
+local _PTMouseOver = nil
+--- Get the current object which the mouse is hovering over
+-- @treturn table The object (PTSprite, PTBackground), or nil.
+PTGetMouseOver = function()
+    return _PTMouseOver
+end
+
+local _PTMouseOverConsumer = nil
+PTOnMouseOver = function(callback)
+    _PTMouseOverConsumer = callback
+end
+
+_PTUpdateMouseOver = function()
+    local mouse_x, mouse_y = PTGetMousePos()
+    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+        return
+    end
+    -- Need to iterate through objects in reverse draw order
+    for i = #_PTGlobalRenderList, 1, -1 do
+        local obj = _PTGlobalRenderList[i]
+        if obj.collision then
+            frame = PTGetAnimationFrame(obj)
+            if frame and _PTImageTestCollision(frame.ptr, mouse_x - obj.x, mouse_y - obj.y) then
+                if _PTMouseOver ~= obj then
+                    _PTMouseOver = obj
+                    if _PTMouseOverConsumer then
+                        _PTMouseOverConsumer(_PTMouseOver)
+                    end
+                end
+                return
+            end
+        end
+    end
+    for i = #_PTCurrentRoom.render_list, 1, -1 do
+        local obj = _PTCurrentRoom.render_list[i]
+        if obj.collision then
+            frame = PTGetAnimationFrame(obj)
+            if frame and _PTImageTestCollision(frame.ptr, mouse_x - obj.x, mouse_y - obj.y) then
+                if _PTMouseOver ~= obj then
+                    _PTMouseOver = obj
+                    if _PTMouseOverConsumer then
+                        _PTMouseOverConsumer(_PTMouseOver)
+                    end
+                end
+                return
+            end
+        end
+    end
+    if _PTMouseOver ~= nil then
+        _PTMouseOver = nil
+        if _PTMouseOverConsumer then
+            _PTMouseOverConsumer(_PTMouseOver)
+        end
+    end
+end
+
 _PTEvents = function()
     local ev = _PTPumpEvent()
     while ev do
@@ -354,22 +470,13 @@ _PTEvents = function()
         end
         ev = _PTPumpEvent()
     end
-end
-
-local _PTAutoClearScreen = true
---- Set whether to clear the screen at the start of every frame
--- @tparam bool val true if the screen is to be cleared, false otherwise.
-PTSetAutoClearScreen = function(val)
-    _PTAutoClearScreen = val
+    _PTUpdateMouseOver()
 end
 
 _PTRender = function()
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
         return
     end
-    table.sort(_PTCurrentRoom.render_list, function(a, b)
-        return a.z < b.z
-    end)
     if _PTAutoClearScreen then
         _PTClearScreen()
     end
@@ -379,6 +486,13 @@ _PTRender = function()
             _PTDrawImage(frame.ptr, obj.x, obj.y)
         end
     end
+    for i, obj in pairs(_PTGlobalRenderList) do
+        frame = PTGetAnimationFrame(obj)
+        if frame then
+            _PTDrawImage(frame.ptr, obj.x, obj.y)
+        end
+    end
+
     if _PTMouseSprite then
         mouse_x, mouse_y = _PTGetMousePos()
         frame = PTGetAnimationFrame(_PTMouseSprite)

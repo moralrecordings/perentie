@@ -102,6 +102,48 @@ static int lua_pt_image(lua_State* L)
     return 1;
 }
 
+static int lua_pt_get_image_dims(lua_State* L)
+{
+    pt_image** imageptr = (pt_image**)lua_touserdata(L, 1);
+    if (!imageptr) {
+        log_print("lua_pt_get_image_dims: invalid or missing image pointer\n");
+        lua_pushinteger(L, 0);
+        lua_pushinteger(L, 0);
+        return 2;
+    }
+    lua_pushinteger(L, (*imageptr)->width);
+    lua_pushinteger(L, (*imageptr)->height);
+    return 2;
+}
+
+static int lua_pt_get_image_origin(lua_State* L)
+{
+    pt_image** imageptr = (pt_image**)lua_touserdata(L, 1);
+    if (!imageptr) {
+        log_print("lua_pt_get_image_origin: invalid or missing image pointer\n");
+        lua_pushinteger(L, 0);
+        lua_pushinteger(L, 0);
+        return 2;
+    }
+    lua_pushinteger(L, (*imageptr)->origin_x);
+    lua_pushinteger(L, (*imageptr)->origin_y);
+    return 2;
+}
+
+static int lua_pt_set_image_origin(lua_State* L)
+{
+    pt_image** imageptr = (pt_image**)lua_touserdata(L, 1);
+    if (!imageptr) {
+        log_print("lua_pt_get_image_origin: invalid or missing image pointer\n");
+        return 0;
+    }
+    (*imageptr)->origin_x = (int16_t)luaL_checkinteger(L, 2);
+    (*imageptr)->origin_y = (int16_t)luaL_checkinteger(L, 3);
+    log_print("lua_pt_set_image_origin: setting %p origin to %d, %d\n", (*imageptr), (*imageptr)->origin_x,
+        (*imageptr)->origin_y);
+    return 0;
+}
+
 static int lua_pt_font_gc(lua_State* L)
 {
     pt_font** target = (pt_font**)lua_touserdata(L, 1);
@@ -182,6 +224,20 @@ static int lua_pt_draw_image(lua_State* L)
     // log_print("lua_pt_draw_image: %p %d %d\n", *imageptr, x, y);
     video_blit_image(*imageptr, x, y);
     return 0;
+}
+
+static int lua_pt_image_test_collision(lua_State* L)
+{
+    pt_image** imageptr = (pt_image**)lua_touserdata(L, 1);
+    if (!imageptr) {
+        log_print("lua_pt_image_test_collision: invalid or missing image pointer\n");
+        lua_pushboolean(L, false);
+        return 1;
+    }
+    int16_t x = luaL_checkinteger(L, 2);
+    int16_t y = luaL_checkinteger(L, 3);
+    lua_pushboolean(L, image_test_collision(*imageptr, x, y, true));
+    return 1;
 }
 
 static int lua_pt_log(lua_State* L)
@@ -290,10 +346,14 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTPlayBeep", lua_pt_play_beep },
     { "_PTStopBeep", lua_pt_stop_beep },
     { "_PTImage", lua_pt_image },
+    { "_PTGetImageDims", lua_pt_get_image_dims },
+    { "_PTGetImageOrigin", lua_pt_get_image_origin },
+    { "_PTSetImageOrigin", lua_pt_set_image_origin },
     { "_PTFont", lua_pt_font },
     { "_PTText", lua_pt_text },
     { "_PTClearScreen", lua_pt_clear_screen },
     { "_PTDrawImage", lua_pt_draw_image },
+    { "_PTImageTestCollision", lua_pt_image_test_collision },
     { "_PTLog", lua_pt_log },
     { "_PTPumpEvent", lua_pt_pump_event },
     { "_PTGetMousePos", lua_pt_get_mouse_pos },

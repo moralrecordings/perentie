@@ -152,6 +152,19 @@ bool image_load(pt_image* image)
     return true;
 }
 
+bool image_test_collision(pt_image* image, int16_t x, int16_t y, bool mask)
+{
+    if (!image)
+        return false;
+    // bounding box check
+    if (x < image_left(image) || x >= image_right(image) || y < image_top(image) || y >= image_bottom(image))
+        return false;
+    // pixel check
+    if (mask && image->data[image->pitch * (y - image_top(image)) + (x - image_left(image))] == image->colourkey)
+        return false;
+    return true;
+}
+
 void destroy_image(pt_image* image)
 {
     if (!image) {

@@ -102,7 +102,7 @@ void video_blit_image(pt_image* image, int16_t x, int16_t y)
     x -= image->origin_x;
     y -= image->origin_y;
     if (!rect_blit_clip(&x, &y, ir, crop)) {
-        log_print("Rectangle off screen\n");
+        // log_print("Rectangle off screen\n");
         destroy_rect(ir);
         destroy_rect(crop);
         return;
