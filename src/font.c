@@ -52,19 +52,26 @@ void font_load_common_block(FILE* fp, size_t size, pt_font* font)
     fseek(fp, size, SEEK_CUR);
 }
 
-void font_load_pages_block(FILE* fp, size_t size, pt_font* font)
+void font_load_pages_block(FILE* fp, size_t size, pt_font* font, const char* path)
 {
     char buffer[256];
     char* ptr = buffer;
+
+    char* dir_sep = strrchr(path, '/');
+    size_t dir_size = dir_sep ? dir_sep - path + 1 : 0;
+
     memset(buffer, 0, 256);
     while (size && ptr < buffer + 255) {
         *ptr = fgetc(fp);
         size--;
         if (*ptr == '\0') {
             font->pages = realloc(font->pages, sizeof(pt_image*) * (font->page_count + 1));
-            char* path = (char*)calloc(strlen(buffer), sizeof(char));
-            memcpy(path, buffer, strlen(buffer));
-            font->pages[font->page_count] = create_image(path, 0, 0, 0);
+            size_t name_size = dir_size + strlen(buffer);
+            char* atlas_path = (char*)calloc(name_size, sizeof(char));
+            // Prepend the directory of the font data to the atlas image
+            memcpy(atlas_path, path, dir_size);
+            memcpy(atlas_path + dir_size, buffer, strlen(buffer));
+            font->pages[font->page_count] = create_image(atlas_path, 0, 0, 0);
             font->page_count++;
             memset(buffer, 0, 256);
             ptr = buffer;
@@ -115,6 +122,7 @@ pt_font* create_font(const char* path)
         log_print("create_font: Unable to open %s\n", path);
         return NULL;
     }
+
     uint32_t magic = fread_u32be(fp);
     if (magic != 0x424d4603) { // "BMF"
         log_print("create_font: Only BMFont V3 binary format is supported, not found %s\n", path);
@@ -138,7 +146,7 @@ pt_font* create_font(const char* path)
             break;
         case 3:
             log_print("create_font: found pages block, %d bytes\n", size);
-            font_load_pages_block(fp, size, font);
+            font_load_pages_block(fp, size, font, path);
             break;
         case 4:
             log_print("create_font: found chars block, %d bytes\n", size);
