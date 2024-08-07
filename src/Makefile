@@ -62,7 +62,7 @@ boot.lo: boot.lua
 boot.h: boot.lo
 	$(LUA) bin2c.lua boot.lo > boot.h
 
-script.o: boot.h
+script.o: script.c boot.h
 	$(CC) $(CFLAGS) -g -c script.c -o script.o
 
 %.o : %.c

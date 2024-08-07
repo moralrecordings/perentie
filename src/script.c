@@ -116,6 +116,10 @@ static int lua_pt_font(lua_State* L)
 {
     const char* path = lua_strcpy(L, 1, NULL);
     pt_font* font = create_font(path);
+    if (!font) {
+        lua_pushnil(L);
+        return 1;
+    }
     pt_font** target = lua_newuserdatauv(L, sizeof(pt_font*), 1);
     *target = font;
     lua_newtable(L);
@@ -132,6 +136,11 @@ static int lua_pt_text(lua_State* L)
     size_t len = 0;
     const byte* string = (const byte*)luaL_checklstring(L, 1, &len);
     pt_font** fontptr = (pt_font**)lua_touserdata(L, 2);
+    if (!fontptr) {
+        log_print("lua_pt_text: invalid or missing font\n");
+        lua_pushnil(L);
+        return 1;
+    }
     uint16_t width = luaL_checkinteger(L, 3);
     enum pt_text_align align = (enum pt_text_align)luaL_checkinteger(L, 4);
     uint8_t r = (uint8_t)luaL_checkinteger(L, 5);
@@ -164,6 +173,10 @@ static int lua_pt_draw_image(lua_State* L)
 {
     // pt_image **imageptr = (pt_image **)luaL_checkudata(L, 1, "PTImage");
     pt_image** imageptr = (pt_image**)lua_touserdata(L, 1);
+    if (!imageptr) {
+        log_print("lua_pt_draw_image: invalid or missing image pointer\n");
+        return 0;
+    }
     int16_t x = luaL_checkinteger(L, 2);
     int16_t y = luaL_checkinteger(L, 3);
     // log_print("lua_pt_draw_image: %p %d %d\n", *imageptr, x, y);
