@@ -709,7 +709,7 @@ void mouse_update()
             if (regs.x.bx) {
                 // Push event to queue
                 pt_event* ev = event_push(t == 0 ? EVENT_MOUSE_DOWN : EVENT_MOUSE_UP);
-                ev->mouse.button = i;
+                ev->mouse.button = 1 << i;
                 ev->mouse.x = mouse_x;
                 ev->mouse.y = mouse_y;
                 // Save the button states
