@@ -112,7 +112,6 @@ static int repl_addreturn(lua_State* L)
     return status;
 }
 
-
 /*
 ** Check whether 'status' signals a syntax error and the error
 ** message at the top of the stack ends with the above mark for
@@ -183,7 +182,7 @@ void repl_process_line(lua_State* L, char* line, size_t size)
             exit(1);
         }
         if (repl_incomplete(L, status)) {
-            //log_print("incomplete, stashing\n");
+            // log_print("incomplete, stashing\n");
             repl_in_multiline = true;
             // Ditch the error message
             lua_remove(L, -1);
@@ -210,13 +209,13 @@ void repl_process_line(lua_State* L, char* line, size_t size)
 
         size_t len;
         const char* chunk = lua_tolstring(L, 1, &len);
-        //log_print("trying chunk: %s\n", chunk);
-        // Try compiling it to a chunk
+        // log_print("trying chunk: %s\n", chunk);
+        //  Try compiling it to a chunk
         status = luaL_loadbuffer(L, chunk, len, "=repl");
-        // Message incomplete, still needs more 
+        // Message incomplete, still needs more
         if (repl_incomplete(L, status)) {
-            //log_print("incomplete, stashing\n");
-            // Ditch the error message
+            // log_print("incomplete, stashing\n");
+            //  Ditch the error message
             lua_remove(L, -1);
             // Stash the line in a global
             lua_setglobal(L, "_repl_buffer");
@@ -229,13 +228,13 @@ void repl_process_line(lua_State* L, char* line, size_t size)
             lua_remove(L, -2);
         }
     }
-    
-    //log_print("check result: %d\n", status);
-    // If the status is okay, we must have a single stack
-    // item containing the block of code to run.
+
+    // log_print("check result: %d\n", status);
+    //  If the status is okay, we must have a single stack
+    //  item containing the block of code to run.
     if (status == LUA_OK) {
         status = docall(L, 0, LUA_MULTRET);
-        //log_print("do result: %d\n", status);
+        // log_print("do result: %d\n", status);
     }
     if (status == LUA_OK) {
         l_print(L); // print and remove anything that's on the stack
@@ -289,12 +288,12 @@ void repl_update(lua_State* L)
     if (line_end > 0) {
         line_buffer[line_end] = '\0';
 
-        //for (int i = 0; i < line_end; i++) {
-        //    log_print("%02X ", line_buffer[i]);
-        //}
-        //log_print("\n");
-        // We've opened up telnet and typed something for the first time;
-        // show a welcome message and the prompt.
+        // for (int i = 0; i < line_end; i++) {
+        //     log_print("%02X ", line_buffer[i]);
+        // }
+        // log_print("\n");
+        //  We've opened up telnet and typed something for the first time;
+        //  show a welcome message and the prompt.
         if (!repl_activated) {
             repl_activated = true;
             // Intercept the "print" function to dump to the console

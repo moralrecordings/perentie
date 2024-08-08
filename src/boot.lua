@@ -198,11 +198,14 @@ end
 -- @tparam func function Function body to run.
 local _PTThreads = {}
 local _PTThreadsSleepUntil = {}
-PTStartThread = function(name, func)
+PTStartThread = function(name, func, ...)
     if _PTThreads[name] then
         error(string.format("PTStartThread(): thread named %s exists", name))
     end
-    _PTThreads[name] = coroutine.create(func)
+    varargs = ...
+    _PTThreads[name] = coroutine.create(function()
+        func(table.unpack(varargs))
+    end)
 end
 
 --- Stop a running thread.
@@ -281,6 +284,50 @@ PTSwitchRoom = function(room, ctx)
     PTLog("PTSwitchRoom %s, %s", tostring(room), tostring(_PTCurrentRoom))
 end
 
+local _PTVerbCallbacks = {}
+PTOnVerb = function(verb_name, hotspot_id, callback)
+    if not _PTVerbCallbacks[verb_name] then
+        _PTVerbCallbacks[verb_name] = {}
+    end
+    _PTVerbCallbacks[verb_name][hotspot_id] = callback
+end
+
+local _PTCurrentVerb = nil
+local _PTCurrentHotspot = nil
+PTDoVerb = function(verb_name, hotspot_id)
+    PTLog("doing the verb %s %s\n", tostring(verb_name), tostring(hotspot_id))
+    _PTCurrentVerb = verb_name
+    _PTCurrentHotspot = hotspot_id
+end
+
+-- this could be a callback!!!
+PTVerbReady = function()
+    return (
+        _PTCurrentVerb ~= nil
+        and _PTCurrentHotspot ~= nil
+        and _PTVerbCallbacks[_PTCurrentVerb]
+        and _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentHotspot]
+    )
+end
+
+_PTRunVerb = function()
+    if PTVerbReady() then
+        if _PTThreads["__verb"] then
+            -- interrupting another verb, stop the existing one
+            PTLog("attempted to replace running verb thread with %s %s!", _PTCurrentVerb, _PTCurrentHotspot)
+        else
+            PTStartThread(
+                "__verb",
+                _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentHotspot],
+                _PTCurrentVerb,
+                _PTCurrentHotspot
+            )
+        end
+        _PTCurrentVerb = nil
+        _PTCurrentHotspot = nil
+    end
+end
+
 local _PTToggleWatchdog = true
 --- Toggle the use of the watchdog to abort threads that take too long.
 -- Enabled by default.
@@ -321,6 +368,7 @@ end
 --- Run and handle execution for all of the threads.
 -- @treturn int Number of threads still alive.
 _PTRunThreads = function()
+    _PTRunVerb()
     local count = 0
     for name, thread in pairs(_PTThreads) do
         -- Check if the thread is supposed to be asleep

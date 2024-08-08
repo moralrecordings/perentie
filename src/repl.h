@@ -4,7 +4,7 @@
 typedef struct lua_State lua_State;
 
 void repl_init();
-void repl_update(lua_State *L);
+void repl_update(lua_State* L);
 void repl_shutdown();
 
 #endif
