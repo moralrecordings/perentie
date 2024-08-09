@@ -1,5 +1,8 @@
 --- Initial engine setup
 
+SCREEN_WIDTH = 320
+SCREEN_HEIGHT = 200
+
 --- Get the version number of the Perentie engine.
 -- @treturn string Version string.
 PTVersion = function()
@@ -116,7 +119,8 @@ PTRoom = function(name, width, height)
 end
 
 PTRoomAddObject = function(room, object)
-    if not room then
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomAddObject: expected PTRoom for first argument")
         return
     end
     if object then
@@ -125,6 +129,90 @@ PTRoomAddObject = function(room, object)
     table.sort(room.render_list, function(a, b)
         return a.z < b.z
     end)
+end
+
+PTRoomRemoveObject = function(room, object)
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomAddObject: expected PTRoom for first argument")
+    end
+    if object then
+        for i, obj in pairs(room.render_list) do
+            if object == obj then
+                table.remove(room.render_list, i)
+                break
+            end
+        end
+    end
+    table.sort(room.render_list, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+PTActor = function(name)
+    return {
+        _type = "PTActor",
+        name = name,
+        x = 0,
+        y = 0,
+        z = 0,
+        talk_x = 0,
+        talk_y = 0,
+        talk_img = nil,
+        talk_font = nil,
+        talk_color = { 0xff, 0xff, 0xff },
+        talk_millis = nil,
+    }
+end
+
+PTActorUpdate = function(actor, fast_forward)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActor: expected PTActor for first argument")
+    end
+    if actor.talk_img and actor.talk_millis then
+        if not fast_forward and _PTGetMillis() < actor.talk_millis then
+            return false
+        else
+            PTRoomRemoveObject(PTCurrentRoom(), actor.talk_img)
+            actor.talk_img = nil
+        end
+    end
+    return true
+end
+
+TALK_BASE_DELAY = 1000
+TALK_CHAR_DELAY = 85
+
+PTActorTalk = function(actor, message)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActor: expected PTActor for first argument")
+    end
+    if not actor.talk_font then
+        PTLog("PTActorTalk: no default font!!")
+        return
+    end
+    local text = PTText(message, actor.talk_font, 200, actor.talk_color)
+
+    local width, height = PTGetImageDims(text)
+    PTSetImageOrigin(text, width / 2, height)
+    local x = math.min(math.max(actor.x + actor.talk_x, width / 2), SCREEN_WIDTH - width / 2)
+    local y = math.min(math.max(actor.y + actor.talk_y, height), SCREEN_HEIGHT)
+
+    actor.talk_img = PTBackground(text, x, y, 10)
+    actor.talk_millis = _PTGetMillis() + TALK_BASE_DELAY + #message * TALK_CHAR_DELAY
+    -- TODO: Make room reference on actor?
+    PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
+end
+
+PTWaitForActor = function(actor)
+    local thread, _ = coroutine.running()
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            _PTThreadsActorWait[k] = actor
+            coroutine.yield()
+            return
+        end
+    end
+    error(string.format("PTWaitForActor(): thread not found"))
 end
 
 PTBackground = function(image, x, y, z)
@@ -196,8 +284,10 @@ end
 -- Perentie will exit when all threads have stopped.
 -- @tparam name string Name of the thread.
 -- @tparam func function Function body to run.
-local _PTThreads = {}
+_PTThreads = {}
 local _PTThreadsSleepUntil = {}
+_PTThreadsActorWait = {}
+_PTThreadsFastForward = {}
 PTStartThread = function(name, func, ...)
     if _PTThreads[name] then
         error(string.format("PTStartThread(): thread named %s exists", name))
@@ -216,6 +306,7 @@ PTStopThread = function(name)
     end
     coroutine.close(_PTThreads[name])
     _PTThreads[name] = nil
+    _PTThreadsFastForward[name] = nil
 end
 
 --- Sleep the current thread.
@@ -273,7 +364,7 @@ end
 -- @tparam room table Room object.
 -- @tparam ctx any Optional Context data to pass to the callbacks.
 PTSwitchRoom = function(room, ctx)
-    PTLog("PTSwitchRoom %s, %s", tostring(room), tostring(_PTCurrentRoom))
+    PTLog("PTSwitchRoom: %s, %s", tostring(room), tostring(_PTCurrentRoom))
     if _PTCurrentRoom and _PTOnRoomExitHandlers[_PTCurrentRoom.name] then
         _PTOnRoomExitHandlers[_PTCurrentRoom.name](ctx)
     end
@@ -281,7 +372,7 @@ PTSwitchRoom = function(room, ctx)
     if _PTCurrentRoom and _PTOnRoomEnterHandlers[_PTCurrentRoom.name] then
         _PTOnRoomEnterHandlers[_PTCurrentRoom.name](ctx)
     end
-    PTLog("PTSwitchRoom %s, %s", tostring(room), tostring(_PTCurrentRoom))
+    PTLog("PTSwitchRoom: %s, %s", tostring(room), tostring(_PTCurrentRoom))
 end
 
 local _PTVerbCallbacks = {}
@@ -295,12 +386,12 @@ end
 local _PTCurrentVerb = nil
 local _PTCurrentHotspot = nil
 PTDoVerb = function(verb_name, hotspot_id)
-    PTLog("doing the verb %s %s\n", tostring(verb_name), tostring(hotspot_id))
+    PTLog("PTDoVerb: %s %s\n", tostring(verb_name), tostring(hotspot_id))
     _PTCurrentVerb = verb_name
     _PTCurrentHotspot = hotspot_id
 end
 
--- this could be a callback!!!
+-- this could be a custom callback!!!
 PTVerbReady = function()
     return (
         _PTCurrentVerb ~= nil
@@ -326,6 +417,15 @@ _PTRunVerb = function()
         _PTCurrentVerb = nil
         _PTCurrentHotspot = nil
     end
+end
+
+local _PTInputGrabbed = false
+PTGrabInput = function()
+    _PTInputGrabbed = true
+end
+
+PTReleaseInput = function()
+    _PTInputGrabbed = false
 end
 
 local _PTToggleWatchdog = true
@@ -373,7 +473,14 @@ _PTRunThreads = function()
     for name, thread in pairs(_PTThreads) do
         -- Check if the thread is supposed to be asleep
         local is_awake = true
-        if _PTThreadsSleepUntil[name] then
+        if _PTThreadsActorWait[name] then
+            is_awake = PTActorUpdate(_PTThreadsActorWait[name], _PTThreadsFastForward[name])
+            if is_awake then
+                _PTThreadsActorWait[name] = nil
+            end
+        elseif _PTThreadsFastForward[name] then
+            -- Ignore all sleeps, go at top speed.
+        elseif _PTThreadsSleepUntil[name] then
             if _PTThreadsSleepUntil[name] > _PTGetMillis() then
                 is_awake = false
             else
@@ -402,6 +509,7 @@ _PTRunThreads = function()
                 PTLog("PTRunThreads(): Thread %s terminated", name)
                 coroutine.close(_PTThreads[name])
                 _PTThreads[name] = nil
+                _PTThreadsFastForward[name] = nil
             else
                 count = count + 1
             end
@@ -513,12 +621,23 @@ _PTEvents = function()
     local ev = _PTPumpEvent()
     while ev do
         local result = 0
-        if _PTGlobalEventConsumers[ev.type] then
-            result = _PTGlobalEventConsumers[ev.type](ev)
+        if not _PTInputGrabbed then
+            if _PTGlobalEventConsumers[ev.type] then
+                result = _PTGlobalEventConsumers[ev.type](ev)
+            end
+        else
+            -- Grabbed input mode, intercept events
+            if ev.type == "keyDown" and ev.key == "escape" then
+                _PTThreadsFastForward["__verb"] = true
+            elseif ev.type == "mouseDown" and _PTThreadsActorWait["__verb"] then
+                _PTThreadsActorWait["__verb"].talk_millis = _PTGetMillis()
+            end
         end
         ev = _PTPumpEvent()
     end
-    _PTUpdateMouseOver()
+    if not _PTInputGrabbed then
+        _PTUpdateMouseOver()
+    end
 end
 
 _PTRender = function()
@@ -541,7 +660,7 @@ _PTRender = function()
         end
     end
 
-    if _PTMouseSprite then
+    if _PTMouseSprite and not _PTInputGrabbed then
         mouse_x, mouse_y = _PTGetMousePos()
         frame = PTGetAnimationFrame(_PTMouseSprite)
         if frame then
