@@ -11,14 +11,12 @@ LUA = lua
 PATH_LUA = lua
 PATH_SPNG = spng
 PATH_MINIZ = miniz
-PATH_LINENOISE = linenois
 LIB_LUA = $(PATH_LUA)/liblua.a
 LIB_SPNG = $(PATH_SPNG)/libspng.a
 LIB_MINIZ = $(PATH_MINIZ)/libminiz.a
-LIB_LINENOISE = $(PATH_LINENOISE)/libln.a
 
 CFLAGS = -O2 -g
-LDFLAGS = -lm -L./$(PATH_LUA) -llua -L./$(PATH_SPNG) -lspng -L./$(PATH_MINIZ) -lminiz -L./$(PATH_LINENOISE) -lln
+LDFLAGS = -lm -L./$(PATH_LUA) -llua -L./$(PATH_SPNG) -lspng -L./$(PATH_MINIZ) -lminiz 
 
 OBJECTS = dos.o main.o image.o script.o log.o font.o text.o event.o repl.o musicrad.o stb/stb.o
 
@@ -44,14 +42,6 @@ $(LIB_SPNG): $(PATH_SPNG)/spng.o
 	$(AR) rc $@ $?
 	$(RANLIB) $@ 
 
-$(PATH_LINENOISE)/%.o : $(PATH_LINENOISE)/%.c
-	$(CC) $(CFLAGS) -c $? -o $@
-
-linenoise: $(LIB_LINENOISE)
-$(LIB_LINENOISE): $(PATH_LINENOISE)/linenois.o
-	$(AR) rc $@ $?
-	$(RANLIB) $@
-
 stb: stb/stb.o
 stb/stb.o: stb/stb.c
 	$(CC) $(CFLAGS) -c stb/stb.c -o stb/stb.o  
@@ -68,10 +58,10 @@ script.o: script.c boot.h
 %.o : %.c
 	$(CC) $(CFLAGS) -g -c $? -o $@
 
-perentie.exe : $(OBJECTS) $(LIB_LUA) $(LIB_SPNG) $(LIB_MINIZ) $(LIB_LINENOISE)
+perentie.exe : $(OBJECTS) $(LIB_LUA) $(LIB_SPNG) $(LIB_MINIZ) 
 	$(CC) $(CFLAGS) $(OBJECTS) $(LDFLAGS) -o perentie.exe
 
-distclean: clean-lua clean-stb clean-miniz clean-spng clean-linenoise clean
+distclean: clean-lua clean-stb clean-miniz clean-spng clean
 
 clean-lua:
 	$(MAKE) -C $(PATH_LUA) -f makefile clean
@@ -84,9 +74,6 @@ clean-miniz:
 
 clean-spng:
 	rm spng/*.o spng/*.a
-
-clean-linenoise:
-	rm linenois/*.o linenois/*.a
 
 clean:
 	rm *.o
