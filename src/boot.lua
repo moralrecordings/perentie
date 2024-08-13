@@ -148,6 +148,548 @@ PTRoomRemoveObject = function(room, object)
     end)
 end
 
+----- walkbox code -----
+
+-- algorithms nicked from ScummVM's SCUMM engine implementation
+
+MF_NEW_LEG = 1
+MF_IN_LEG = 2
+MF_TURN = 4
+MF_LAST_LEG = 8
+
+PTPoint = function(x, y)
+    return { x = x, y = y }
+end
+
+PTWalkBox = function(id, ul, ur, lr, ll)
+    return { _type = "PTWalkBox", id = id, ul = ul, ur = ur, lr = lr, ll = ll }
+end
+
+local _PTStraightLinesOverlap = function(a1, a2, b1, b2)
+    if a1.x == a2.x and b1.x == b2.x and a1.x == b1.x then
+        -- vertical line
+        return a1.y <= b2.y and b1.y <= a2.y
+    end
+    if a1.y == a2.y and b1.y == b2.y and a1.y == b1.y then
+        -- horizontal line
+        return a1.x <= b2.x and b1.x <= a2.x
+    end
+    return false
+end
+
+PTGenLinksFromWalkBoxes = function(boxes)
+    local result = {}
+    for i = 1, #boxes do
+        for j in i, #boxes do
+            local a = boxes[i]
+            local b = boxes[j]
+            if
+                _PTStraightLinesOverlap(a.ul, a.ur, b.lr, b.ll)
+                or _PTStraightLinesOverlap(a.lr, a.ll, b.ul, b.ur)
+                or _PTStraightLinesOverlap(a.ur, a.lr, b.ll, b.ul)
+                or _PTStraightLinesOverlap(a.ll, a.ul, b.ur, b.lr)
+                or _PTStraightLinesOverlap(a.ul, a.ur, b.ul, b.ur)
+                or _PTStraightLinesOverlap(a.ul, a.ur, b.ur, b.lr)
+                or _PTStraightLinesOverlap(a.ul, a.ur, b.ll, b.ul)
+                or _PTStraightLinesOverlap(a.ur, a.lr, b.ul, b.ur)
+                or _PTStraightLinesOverlap(a.ur, a.lr, b.ur, b.lr)
+                or _PTStraightLinesOverlap(a.ur, a.lr, b.lr, b.ll)
+                or _PTStraightLinesOverlap(a.lr, a.ll, b.ur, b.lr)
+                or _PTStraightLinesOverlap(a.lr, a.ll, b.lr, b.ll)
+                or _PTStraightLinesOverlap(a.lr, a.ll, b.ll, b.ul)
+                or _PTStraightLinesOverlap(a.ll, a.ul, b.ul, b.ur)
+                or _PTStraightLinesOverlap(a.ll, a.ul, b.lr, b.ll)
+                or _PTStraightLinesOverlap(a.ll, a.ul, b.ll, b.ul)
+            then
+                table.insert(result, { a.id, b.id })
+            end
+        end
+    end
+    return result
+end
+
+local _PTNewMatrix = function(n)
+    local result = {}
+    for i = 1, n do
+        local inner = {}
+        for j = 1, n do
+            table.insert(inner, 0)
+        end
+        table.insert(result, inner)
+    end
+    return result
+end
+
+local _PTCopyMatrix = function(mat)
+    local result = {}
+    for i = 1, #mat do
+        local inner = {}
+        for j = i, #mat[i] do
+            table.insert(inner, mat[i][j])
+        end
+        table.insert(result, inner)
+    end
+    return result
+end
+
+PTGenWalkBoxMatrix = function(n, links)
+    local result = PTNewMatrix(n)
+    for link in links do
+        result[link[1]][link[2]] = link[2]
+        result[link[2]][link[1]] = link[1]
+    end
+
+    while true do
+        local modded = false
+        local result_prev = result
+        local result = _PTCopyMatrix(result_prev)
+        for a = 1, n do
+            for b = 1, n do
+                -- if boxes a and b are different, and there's
+                -- no existing link between boxes a and b
+                if a ~= b and result_prev[a][b] == 0 then
+                    for c = 1, n do
+                        -- try each existing link from a,
+                        -- see if it has a link to b
+                        if result_prev[a][c] ~= 0 and result_prev[result_prev[a][c]][b] then
+                            result[a][b] = result_prev[a][c]
+                            modded = true
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        if not modded then
+            break
+        end
+    end
+    return result
+end
+
+local _PTClosestPointOnLine = function(start, finish, target)
+    local lxdiff = finish.x - start.x
+    local lydiff = finish.y - start.y
+
+    local result = PTPoint(0, 0)
+
+    if finis.x == start.x then
+        result = PTPoint(start.x, target.y)
+    elseif finish.y == start.y then
+        result = PTPoint(target.x, start.y)
+    else
+        local dist = lxdiff * lxdiff + lydiff * lydiff
+        if math.abs(lxdiff) > math.abs(lydiff) then
+            local a = start.x * lydiff // lxdiff
+            local b = target.x * lxdiff // lydiff
+            local c = (a + b - start.y + target.y) * lydiff * lxdiff // dist
+            result = PTPoint(c, c * lydiff // lxdiff - a + start.y)
+        else
+            local a = start.y * lxdiff // lydiff
+            local b = target.y * lydiff // lxdiff
+            local c = (a + b - start.x + target.x) * lydiff * lxdiff // dist
+            result = PTPoint(c * lxdiff // lydiff - a + start.x, c)
+        end
+    end
+    if math.abs(lydiff) < math.abs(lxdiff) then
+        if lxdiff > 0 then
+            if result.x < start.x then
+                result = start
+            elseif result.x > finish.x then
+                result = finish
+            end
+        else
+            if result.x > start.x then
+                result = start
+            elseif result.x < finish.x then
+                result = finish
+            end
+        end
+    else
+        if lydiff > 0 then
+            if result.y < start.y then
+                result = start
+            elseif result.y > finish.y then
+                result = finish
+            end
+        else
+            if result.y > start.y then
+                result = start
+            elseif result.y < finish.y then
+                result = finish
+            end
+        end
+    end
+    return result
+end
+
+local _PTSqrDist = function(a, b)
+    return (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y)
+end
+
+local _PTCompareSlope = function(p1, p2, p3)
+    return (p2.y - p1.y) * (p3.x - p1.x) <= (p3.y - p1.y) * (p2.x - p1.x)
+end
+
+local _PTCheckPointInBoxBounds = function(point, box)
+    -- if the point coordinate is strictly smaller/bigger than
+    -- all of the box coordinates, it's outside.
+    if point.x < box.ul.x and point.x < box.ur.x and point.x < box.lr.x and point.x < box.ll.x then
+        return false
+    elseif point.x > box.ul.x and point.x > box.ur.x and point.x > box.lr.x and point.x > box.ll.x then
+        return false
+    elseif point.y < box.ul.y and point.y < box.ur.y and point.y < box.lr.y and point.y < box.ll.y then
+        return false
+    elseif point.y > box.ul.y and point.y > box.ur.y and point.y > box.lr.y and point.y > box.ll.y then
+        return false
+    end
+
+    -- if the box is actually a line segment, add a 2px fuzzy boundary
+    if
+        (box.ul.x == box.ur.x and box.ul.y == box.ur.y and box.lr.x == box.ll.x and box.lr.y == box.ll.y)
+        or (box.ul.x == box.ll.x and box.ul.y == box.ll.y and box.ur.x == box.lr.x and box.ur.y == box.lr.y)
+    then
+        local tmp = _PTClosestPointOnLine(box.ul, box.lr, point)
+        return _PTSqrDist(point, tmp) <= 4
+    end
+
+    -- exclude points that are on the wrong side of each of the lines
+    if not _PTCompareSlope(box.ul, box.ur, point) then
+        return false
+    elseif not _PTCompareSlope(box.ur, box.lr, point) then
+        return false
+    elseif not _PTCompareSlope(box.lr, box.ll, point) then
+        return false
+    elseif not _PTCompareSlope(box.ll, box.ul, point) then
+        return false
+    end
+    return true
+end
+
+local _PTGetClosestPointOnBox = function(point, box)
+    local best_dist = 0xfffffff
+    local result = PTPoint(0, 0)
+    local tmp = _PTClosestPointOnLine(box.ul, box.ur, point)
+    local dist = _PTSqrDist(point, tmp)
+    if dist < best_dist then
+        best_dist = dist
+        result = tmp
+    end
+    tmp = _PTClosestPointOnLine(box.ur, box.lr, point)
+    if dist < best_dist then
+        best_dist = dist
+        result = tmp
+    end
+    tmp = _PTClosestPointOnLine(box.lr, box.ll, point)
+    if dist < best_dist then
+        best_dist = dist
+        result = tmp
+    end
+    tmp = _PTClosestPointOnLine(box.ll, box.ul, point)
+    if dist < best_dist then
+        best_dist = dist
+        result = tmp
+    end
+    return best_dist, result
+end
+
+local _PTAdjustPointToBeInBox = function(point, boxes)
+    local best_point = PTPoint(0, 0)
+    local best_dist = 0xfffffff
+    local best_box = nil
+    for i, box in ipairs(boxes) do
+        if _PTCheckPointInBoxBounds(point, box) then
+            best_point = point
+            best_dist = 0
+            best_box = box
+            break
+        else
+            local dist, target
+            dist, target = _PTGetClosestPointOnBox(point, box)
+            if dist < best_dist then
+                best_point = target
+                best_dist = dist
+                best_box = box
+            end
+        end
+    end
+    return best_point, best_box
+end
+
+local _PTFindPathTowards = function(actor, b1, b2, b3)
+    local box1 = PTWalkBox(b1.id, b1.ul, b1.ur, b1.lr, b1.ll)
+    local box2 = PTWalkBox(b2.id, b2.ul, b2.ur, b2.lr, b2.ll)
+    local found_path = PTPoint(0, 0)
+    for i = 1, 4 do
+        for j = 1, 4 do
+            -- if the top line has the same x coordinate
+            if box1.ul.x == box1.ur.x and box1.ul.x == box2.ul.x and box1.ul.x == box2.ur.x then
+                local flag = 0
+                -- switch coordinates if not ordered
+                if box1.ul.y > box1.ur.y then
+                    box1.ul, box1.ur = PTPoint(box1.ul.x, box1.ur.y), PTPoint(box1.ur.x, box1.ul.y)
+                    flag = flag | 1
+                end
+                if box2.ul.y > box2.ur.y then
+                    box2.ul, box2.ur = PTPoint(box2.ul.x, box2.ur.y), PTPoint(box2.ur.x, box2.ul.y)
+                    flag = flag | 2
+                end
+
+                if
+                    box1.ul.y > box2.ur.y
+                    or box2.ul.y > box1.ur.y
+                    or (
+                        (box1.ur.y == box2.ul.y or box2.ur.y == box1.ul.y)
+                        and box1.ul.y ~= box1.ur.y
+                        and box2.ul.y ~= box2.ur.y
+                    )
+                then
+                    -- switch coordinates back if required
+                    if flag & 1 > 0 then
+                        box1.ul, box1.ur = PTPoint(box1.ul.x, box1.ur.y), PTPoint(box1.ur.x, box1.ul.y)
+                    end
+                    if flag & 2 > 0 then
+                        box2.ul, box2.ur = PTPoint(box2.ul.x, box2.ur.y), PTPoint(box2.ur.x, box2.ul.y)
+                    end
+                else
+                    local pos_y = actor.y
+                    if box2.id == b3.id then
+                        local diff_x = actor.walkdata_dest.x - actor.x
+                        local diff_y = actor.walkdata_dest.y - actor.y
+                        local box_diff_x = box1.ul.x - actor.x
+                        if diff_x ~= 0 then
+                            diff_y = diff_y * box_diff_x
+                            local t = diff_y // diff_x
+                            if t == 0 and (diff_y <= 0 or diff_x <= 0) and (diff_y >= 0 or diff_x >= 0) then
+                                t = -1
+                            end
+                            pos_y = actor.y + t
+                        end
+                    end
+                    local q = pos_y
+                    if q < box2.ul.y then
+                        q = box2.ul.y
+                    end
+                    if q > box2.ur.y then
+                        q = box2.ur.y
+                    end
+                    if q < box1.ul.y then
+                        q = box1.ul.y
+                    end
+                    if q > box1.ur.y then
+                        q = box1.ur.y
+                    end
+                    if q == pos_y and box2.id == b3.id then
+                        return true, found_path
+                    end
+                    found_path = PTPoint(box1.ul.x, q)
+                    return false, found_path
+                end
+            end
+            -- if the top line has the same y coordinate
+            if box1.ul.y == box1.ur.y and box1.ul.y == box2.ul.y and box1.ul.y == box2.ur.y then
+                local flag = 0
+                -- switch coordinates if not ordered
+                if box1.ul.x > box1.ur.x then
+                    box1.ul, box1.ur = PTPoint(box1.ul.x, box1.ur.y), PTPoint(box1.ur.x, box1.ul.y)
+                    flag = flag | 1
+                end
+                if box2.ul.x > box2.ur.x then
+                    box2.ul, box2.ur = PTPoint(box2.ul.x, box2.ur.y), PTPoint(box2.ur.x, box2.ul.y)
+                    flag = flag | 2
+                end
+
+                if
+                    box1.ul.x > box2.ur.x
+                    or box2.ul.x > box1.ur.x
+                    or (
+                        (box1.ur.x == box2.ul.x or box2.ur.x == box1.ul.x)
+                        and box1.ul.x ~= box1.ur.x
+                        and box2.ul.x ~= box2.ur.x
+                    )
+                then
+                    -- switch coordinates back if required
+                    if flag & 1 > 0 then
+                        box1.ul, box1.ur = PTPoint(box1.ul.x, box1.ur.y), PTPoint(box1.ur.x, box1.ul.y)
+                    end
+                    if flag & 2 > 0 then
+                        box2.ul, box2.ur = PTPoint(box2.ul.x, box2.ur.y), PTPoint(box2.ur.x, box2.ul.y)
+                    end
+                else
+                    local pos_x = actor.x
+                    if box2.id == b3.id then
+                        local diff_x = actor.walkdata_dest.x - actor.x
+                        local diff_y = actor.walkdata_dest.y - actor.y
+                        local box_diff_y = box1.ul.y - actor.y
+                        if diff_y ~= 0 then
+                            pos_x = pos_x + (diff_x * box_diff_y // diff_y)
+                        end
+                    end
+                    local q = pos_x
+                    if q < box2.ul.x then
+                        q = box2.ul.x
+                    end
+                    if q > box2.ur.x then
+                        q = box2.ur.x
+                    end
+                    if q < box1.ul.x then
+                        q = box1.ul.x
+                    end
+                    if q > box1.ur.x then
+                        q = box1.ur.x
+                    end
+                    if q == pos_x and box2.id == b3.id then
+                        return true, found_path
+                    end
+                    found_path = PTPoint(q, box1.ul.y)
+                    return false, found_path
+                end
+            end
+
+            -- rotate box 1
+            local tmp = box1.ul
+            box1.ul = box1.ur
+            box1.ur = box1.lr
+            box1.lr = box1.ll
+            box1.ll = tmp
+        end
+        -- rotate box 2
+        local tmp = box2.ul
+        box2.ul = box1.ur
+        box2.ur = box1.lr
+        box2.lr = box1.ll
+        box2.ll = tmp
+    end
+    return false, found_path
+end
+
+local _PTActorWalkStep = function(actor)
+    if actor.walkbox.id ~= actor.walkdata_curbox.id and _PTCheckPointInBoxBounds(actor, actor.walkdata_curbox) then
+        actor.walkbox = actor.walkdata_curbox
+    end
+    local dist_x = math.abs(actor.walkdata_next.x - actor.walkdata_cur.x)
+    local dist_y = math.abs(actor.walkdata_next.y - actor.walkdata_cur.y)
+    if math.abs(actor.x - actor.walkdata_cur.x) >= dist_x and math.abs(actor.y - actor.walkdata_cur.y) >= dist_y then
+        return false
+    end
+
+    local tmp_x = (actor.x << 16) + actor.walkdata_frac.x + (actor.walkdata_delta_factor.x >> 8) * actor.scale_x
+    local tmp_y = (actor.y << 16) + actor.walkdata_frac.y + (actor.walkdata_delta_factor.y >> 8) * actor.scale_y
+    actor.walkdata_frac = PTPoint(tmp_x & 0xffff, tmp_y & 0xffff)
+    actor = PTPoint(tmp_x >> 16, tmp_y >> 16)
+    if math.abs(actor.x - actor.walkdata_cur.x) > dist_x then
+        actor = PTPoint(actor.walkdata_next.x, actor.pos.y)
+    end
+    if math.abs(actor.y - actor.walkdata_cur.y) > dist_y then
+        actor = PTPoint(actor.pos.x, actor.walkdata_next.y)
+    end
+    return true
+end
+
+local _PTStartWalkActor = function(actor, boxes, dest)
+    local dest_point, dest_box = _PTAdjustPointToBeInBox(dest, boxes)
+
+    actor.walkdata_dest = dest_point
+    actor.walkdata_destbox = dest_box
+    actor.walkdata_curbox = actor.walkbox
+    actor.moving = MF_NEW_LEG
+end
+
+local _PTCalcMovementFactor = function(actor, next)
+    if actor.x == next.x and actor.pos.y == next.y then
+        return false
+    end
+
+    local diff_x = next.x - actor.x
+    local diff_y = next.y - actor.y
+    local delta_y_factor = actor.speed_y << 16
+    if diff_y < 0 then
+        delta_y_factor = -delta_y_factor
+    end
+    local delta_x_factor = delta_y_factor * diff_x
+    if diff_y ~= 0 then
+        delta_x_factor = delta_x_factor // diff_y
+    else
+        delta_y_factor = 0
+    end
+
+    if math.abs(delta_x_factor // 0x10000) > actor.speed_x then
+        delta_x_factor = actor.speed_x << 16
+        if diff_x < 0 then
+            delta_x_factor = -delta_x_factor
+        end
+        delta_y_factor = delta_x_factor * diff_y
+        if diff_x ~= 0 then
+            delta_y_factor = delta_y_factor // diff_x
+        else
+            delta_x_factor = 0
+        end
+    end
+
+    actor.walkdata_frac = PTPoint(0, 0)
+    actor.walkdata_cur = PTPoint(actor.x, actor.y)
+    actor.walkdata_next = next
+    actor.walkdata_delta_factor = PTPoint(delta_x_factor, delta_y_factor)
+    actor.walkdata_facing = (math.floor(math.atan(delta_x_factor, -delta_y_factor) * 180 / math.pi) + 360) % 360
+    return _PTActorWalkStep(actor)
+end
+
+PTWalkActor = function(actor)
+    if not actor.moving > 0 then
+        return
+    end
+
+    if actor.moving ~= MF_NEW_LEG then
+        if _PTActorWalkStep(actor) then
+            return
+        end
+        if actor.moving == MF_LAST_LEG then
+            actor.moving = 0
+            actor.walkbox = actor.walkdata_destbox
+            -- turn anim here
+        end
+
+        if actor.moving == MF_TURN then
+            -- update_actor_direction
+        end
+
+        actor.walkbox = actor.walkdata_curbox
+        actor.moving = MF_IN_LEG
+    end
+    actor.moving = MF_NEW_LEG
+
+    while true do
+        if not actor.walkbox then
+            actor.walkbox = actor.walkdata_destbox
+            actor.walkdata_curbox = actor.walkdata_destbox
+            break
+        end
+
+        if actor.walkbox.id == actor.walkdata_destbox.id then
+            break
+        end
+
+        local next_box = PTRoomGetNextBox(actor.room, actor.walkbox.id, actor.walkdata_destbox.id)
+        actor.walkdata_curbox = next_box
+
+        local result, found_path = _PTFindPathTowards(actor, actor.walkbox, next_box, actor.walkdata_destbox)
+        if result then
+            break
+        end
+
+        if _PTCalcMovementFactor(actor, found_path) then
+            return
+        end
+
+        actor.walkbox = actor.walkdata_curbox
+    end
+
+    actor.moving = MF_LAST_LEG
+    _PTCalcMovementFactor(actor, actor.walkdata_dest)
+end
+
+----- actor code -----
+
 PTActor = function(name)
     return {
         _type = "PTActor",
@@ -161,6 +703,19 @@ PTActor = function(name)
         talk_font = nil,
         talk_color = { 0xff, 0xff, 0xff },
         talk_millis = nil,
+        walkdata_dest = PTPoint(0, 0),
+        walkdata_cur = PTPoint(0, 0),
+        walkdata_next = PTPoint(0, 0),
+        walkdata_frac = PTPoint(0, 0),
+        walkdata_delta_factor = PTPoint(0, 0),
+        walkdata_destbox = nil,
+        walkdata_curbox = nil,
+        walkbox = nil,
+        scale_x = 0xff,
+        scale_y = 0xff,
+        speed_x = 8,
+        speed_y = 2,
+        moving = 0,
     }
 end
 
@@ -215,8 +770,10 @@ PTWaitForActor = function(actor)
     error(string.format("PTWaitForActor(): thread not found"))
 end
 
+----- graphics code -----
+
 PTBackground = function(image, x, y, z)
-    return { _type = "PTBackground", image = image, x = x, y = y, z = z, collision = false }
+    return { _type = "PTBackground", image = image, x = x, y = y, z = z, collision = false, visible = true }
 end
 
 PTSprite = function(x, y, z, animations)
@@ -228,6 +785,7 @@ PTSprite = function(x, y, z, animations)
         animations = animations,
         current_animation = nil,
         collision = false,
+        visible = true,
     }
 end
 
@@ -235,9 +793,9 @@ PTAnimation = function(rate, frames)
     return {
         _type = "PTAnimation",
         rate = rate,
+        frames = frames,
         looping = false,
         bounce = false,
-        frames = frames,
         current_frame = 0,
         next_wait = 0,
     }
@@ -648,19 +1206,23 @@ _PTRender = function()
         _PTClearScreen()
     end
     for i, obj in pairs(_PTCurrentRoom.render_list) do
-        frame = PTGetAnimationFrame(obj)
-        if frame then
-            _PTDrawImage(frame.ptr, obj.x, obj.y)
+        if obj.visible then
+            frame = PTGetAnimationFrame(obj)
+            if frame then
+                _PTDrawImage(frame.ptr, obj.x, obj.y)
+            end
         end
     end
     for i, obj in pairs(_PTGlobalRenderList) do
-        frame = PTGetAnimationFrame(obj)
-        if frame then
-            _PTDrawImage(frame.ptr, obj.x, obj.y)
+        if obj.visible then
+            frame = PTGetAnimationFrame(obj)
+            if frame then
+                _PTDrawImage(frame.ptr, obj.x, obj.y)
+            end
         end
     end
 
-    if _PTMouseSprite and not _PTInputGrabbed then
+    if _PTMouseSprite and not _PTInputGrabbed and _PTMouseSprite.visible then
         mouse_x, mouse_y = _PTGetMousePos()
         frame = PTGetAnimationFrame(_PTMouseSprite)
         if frame then
