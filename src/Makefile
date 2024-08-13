@@ -52,7 +52,13 @@ boot.lo: boot.lua
 boot.h: boot.lo
 	$(LUA) bin2c.lua boot.lo > boot.h
 
-script.o: script.c boot.h
+inspect.lo: inspect.lua
+	$(LUAC) -o inspect.lo inspect.lua
+
+inspect.h: inspect.lo
+	$(LUA) bin2c.lua inspect.lo > inspect.h
+
+script.o: script.c boot.h inspect.h
 	$(CC) $(CFLAGS) -g -c script.c -o script.o
 
 %.o : %.c

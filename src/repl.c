@@ -67,7 +67,10 @@ static int lua_serial_print(lua_State* L)
     int i;
     for (i = 1; i <= n; i++) { /* for each argument */
         size_t l;
-        const char* s = luaL_tolstring(L, i, &l); /* convert it to string */
+        lua_getglobal(L, "inspect");
+        lua_pushvalue(L, i);
+        lua_call(L, 1, 1);
+        const char* s = lua_tolstring(L, -1, &l); /* convert it to string */
         if (i > 1) /* not the first element? */
             serial_write("\t", 1); /* add a tab before it */
         serial_write(s, l); /* print it */
