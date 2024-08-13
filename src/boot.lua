@@ -123,7 +123,30 @@ PTRoom = function(name, width, height)
         render_list = {},
         boxes = {},
         box_matrix = { {} },
+        actors = {},
     }
+end
+
+_PTAddToList = function(list, object)
+    local exists = false
+    for i, obj in ipairs(list) do
+        if object == obj then
+            exists = true
+            break
+        end
+    end
+    if not exists then
+        table.insert(list, object)
+    end
+end
+
+_PTRemoveFromList = function(list, object)
+    for i, obj in ipairs(list) do
+        if object == obj then
+            table.remove(list, i)
+            break
+        end
+    end
 end
 
 PTRoomAddObject = function(room, object)
@@ -132,7 +155,7 @@ PTRoomAddObject = function(room, object)
         return
     end
     if object then
-        table.insert(room.render_list, object)
+        _PTAddToList(room.render_list, object)
     end
     table.sort(room.render_list, function(a, b)
         return a.z < b.z
@@ -144,12 +167,7 @@ PTRoomRemoveObject = function(room, object)
         error("PTRoomRemoveObject: expected PTRoom for first argument")
     end
     if object then
-        for i, obj in pairs(room.render_list) do
-            if object == obj then
-                table.remove(room.render_list, i)
-                break
-            end
-        end
+        _PTRemoveFromList(room.render_list, object)
     end
     table.sort(room.render_list, function(a, b)
         return a.z < b.z
@@ -171,6 +189,23 @@ PTRoomSetWalkBoxes = function(room, boxes)
     room.box_matrix = PTGenWalkBoxMatrix(#boxes, room.box_links)
 end
 
+PTRoomGetNextBox = function(room, from_id, to_id)
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomGetNextBox: expected PTRoom for first argument")
+    end
+    if from_id <= 0 or from_id > #room.boxes then
+        error("PTRoomGetNextBox: argument 2 out of range")
+    end
+    if to_id <= 0 or to_id > #room.boxes then
+        error("PTRoomGetNextBox: argument 3 out of range")
+    end
+    target = room.box_matrix[from_id][to_id]
+    if target == 0 then
+        return to_id
+    end
+    return room.boxes[target]
+end
+
 ----- walkbox code -----
 
 -- algorithms nicked from ScummVM's SCUMM engine implementation
@@ -184,8 +219,8 @@ PTPoint = function(x, y)
     return { x = x, y = y }
 end
 
-PTWalkBox = function(ul, ur, lr, ll)
-    return { _type = "PTWalkBox", id = nil, ul = ul, ur = ur, lr = lr, ll = ll }
+PTWalkBox = function(ul, ur, lr, ll, z)
+    return { _type = "PTWalkBox", id = nil, ul = ul, ur = ur, lr = lr, ll = ll, z = z }
 end
 
 local _PTStraightLinesOverlap = function(a1, a2, b1, b2)
@@ -294,7 +329,7 @@ local _PTClosestPointOnLine = function(start, finish, target)
 
     local result = PTPoint(0, 0)
 
-    if finis.x == start.x then
+    if finish.x == start.x then
         result = PTPoint(start.x, target.y)
     elseif finish.y == start.y then
         result = PTPoint(target.x, start.y)
@@ -438,8 +473,8 @@ local _PTAdjustPointToBeInBox = function(point, boxes)
 end
 
 local _PTFindPathTowards = function(actor, b1, b2, b3)
-    local box1 = PTWalkBox(b1.id, b1.ul, b1.ur, b1.lr, b1.ll)
-    local box2 = PTWalkBox(b2.id, b2.ul, b2.ur, b2.lr, b2.ll)
+    local box1 = PTWalkBox(b1.ul, b1.ur, b1.lr, b1.ll)
+    local box2 = PTWalkBox(b2.ul, b2.ur, b2.lr, b2.ll)
     local found_path = PTPoint(0, 0)
     for i = 1, 4 do
         for j = 1, 4 do
@@ -474,7 +509,7 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
                     end
                 else
                     local pos_y = actor.y
-                    if box2.id == b3.id then
+                    if b2.id == b3.id then
                         local diff_x = actor.walkdata_dest.x - actor.x
                         local diff_y = actor.walkdata_dest.y - actor.y
                         local box_diff_x = box1.ul.x - actor.x
@@ -500,7 +535,7 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
                     if q > box1.ur.y then
                         q = box1.ur.y
                     end
-                    if q == pos_y and box2.id == b3.id then
+                    if q == pos_y and b2.id == b3.id then
                         return true, found_path
                     end
                     found_path = PTPoint(box1.ul.x, q)
@@ -538,7 +573,7 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
                     end
                 else
                     local pos_x = actor.x
-                    if box2.id == b3.id then
+                    if b2.id == b3.id then
                         local diff_x = actor.walkdata_dest.x - actor.x
                         local diff_y = actor.walkdata_dest.y - actor.y
                         local box_diff_y = box1.ul.y - actor.y
@@ -559,7 +594,7 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
                     if q > box1.ur.x then
                         q = box1.ur.x
                     end
-                    if q == pos_x and box2.id == b3.id then
+                    if q == pos_x and b2.id == b3.id then
                         return true, found_path
                     end
                     found_path = PTPoint(q, box1.ul.y)
@@ -586,7 +621,7 @@ end
 
 local _PTActorWalkStep = function(actor)
     if actor.walkbox.id ~= actor.walkdata_curbox.id and _PTCheckPointInBoxBounds(actor, actor.walkdata_curbox) then
-        actor.walkbox = actor.walkdata_curbox
+        PTActorSetWalkBox(actor, actor.walkdata_curbox)
     end
     local dist_x = math.abs(actor.walkdata_next.x - actor.walkdata_cur.x)
     local dist_y = math.abs(actor.walkdata_next.y - actor.walkdata_cur.y)
@@ -597,18 +632,18 @@ local _PTActorWalkStep = function(actor)
     local tmp_x = (actor.x << 16) + actor.walkdata_frac.x + (actor.walkdata_delta_factor.x >> 8) * actor.scale_x
     local tmp_y = (actor.y << 16) + actor.walkdata_frac.y + (actor.walkdata_delta_factor.y >> 8) * actor.scale_y
     actor.walkdata_frac = PTPoint(tmp_x & 0xffff, tmp_y & 0xffff)
-    actor = PTPoint(tmp_x >> 16, tmp_y >> 16)
+    actor.x, actor.y = tmp_x >> 16, tmp_y >> 16
     if math.abs(actor.x - actor.walkdata_cur.x) > dist_x then
-        actor = PTPoint(actor.walkdata_next.x, actor.pos.y)
+        actor.x = actor.walkdata_next.x
     end
     if math.abs(actor.y - actor.walkdata_cur.y) > dist_y then
-        actor = PTPoint(actor.pos.x, actor.walkdata_next.y)
+        actor.y = actor.walkdata_next.y
     end
     return true
 end
 
 local _PTCalcMovementFactor = function(actor, next)
-    if actor.x == next.x and actor.pos.y == next.y then
+    if actor.x == next.x and actor.y == next.y then
         return false
     end
 
@@ -673,7 +708,7 @@ PTActorWalk = function(actor)
         error("PTActorWalk: expected PTActor for first argument")
     end
 
-    if not actor.moving > 0 then
+    if actor.moving == 0 then
         return
     end
 
@@ -683,7 +718,7 @@ PTActorWalk = function(actor)
         end
         if actor.moving == MF_LAST_LEG then
             actor.moving = 0
-            actor.walkbox = actor.walkdata_destbox
+            PTActorSetWalkBox(actor, actor.walkdata_destbox)
             -- turn anim here
         end
 
@@ -691,14 +726,14 @@ PTActorWalk = function(actor)
             -- update_actor_direction
         end
 
-        actor.walkbox = actor.walkdata_curbox
+        PTActorSetWalkBox(actor, actor.walkdata_curbox)
         actor.moving = MF_IN_LEG
     end
     actor.moving = MF_NEW_LEG
 
     while true do
         if not actor.walkbox then
-            actor.walkbox = actor.walkdata_destbox
+            PTActorSetWalkBox(actor, actor.walkdata_destbox)
             actor.walkdata_curbox = actor.walkdata_destbox
             break
         end
@@ -719,7 +754,7 @@ PTActorWalk = function(actor)
             return
         end
 
-        actor.walkbox = actor.walkdata_curbox
+        PTActorSetWalkBox(actor, actor.walkdata_curbox)
     end
 
     actor.moving = MF_LAST_LEG
@@ -735,6 +770,7 @@ PTActor = function(name)
         x = 0,
         y = 0,
         z = 0,
+        visible = true,
         room = nil,
         sprite = nil,
         talk_x = 0,
@@ -759,6 +795,19 @@ PTActor = function(name)
     }
 end
 
+PTActorSetWalkBox = function(actor, box)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorSetWalkBox: expected PTActor for first argument")
+    end
+    if not box or box._type ~= "PTWalkBox" then
+        error("PTActorSetWalkBox: expected PTWalkBox for second argument")
+    end
+    actor.walkbox = box
+    if box.z then
+        actor.z = box.z
+    end
+end
+
 PTActorSetRoom = function(actor, room, x, y)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorSetRoom: expected PTActor for first argument")
@@ -769,15 +818,17 @@ PTActorSetRoom = function(actor, room, x, y)
 
     if actor.room then
         PTRoomRemoveObject(actor.room, actor)
+        _PTRemoveFromList(actor.room.actors, actor)
     end
     actor.room = room
     if actor.room then
         PTRoomAddObject(actor.room, actor)
+        _PTAddToList(actor.room.actors, actor)
     end
     if actor.room.boxes then
         local near_point, near_box = _PTAdjustPointToBeInBox(PTPoint(x, y), actor.room.boxes)
         actor.x, actor.y = near_point.x, near_point.y
-        actor.walkbox = near_box
+        PTActorSetWalkBox(actor, near_box)
     else
         actor.x, actor.y = x, y
     end
@@ -791,7 +842,7 @@ PTActorUpdate = function(actor, fast_forward)
         if not fast_forward and _PTGetMillis() < actor.talk_millis then
             return false
         else
-            PTRoomRemoveObject(PTCurrentRoom(), actor.talk_img)
+            PTRoomRemoveObject(actor.room, actor.talk_img)
             actor.talk_img = nil
         end
     end
@@ -837,16 +888,34 @@ end
 ----- graphics code -----
 
 PTBackground = function(image, x, y, z)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
     return { _type = "PTBackground", image = image, x = x, y = y, z = z, collision = false, visible = true }
 end
 
-PTSprite = function(x, y, z, animations)
+PTSprite = function(animations, x, y, z)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
     return {
         _type = "PTSprite",
+        animations = animations,
         x = x,
         y = y,
         z = z,
-        animations = animations,
         current_animation = nil,
         collision = false,
         visible = true,
@@ -1241,6 +1310,15 @@ _PTUpdateMouseOver = function()
     end
 end
 
+_PTUpdateRoom = function()
+    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+        return
+    end
+    for i, actor in ipairs(_PTCurrentRoom.actors) do
+        PTActorWalk(actor)
+    end
+end
+
 _PTEvents = function()
     local ev = _PTPumpEvent()
     while ev do
@@ -1262,6 +1340,7 @@ _PTEvents = function()
     if not _PTInputGrabbed then
         _PTUpdateMouseOver()
     end
+    _PTUpdateRoom()
 end
 
 _PTRender = function()
