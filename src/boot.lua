@@ -115,7 +115,15 @@ end
 -- @tparam int height Height of the room in pixels.
 -- @tresult table The new room.
 PTRoom = function(name, width, height)
-    return { _type = "PTRoom", name = name, width = width, height = height, render_list = {} }
+    return {
+        _type = "PTRoom",
+        name = name,
+        width = width,
+        height = height,
+        render_list = {},
+        boxes = {},
+        box_matrix = { {} },
+    }
 end
 
 PTRoomAddObject = function(room, object)
@@ -133,7 +141,7 @@ end
 
 PTRoomRemoveObject = function(room, object)
     if not room or room._type ~= "PTRoom" then
-        error("PTRoomAddObject: expected PTRoom for first argument")
+        error("PTRoomRemoveObject: expected PTRoom for first argument")
     end
     if object then
         for i, obj in pairs(room.render_list) do
@@ -146,6 +154,21 @@ PTRoomRemoveObject = function(room, object)
     table.sort(room.render_list, function(a, b)
         return a.z < b.z
     end)
+end
+
+PTRoomSetWalkBoxes = function(room, boxes)
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomSetWalkboxes: expected PTRoom for first argument")
+    end
+    for i = 1, #boxes do
+        if not boxes[i] or boxes[i]._type ~= "PTWalkBox" then
+            error("PTRoomSetWalkboxes: expected an array of PTWalkBox for second argument")
+        end
+        boxes[i].id = i
+    end
+    room.boxes = boxes
+    room.box_links = PTGenLinksFromWalkBoxes(boxes)
+    room.box_matrix = PTGenWalkBoxMatrix(#boxes, room.box_links)
 end
 
 ----- walkbox code -----
@@ -161,8 +184,8 @@ PTPoint = function(x, y)
     return { x = x, y = y }
 end
 
-PTWalkBox = function(id, ul, ur, lr, ll)
-    return { _type = "PTWalkBox", id = id, ul = ul, ur = ur, lr = lr, ll = ll }
+PTWalkBox = function(ul, ur, lr, ll)
+    return { _type = "PTWalkBox", id = nil, ul = ul, ur = ur, lr = lr, ll = ll }
 end
 
 local _PTStraightLinesOverlap = function(a1, a2, b1, b2)
@@ -180,15 +203,15 @@ end
 PTGenLinksFromWalkBoxes = function(boxes)
     local result = {}
     for i = 1, #boxes do
-        for j in i, #boxes do
+        for j = i + 1, #boxes do
             local a = boxes[i]
             local b = boxes[j]
             if
-                _PTStraightLinesOverlap(a.ul, a.ur, b.lr, b.ll)
+                _PTStraightLinesOverlap(a.ul, a.ur, b.lr, b.ll) -- sensible comparisons
                 or _PTStraightLinesOverlap(a.lr, a.ll, b.ul, b.ur)
                 or _PTStraightLinesOverlap(a.ur, a.lr, b.ll, b.ul)
                 or _PTStraightLinesOverlap(a.ll, a.ul, b.ur, b.lr)
-                or _PTStraightLinesOverlap(a.ul, a.ur, b.ul, b.ur)
+                or _PTStraightLinesOverlap(a.ul, a.ur, b.ul, b.ur) -- ridiculous comparisons
                 or _PTStraightLinesOverlap(a.ul, a.ur, b.ur, b.lr)
                 or _PTStraightLinesOverlap(a.ul, a.ur, b.ll, b.ul)
                 or _PTStraightLinesOverlap(a.ur, a.lr, b.ul, b.ur)
@@ -208,7 +231,7 @@ PTGenLinksFromWalkBoxes = function(boxes)
     return result
 end
 
-local _PTNewMatrix = function(n)
+_PTNewMatrix = function(n)
     local result = {}
     for i = 1, n do
         local inner = {}
@@ -220,11 +243,11 @@ local _PTNewMatrix = function(n)
     return result
 end
 
-local _PTCopyMatrix = function(mat)
+_PTCopyMatrix = function(mat)
     local result = {}
     for i = 1, #mat do
         local inner = {}
-        for j = i, #mat[i] do
+        for j = 1, #mat[i] do
             table.insert(inner, mat[i][j])
         end
         table.insert(result, inner)
@@ -233,16 +256,17 @@ local _PTCopyMatrix = function(mat)
 end
 
 PTGenWalkBoxMatrix = function(n, links)
-    local result = PTNewMatrix(n)
-    for link in links do
+    local result = _PTNewMatrix(n)
+    for i, link in ipairs(links) do
         result[link[1]][link[2]] = link[2]
         result[link[2]][link[1]] = link[1]
     end
 
-    while true do
-        local modded = false
+    local modded = true
+    while modded do
+        modded = false
         local result_prev = result
-        local result = _PTCopyMatrix(result_prev)
+        result = _PTCopyMatrix(result_prev)
         for a = 1, n do
             for b = 1, n do
                 -- if boxes a and b are different, and there's
@@ -251,7 +275,7 @@ PTGenWalkBoxMatrix = function(n, links)
                     for c = 1, n do
                         -- try each existing link from a,
                         -- see if it has a link to b
-                        if result_prev[a][c] ~= 0 and result_prev[result_prev[a][c]][b] then
+                        if result_prev[a][c] ~= 0 and result_prev[result_prev[a][c]][b] ~= 0 then
                             result[a][b] = result_prev[a][c]
                             modded = true
                             break
@@ -259,9 +283,6 @@ PTGenWalkBoxMatrix = function(n, links)
                     end
                 end
             end
-        end
-        if not modded then
-            break
         end
     end
     return result
@@ -586,15 +607,6 @@ local _PTActorWalkStep = function(actor)
     return true
 end
 
-local _PTStartWalkActor = function(actor, boxes, dest)
-    local dest_point, dest_box = _PTAdjustPointToBeInBox(dest, boxes)
-
-    actor.walkdata_dest = dest_point
-    actor.walkdata_destbox = dest_box
-    actor.walkdata_curbox = actor.walkbox
-    actor.moving = MF_NEW_LEG
-end
-
 local _PTCalcMovementFactor = function(actor, next)
     if actor.x == next.x and actor.pos.y == next.y then
         return false
@@ -634,7 +646,33 @@ local _PTCalcMovementFactor = function(actor, next)
     return _PTActorWalkStep(actor)
 end
 
-PTWalkActor = function(actor)
+--- Set the actor moving towards a point in the room.
+-- @tparam table actor Actor to modify.
+-- @tparam int x X coordinate in room space.
+-- @tparam int y Y coordinate in room space.
+PTActorSetWalk = function(actor, x, y)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorSetWalk: expected PTActor for first argument")
+    end
+
+    if not actor.room or actor.room._type ~= "PTRoom" then
+        error("PTActorSetWalk: PTActor isn't assigned to a room")
+    end
+
+    local dest = PTPoint(x, y)
+    local dest_point, dest_box = _PTAdjustPointToBeInBox(dest, actor.room.boxes)
+
+    actor.walkdata_dest = dest_point
+    actor.walkdata_destbox = dest_box
+    actor.walkdata_curbox = actor.walkbox
+    actor.moving = MF_NEW_LEG
+end
+
+PTActorWalk = function(actor)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorWalk: expected PTActor for first argument")
+    end
+
     if not actor.moving > 0 then
         return
     end
@@ -697,6 +735,8 @@ PTActor = function(name)
         x = 0,
         y = 0,
         z = 0,
+        room = nil,
+        sprite = nil,
         talk_x = 0,
         talk_y = 0,
         talk_img = nil,
@@ -719,9 +759,33 @@ PTActor = function(name)
     }
 end
 
+PTActorSetRoom = function(actor, room, x, y)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorSetRoom: expected PTActor for first argument")
+    end
+    if room and room._type ~= "PTRoom" then
+        error("PTActorSetRoom: expected nil or PTRoom for second argument")
+    end
+
+    if actor.room then
+        PTRoomRemoveObject(actor.room, actor)
+    end
+    actor.room = room
+    if actor.room then
+        PTRoomAddObject(actor.room, actor)
+    end
+    if actor.room.boxes then
+        local near_point, near_box = _PTAdjustPointToBeInBox(PTPoint(x, y), actor.room.boxes)
+        actor.x, actor.y = near_point.x, near_point.y
+        actor.walkbox = near_box
+    else
+        actor.x, actor.y = x, y
+    end
+end
+
 PTActorUpdate = function(actor, fast_forward)
     if not actor or actor._type ~= "PTActor" then
-        error("PTActor: expected PTActor for first argument")
+        error("PTActorUpdate: expected PTActor for first argument")
     end
     if actor.talk_img and actor.talk_millis then
         if not fast_forward and _PTGetMillis() < actor.talk_millis then
@@ -739,7 +803,7 @@ TALK_CHAR_DELAY = 85
 
 PTActorTalk = function(actor, message)
     if not actor or actor._type ~= "PTActor" then
-        error("PTActor: expected PTActor for first argument")
+        error("PTActorTalk: expected PTActor for first argument")
     end
     if not actor.talk_font then
         PTLog("PTActorTalk: no default font!!")
@@ -1103,6 +1167,8 @@ PTGetAnimationFrame = function(object)
         end
     elseif object and object._type == "PTBackground" then
         return object.image
+    elseif object and object._type == "PTActor" then
+        return PTGetAnimationFrame(object.sprite)
     end
     return nil
 end
