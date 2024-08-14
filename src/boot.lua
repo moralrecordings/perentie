@@ -472,16 +472,17 @@ local _PTAdjustPointToBeInBox = function(point, boxes)
     return best_point, best_box
 end
 
-local _PTFindPathTowards = function(actor, b1, b2, b3)
+local _PTFindPathTowards = function(start_x, start_y, dest_x, dest_y, b1, b2, b3)
     local box1 = PTWalkBox(b1.ul, b1.ur, b1.lr, b1.ll)
     local box2 = PTWalkBox(b2.ul, b2.ur, b2.lr, b2.ll)
     local found_path = PTPoint(0, 0)
     for i = 1, 4 do
         for j = 1, 4 do
+            --print(string.format("%s %s", inspect(box1, {newline='', indent=''}), inspect(box2, {newline='', indent=''})))
             -- if the top line has the same x coordinate
             if box1.ul.x == box1.ur.x and box1.ul.x == box2.ul.x and box1.ul.x == box2.ur.x then
                 local flag = 0
-                -- switch coordinates if not ordered
+                -- switch y coordinates if not ordered
                 if box1.ul.y > box1.ur.y then
                     box1.ul, box1.ur = PTPoint(box1.ul.x, box1.ur.y), PTPoint(box1.ur.x, box1.ul.y)
                     flag = flag | 1
@@ -500,26 +501,27 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
                         and box2.ul.y ~= box2.ur.y
                     )
                 then
-                    -- switch coordinates back if required
-                    if flag & 1 > 0 then
+                    -- switch y coordinates back if required
+                    if (flag & 1) > 0 then
                         box1.ul, box1.ur = PTPoint(box1.ul.x, box1.ur.y), PTPoint(box1.ur.x, box1.ul.y)
                     end
-                    if flag & 2 > 0 then
+                    if (flag & 2) > 0 then
                         box2.ul, box2.ur = PTPoint(box2.ul.x, box2.ur.y), PTPoint(box2.ur.x, box2.ul.y)
                     end
                 else
-                    local pos_y = actor.y
+                    local pos_y = start_y
                     if b2.id == b3.id then
-                        local diff_x = actor.walkdata_dest.x - actor.x
-                        local diff_y = actor.walkdata_dest.y - actor.y
-                        local box_diff_x = box1.ul.x - actor.x
+                        local diff_x = dest_x - start_x
+                        local diff_y = dest_y - start_y
+                        local box_diff_x = box1.ul.x - start_x
                         if diff_x ~= 0 then
                             diff_y = diff_y * box_diff_x
                             local t = diff_y // diff_x
                             if t == 0 and (diff_y <= 0 or diff_x <= 0) and (diff_y >= 0 or diff_x >= 0) then
                                 t = -1
                             end
-                            pos_y = actor.y + t
+                            pos_y = start_y + t
+                            --print(string.format("pos_y: %d, diff_x: %d, diff_y: %d", pos_y, diff_x, diff_y))
                         end
                     end
                     local q = pos_y
@@ -538,6 +540,7 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
                     if q == pos_y and b2.id == b3.id then
                         return true, found_path
                     end
+                    --print(string.format("i: %d, j: %d, box1.ul.x: %d, q: %d", i, j, box1.ul.x, q))
                     found_path = PTPoint(box1.ul.x, q)
                     return false, found_path
                 end
@@ -545,13 +548,13 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
             -- if the top line has the same y coordinate
             if box1.ul.y == box1.ur.y and box1.ul.y == box2.ul.y and box1.ul.y == box2.ur.y then
                 local flag = 0
-                -- switch coordinates if not ordered
+                -- switch x coordinates if not ordered
                 if box1.ul.x > box1.ur.x then
-                    box1.ul, box1.ur = PTPoint(box1.ul.x, box1.ur.y), PTPoint(box1.ur.x, box1.ul.y)
+                    box1.ul, box1.ur = PTPoint(box1.ur.x, box1.ul.y), PTPoint(box1.ul.x, box1.ur.y)
                     flag = flag | 1
                 end
                 if box2.ul.x > box2.ur.x then
-                    box2.ul, box2.ur = PTPoint(box2.ul.x, box2.ur.y), PTPoint(box2.ur.x, box2.ul.y)
+                    box2.ul, box2.ur = PTPoint(box2.ur.x, box2.ul.y), PTPoint(box2.ul.x, box2.ur.y)
                     flag = flag | 2
                 end
 
@@ -564,22 +567,23 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
                         and box2.ul.x ~= box2.ur.x
                     )
                 then
-                    -- switch coordinates back if required
-                    if flag & 1 > 0 then
-                        box1.ul, box1.ur = PTPoint(box1.ul.x, box1.ur.y), PTPoint(box1.ur.x, box1.ul.y)
+                    -- switch x coordinates back if required
+                    if (flag & 1) > 0 then
+                        box1.ul, box1.ur = PTPoint(box1.ur.x, box1.ul.y), PTPoint(box1.ul.x, box1.ur.y)
                     end
-                    if flag & 2 > 0 then
-                        box2.ul, box2.ur = PTPoint(box2.ul.x, box2.ur.y), PTPoint(box2.ur.x, box2.ul.y)
+                    if (flag & 2) > 0 then
+                        box2.ul, box2.ur = PTPoint(box2.ur.x, box2.ul.y), PTPoint(box2.ul.x, box2.ur.y)
                     end
                 else
-                    local pos_x = actor.x
+                    local pos_x = start_x
                     if b2.id == b3.id then
-                        local diff_x = actor.walkdata_dest.x - actor.x
-                        local diff_y = actor.walkdata_dest.y - actor.y
-                        local box_diff_y = box1.ul.y - actor.y
+                        local diff_x = dest_x - start_x
+                        local diff_y = dest_y - start_y
+                        local box_diff_y = box1.ul.y - start_y
                         if diff_y ~= 0 then
                             pos_x = pos_x + (diff_x * box_diff_y // diff_y)
                         end
+                        --print(string.format("pos_x: %d, diff_x: %d, diff_y: %d, box_diff_y: %d", pos_y, diff_x, diff_y, box_diff_y))
                     end
                     local q = pos_x
                     if q < box2.ul.x then
@@ -597,6 +601,7 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
                     if q == pos_x and b2.id == b3.id then
                         return true, found_path
                     end
+                    --print(string.format("i: %d, j: %d, q: %d, box1.ul.y: %d", i, j, q, box1.ul.y))
                     found_path = PTPoint(q, box1.ul.y)
                     return false, found_path
                 end
@@ -611,9 +616,9 @@ local _PTFindPathTowards = function(actor, b1, b2, b3)
         end
         -- rotate box 2
         local tmp = box2.ul
-        box2.ul = box1.ur
-        box2.ur = box1.lr
-        box2.lr = box1.ll
+        box2.ul = box2.ur
+        box2.ur = box2.lr
+        box2.lr = box2.ll
         box2.ll = tmp
     end
     return false, found_path
@@ -673,6 +678,7 @@ local _PTCalcMovementFactor = function(actor, next)
         end
     end
 
+    print(actor.x, actor.y, next.x, next.y, delta_x_factor, delta_y_factor, diff_x, diff_y, actor.speed_x, actor.speed_y)
     actor.walkdata_frac = PTPoint(0, 0)
     actor.walkdata_cur = PTPoint(actor.x, actor.y)
     actor.walkdata_next = next
@@ -745,11 +751,22 @@ PTActorWalk = function(actor)
         local next_box = PTRoomGetNextBox(actor.room, actor.walkbox.id, actor.walkdata_destbox.id)
         actor.walkdata_curbox = next_box
 
-        local result, found_path = _PTFindPathTowards(actor, actor.walkbox, next_box, actor.walkdata_destbox)
+        local result, found_path = _PTFindPathTowards(actor.x, actor.y, actor.walkdata_dest.x, actor.walkdata_dest.y, actor.walkbox, next_box, actor.walkdata_destbox)
+        print(string.format(
+            "PTFindPathTowards: (%d, %d) (%d, %d) %s %s %s -> %s, (%d, %d)",
+            actor.x,
+            actor.y,
+            actor.walkdata_dest.x,
+            actor.walkdata_dest.y,
+            inspect(actor.walkbox.id),
+            inspect(next_box.id),
+            inspect(actor.walkdata_destbox.id),
+            inspect(result),
+            found_path.x,
+            found_path.y))
         if result then
             break
         end
-
         if _PTCalcMovementFactor(actor, found_path) then
             return
         end
@@ -1316,6 +1333,7 @@ _PTUpdateRoom = function()
     end
     for i, actor in ipairs(_PTCurrentRoom.actors) do
         PTActorWalk(actor)
+        --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
     end
 end
 
