@@ -30,8 +30,13 @@ static int line_end = 0;
 static bool repl_activated = false;
 static bool repl_in_multiline = false;
 
-void repl_init()
+static int lua_serial_print(lua_State* L);
+
+void repl_init(lua_State* L)
 {
+    // Intercept the "print" function to dump to the console
+    lua_pushcfunction(L, lua_serial_print);
+    lua_setglobal(L, "print");
 }
 
 /*
@@ -299,9 +304,6 @@ void repl_update(lua_State* L)
         //  show a welcome message and the prompt.
         if (!repl_activated) {
             repl_activated = true;
-            // Intercept the "print" function to dump to the console
-            lua_pushcfunction(L, lua_serial_print);
-            lua_setglobal(L, "print");
             // Show prompt
             serial_printf("┈┅━┥ Perentie v%s - Console ┝━┅┈\n", VERSION);
             serial_printf("%s\n\n", LUA_COPYRIGHT);
