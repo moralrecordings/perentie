@@ -101,14 +101,18 @@ void video_blit_image(pt_image* image, int16_t x, int16_t y)
     struct rect* crop = create_rect_dims(SCREEN_WIDTH, SCREEN_HEIGHT);
     x -= image->origin_x;
     y -= image->origin_y;
+    // log_print("Blitting %s to (%d,%d) %dx%d ->", image->path, x, y, image->width, image->height);
+    //  Constrain x and y to be an absolute start offset in screen space.
+    //  Crop the image rectangle, based on its location in screen space.
     if (!rect_blit_clip(&x, &y, ir, crop)) {
         // log_print("Rectangle off screen\n");
         destroy_rect(ir);
         destroy_rect(crop);
         return;
     }
+    // log_print("image coords (%d,%d) %dx%d\n", ir->left, ir->top, rect_width(ir), rect_height(ir));
 
-    // log_print("Blitting %s to %d,%d %dx%d\n", image->path, x, y, image->width, image->height);
+    // The source data is then drawn from the image rectangle.
     int16_t x_start = x;
     for (int yi = ir->top; yi < ir->bottom; yi++) {
         for (int xi = ir->left; xi < ir->right; xi += sizeof(uint8_t)) {
