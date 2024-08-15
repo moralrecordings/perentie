@@ -266,7 +266,7 @@ PTGenLinksFromWalkBoxes = function(boxes)
     return result
 end
 
-_PTNewMatrix = function(n)
+local _PTNewMatrix = function(n)
     local result = {}
     for i = 1, n do
         local inner = {}
@@ -278,7 +278,7 @@ _PTNewMatrix = function(n)
     return result
 end
 
-_PTCopyMatrix = function(mat)
+local _PTCopyMatrix = function(mat)
     local result = {}
     for i = 1, #mat do
         local inner = {}
@@ -432,16 +432,19 @@ local _PTGetClosestPointOnBox = function(point, box)
         result = tmp
     end
     tmp = _PTClosestPointOnLine(box.ur, box.lr, point)
+    dist = _PTSqrDist(point, tmp)
     if dist < best_dist then
         best_dist = dist
         result = tmp
     end
     tmp = _PTClosestPointOnLine(box.lr, box.ll, point)
+    dist = _PTSqrDist(point, tmp)
     if dist < best_dist then
         best_dist = dist
         result = tmp
     end
     tmp = _PTClosestPointOnLine(box.ll, box.ul, point)
+    dist = _PTSqrDist(point, tmp)
     if dist < best_dist then
         best_dist = dist
         result = tmp
@@ -469,6 +472,7 @@ local _PTAdjustPointToBeInBox = function(point, boxes)
             end
         end
     end
+    --print(string.format("PTAdjustPointToBeInBox(): point: (%d, %d), best_point: (%d, %d), best_box: %d", point.x, point.y, best_point.x, best_point.y, best_box.id))
     return best_point, best_box
 end
 
@@ -625,25 +629,31 @@ local _PTFindPathTowards = function(start_x, start_y, dest_x, dest_y, b1, b2, b3
 end
 
 local _PTActorWalkStep = function(actor)
+    -- update the walkbox if necessary
     if actor.walkbox.id ~= actor.walkdata_curbox.id and _PTCheckPointInBoxBounds(actor, actor.walkdata_curbox) then
         PTActorSetWalkBox(actor, actor.walkdata_curbox)
     end
     local dist_x = math.abs(actor.walkdata_next.x - actor.walkdata_cur.x)
     local dist_y = math.abs(actor.walkdata_next.y - actor.walkdata_cur.y)
+    --print(string.format("PTActorWalkStep(): dist_x: %d, dist_y: %d", dist_x, dist_y))
     if math.abs(actor.x - actor.walkdata_cur.x) >= dist_x and math.abs(actor.y - actor.walkdata_cur.y) >= dist_y then
         return false
     end
 
-    local tmp_x = (actor.x << 16) + actor.walkdata_frac.x + (actor.walkdata_delta_factor.x >> 8) * actor.scale_x
-    local tmp_y = (actor.y << 16) + actor.walkdata_frac.y + (actor.walkdata_delta_factor.y >> 8) * actor.scale_y
+    -- Lua can't deal with shifting negative numbers, do a divide instead
+    local tmp_x = (actor.x * 65536) + actor.walkdata_frac.x + (actor.walkdata_delta_factor.x // 256) * actor.scale_x
+    local tmp_y = (actor.y * 65536) + actor.walkdata_frac.y + (actor.walkdata_delta_factor.y // 256) * actor.scale_y
     actor.walkdata_frac = PTPoint(tmp_x & 0xffff, tmp_y & 0xffff)
-    actor.x, actor.y = tmp_x >> 16, tmp_y >> 16
+    actor.x, actor.y = tmp_x // 65536, tmp_y // 65536
+    --print(string.format("PTActorWalkStep(): actor.oldpos: (%d, %d), actor.walkdata_frac: (%d, %d), actor.walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_frac.x, actor.walkdata_frac.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
+    --print(string.format("PTActorWalkStep(): tmp_x: %d, tmp_y: %d, actor.pos: (%d, %d)", tmp_x, tmp_y, actor.x, actor.y))
     if math.abs(actor.x - actor.walkdata_cur.x) > dist_x then
         actor.x = actor.walkdata_next.x
     end
     if math.abs(actor.y - actor.walkdata_cur.y) > dist_y then
         actor.y = actor.walkdata_next.y
     end
+    --print(string.format("PTActorWalkStep(): actor.walkdata_cur: (%d, %d), actor.walkdata_next: (%d, %d), actor.newpos: (%d, %d)", actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.x, actor.y))
     return true
 end
 
@@ -654,7 +664,7 @@ local _PTCalcMovementFactor = function(actor, next)
 
     local diff_x = next.x - actor.x
     local diff_y = next.y - actor.y
-    local delta_y_factor = actor.speed_y << 16
+    local delta_y_factor = actor.speed_y * 65536
     if diff_y < 0 then
         delta_y_factor = -delta_y_factor
     end
@@ -666,7 +676,7 @@ local _PTCalcMovementFactor = function(actor, next)
     end
 
     if math.abs(delta_x_factor // 0x10000) > actor.speed_x then
-        delta_x_factor = actor.speed_x << 16
+        delta_x_factor = actor.speed_x * 65536
         if diff_x < 0 then
             delta_x_factor = -delta_x_factor
         end
@@ -678,7 +688,7 @@ local _PTCalcMovementFactor = function(actor, next)
         end
     end
 
-    print(actor.x, actor.y, next.x, next.y, delta_x_factor, delta_y_factor, diff_x, diff_y, actor.speed_x, actor.speed_y)
+    --print(actor.x, actor.y, next.x, next.y, delta_x_factor, delta_y_factor, diff_x, diff_y, actor.speed_x, actor.speed_y)
     actor.walkdata_frac = PTPoint(0, 0)
     actor.walkdata_cur = PTPoint(actor.x, actor.y)
     actor.walkdata_next = next
@@ -751,19 +761,27 @@ PTActorWalk = function(actor)
         local next_box = PTRoomGetNextBox(actor.room, actor.walkbox.id, actor.walkdata_destbox.id)
         actor.walkdata_curbox = next_box
 
-        local result, found_path = _PTFindPathTowards(actor.x, actor.y, actor.walkdata_dest.x, actor.walkdata_dest.y, actor.walkbox, next_box, actor.walkdata_destbox)
-        print(string.format(
-            "PTFindPathTowards: (%d, %d) (%d, %d) %s %s %s -> %s, (%d, %d)",
+        local result, found_path = _PTFindPathTowards(
             actor.x,
             actor.y,
             actor.walkdata_dest.x,
             actor.walkdata_dest.y,
-            inspect(actor.walkbox.id),
-            inspect(next_box.id),
-            inspect(actor.walkdata_destbox.id),
-            inspect(result),
-            found_path.x,
-            found_path.y))
+            actor.walkbox,
+            next_box,
+            actor.walkdata_destbox
+        )
+        --print(string.format(
+        --    "PTFindPathTowards: (%d, %d) (%d, %d) %s %s %s -> %s, (%d, %d)",
+        --    actor.x,
+        --    actor.y,
+        --    actor.walkdata_dest.x,
+        --    actor.walkdata_dest.y,
+        --    inspect(actor.walkbox.id),
+        --    inspect(next_box.id),
+        --    inspect(actor.walkdata_destbox.id),
+        --    inspect(result),
+        --    found_path.x,
+        --    found_path.y))
         if result then
             break
         end
@@ -808,6 +826,8 @@ PTActor = function(name)
         scale_y = 0xff,
         speed_x = 8,
         speed_y = 2,
+        walk_rate = 8,
+        walkdata_next_wait = 0,
         moving = 0,
     }
 end
@@ -820,8 +840,10 @@ PTActorSetWalkBox = function(actor, box)
         error("PTActorSetWalkBox: expected PTWalkBox for second argument")
     end
     actor.walkbox = box
-    if box.z then
+    if box.z and box.z ~= actor.z then
         actor.z = box.z
+        -- update the render list order
+        PTRoomAddObject(actor.room, nil)
     end
 end
 
@@ -1244,10 +1266,10 @@ PTGetAnimationFrame = function(object)
                 end
             elseif anim.current_frame == 0 then
                 anim.current_frame = 1
-                anim.next_wait = PTGetMillis() + (1000 / anim.rate)
+                anim.next_wait = PTGetMillis() + (1000 // anim.rate)
             elseif PTGetMillis() > anim.next_wait then
                 anim.current_frame = (anim.current_frame % #anim.frames) + 1
-                anim.next_wait = PTGetMillis() + (1000 / anim.rate)
+                anim.next_wait = PTGetMillis() + (1000 // anim.rate)
             end
             return anim.frames[anim.current_frame]
         end
@@ -1332,7 +1354,10 @@ _PTUpdateRoom = function()
         return
     end
     for i, actor in ipairs(_PTCurrentRoom.actors) do
-        PTActorWalk(actor)
+        if actor.moving > 0 and PTGetMillis() > actor.walkdata_next_wait then
+            PTActorWalk(actor)
+            actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
+        end
         --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
     end
 end
