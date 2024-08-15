@@ -728,6 +728,11 @@ PTActorWalk = function(actor)
         return
     end
 
+    if actor.moving == MF_LAST_LEG and actor.x == actor.walkdata_dest.x and actor.y == actor.walkdata_dest.y then
+        actor.moving = 0
+        return
+    end
+
     if actor.moving ~= MF_NEW_LEG then
         if _PTActorWalkStep(actor) then
             return
@@ -1121,14 +1126,24 @@ PTDoVerb = function(verb_name, hotspot_id)
     _PTCurrentHotspot = hotspot_id
 end
 
--- this could be a custom callback!!!
+local _PTVerbReadyCallback = nil
+PTSetVerbReadyCheck = function(callback)
+    _PTVerbReadyCallback = callback
+end
+
 PTVerbReady = function()
-    return (
+    if
         _PTCurrentVerb ~= nil
         and _PTCurrentHotspot ~= nil
         and _PTVerbCallbacks[_PTCurrentVerb]
         and _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentHotspot]
-    )
+    then
+        if _PTVerbReadyCallback then
+            return _PTVerbReadyCallback()
+        end
+        return true
+    end
+    return false
 end
 
 _PTRunVerb = function()
