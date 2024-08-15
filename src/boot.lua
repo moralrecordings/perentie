@@ -120,10 +120,15 @@ PTRoom = function(name, width, height)
         name = name,
         width = width,
         height = height,
+        x = 0,
+        y = 0,
+        origin_x = SCREEN_WIDTH // 2,
+        origin_y = SCREEN_HEIGHT // 2,
         render_list = {},
         boxes = {},
         box_matrix = { {} },
         actors = {},
+        camera_actor = nil,
     }
 end
 
@@ -199,7 +204,7 @@ PTRoomGetNextBox = function(room, from_id, to_id)
     if to_id <= 0 or to_id > #room.boxes then
         error("PTRoomGetNextBox: argument 3 out of range")
     end
-    target = room.box_matrix[from_id][to_id]
+    local target = room.box_matrix[from_id][to_id]
     if target == 0 then
         return to_id
     end
@@ -1027,7 +1032,7 @@ PTStartThread = function(name, func, ...)
     if _PTThreads[name] then
         error(string.format("PTStartThread(): thread named %s exists", name))
     end
-    varargs = ...
+    local varargs = ...
     _PTThreads[name] = coroutine.create(function()
         func(table.unpack(varargs))
     end)
@@ -1065,6 +1070,21 @@ end
 local _PTCurrentRoom = nil
 local _PTOnRoomEnterHandlers = {}
 local _PTOnRoomExitHandlers = {}
+
+PTScreenToRoom = function(x, y)
+    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+        return x, y
+    end
+    return (_PTCurrentRoom.x - _PTCurrentRoom.origin_x) + x, (_PTCurrentRoom.y - _PTCurrentRoom.origin_y) + y
+end
+
+PTRoomToScreen = function(x, y)
+    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+        return x, y
+    end
+    return x - (_PTCurrentRoom.x - _PTCurrentRoom.origin_x), y - (_PTCurrentRoom.y - _PTCurrentRoom.origin_y)
+end
+
 --- Set a callback for switching to a room.
 -- @tparam name string Name of the room.
 -- @tparam func function Function body to call, with an optional argument
@@ -1247,7 +1267,7 @@ _PTRunThreads = function()
             -- Handle the response from the execution run.
             if not success then
                 PTLog("PTRunThreads(): Thread %s errored:\n  %s", name, result)
-                debug.traceback(_PTThreads[name])
+                PTLog(debug.traceback(_PTThreads[name]))
             end
             local status = coroutine.status(thread)
             if status == "dead" then
@@ -1272,7 +1292,7 @@ end
 
 PTGetAnimationFrame = function(object)
     if object and object._type == "PTSprite" then
-        anim = object.animations[object.current_animation]
+        local anim = object.animations[object.current_animation]
         if anim then
             if anim.rate == 0 then
                 -- Rate is 0, don't automatically change frames
@@ -1322,6 +1342,7 @@ end
 
 _PTUpdateMouseOver = function()
     local mouse_x, mouse_y = PTGetMousePos()
+    local room_x, room_y = PTScreenToRoom(mouse_x, mouse_y)
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
         return
     end
@@ -1329,7 +1350,7 @@ _PTUpdateMouseOver = function()
     for i = #_PTGlobalRenderList, 1, -1 do
         local obj = _PTGlobalRenderList[i]
         if obj.collision then
-            frame = PTGetAnimationFrame(obj)
+            local frame = PTGetAnimationFrame(obj)
             if frame and _PTImageTestCollision(frame.ptr, mouse_x - obj.x, mouse_y - obj.y) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
@@ -1345,7 +1366,7 @@ _PTUpdateMouseOver = function()
         local obj = _PTCurrentRoom.render_list[i]
         if obj.collision then
             frame = PTGetAnimationFrame(obj)
-            if frame and _PTImageTestCollision(frame.ptr, mouse_x - obj.x, mouse_y - obj.y) then
+            if frame and _PTImageTestCollision(frame.ptr, room_x - obj.x, room_y - obj.y) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
@@ -1372,9 +1393,19 @@ _PTUpdateRoom = function()
         if actor.moving > 0 and PTGetMillis() > actor.walkdata_next_wait then
             PTActorWalk(actor)
             actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
+            if actor == _PTCurrentRoom.camera_actor then
+                _PTCurrentRoom.x, _PTCurrentRoom.y = actor.x, actor.y
+            end
         end
         --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
     end
+    -- constrain camera to room bounds
+    local x_min = _PTCurrentRoom.origin_x
+    local x_max = _PTCurrentRoom.width - (SCREEN_WIDTH - _PTCurrentRoom.origin_x)
+    local y_min = _PTCurrentRoom.origin_y
+    local y_max = _PTCurrentRoom.height - (SCREEN_HEIGHT - _PTCurrentRoom.origin_y)
+    _PTCurrentRoom.x = math.max(math.min(_PTCurrentRoom.x, x_max), x_min)
+    _PTCurrentRoom.y = math.max(math.min(_PTCurrentRoom.y, y_max), y_min)
 end
 
 _PTEvents = function()
@@ -1410,15 +1441,16 @@ _PTRender = function()
     end
     for i, obj in pairs(_PTCurrentRoom.render_list) do
         if obj.visible then
-            frame = PTGetAnimationFrame(obj)
+            local frame = PTGetAnimationFrame(obj)
             if frame then
-                _PTDrawImage(frame.ptr, obj.x, obj.y)
+                local tmp_x, tmp_y = PTRoomToScreen(obj.x, obj.y)
+                _PTDrawImage(frame.ptr, tmp_x, tmp_y)
             end
         end
     end
     for i, obj in pairs(_PTGlobalRenderList) do
         if obj.visible then
-            frame = PTGetAnimationFrame(obj)
+            local frame = PTGetAnimationFrame(obj)
             if frame then
                 _PTDrawImage(frame.ptr, obj.x, obj.y)
             end
@@ -1426,8 +1458,8 @@ _PTRender = function()
     end
 
     if _PTMouseSprite and not _PTInputGrabbed and _PTMouseSprite.visible then
-        mouse_x, mouse_y = _PTGetMousePos()
-        frame = PTGetAnimationFrame(_PTMouseSprite)
+        local mouse_x, mouse_y = _PTGetMousePos()
+        local frame = PTGetAnimationFrame(_PTMouseSprite)
         if frame then
             _PTDrawImage(frame.ptr, mouse_x, mouse_y)
         end
