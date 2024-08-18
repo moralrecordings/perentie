@@ -5,8 +5,10 @@ AR = $(CROSS_PREFIX)ar
 LD = $(CROSS_PREFIX)ld
 STRIP = $(CROSS_PREFIX)strip
 RANLIB = $(CROSS_PREFIX)ranlib
+EXE2COFF = exe2coff
 LUAC = luac
 LUA = lua
+LDOC = ldoc
 
 PATH_LUA = lua
 PATH_SPNG = spng
@@ -64,8 +66,12 @@ script.o: script.c boot.h inspect.h
 %.o : %.c
 	$(CC) $(CFLAGS) -g -c $? -o $@
 
-perentie.exe : $(OBJECTS) $(LIB_LUA) $(LIB_SPNG) $(LIB_MINIZ) 
-	$(CC) $(CFLAGS) $(OBJECTS) $(LDFLAGS) -o perentie.exe
+pt_base.exe : $(OBJECTS) $(LIB_LUA) $(LIB_SPNG) $(LIB_MINIZ) 
+	$(CC) $(CFLAGS) $(OBJECTS) $(LDFLAGS) -o pt_base.exe
+
+perentie.exe : pt_base.exe
+	$(EXE2COFF) pt_base.exe
+	cat CWSDSTUB.EXE pt_base > perentie.exe
 
 distclean: clean-lua clean-stb clean-miniz clean-spng clean
 
@@ -82,7 +88,9 @@ clean-spng:
 	rm spng/*.o spng/*.a
 
 clean:
-	rm *.o
-	rm perentie.exe
+	rm *.o *.lo
+	rm pt_base pt_base.exe perentie.exe
 
+doc:
+	$(LDOC) -p Perentie -d ../doc boot.lua
 

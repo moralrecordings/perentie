@@ -28,40 +28,40 @@ bool image_load(pt_image* image)
 
     FILE* fp = fopen(image->path, "rb");
     if (!fp) {
-        log_print("Failed to open image: %s\n", image->path);
+        log_print("image_load: Failed to open image: %s\n", image->path);
         return false;
     }
 
     spng_ctx* ctx = spng_ctx_new(0);
     if (!ctx) {
-        log_print("Failed to create SPNG context!\n");
+        log_print("image_load: Failed to create SPNG context!\n");
         fclose(fp);
         return false;
     }
     int result = 0;
     if ((result = spng_set_png_file(ctx, fp))) {
-        log_print("Failed to set PNG file! %s\n", spng_strerror(result));
+        log_print("image_load: Failed to set PNG file! %s\n", spng_strerror(result));
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
     }
     struct spng_ihdr ihdr;
     if ((result = spng_get_ihdr(ctx, &ihdr))) {
-        log_print("Failed to fetch IHDR! %s\n", spng_strerror(result));
+        log_print("image_load: Failed to fetch IHDR! %s\n", spng_strerror(result));
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
     }
 
     if ((ihdr.color_type != SPNG_COLOR_TYPE_INDEXED) && (ihdr.color_type != SPNG_COLOR_TYPE_GRAYSCALE)) {
-        log_print("Image %s is not grayscale or paletted! %d\n", image->path, ihdr.color_type);
+        log_print("image_load: Image %s is not grayscale or paletted! %d\n", image->path, ihdr.color_type);
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
     }
 
-    log_print("width: %u\nheight: %u\nbit depth: %u\ncolor type: %u:\n", ihdr.width, ihdr.height, ihdr.bit_depth,
-        ihdr.color_type);
+    log_print("image_load: width: %u\nheight: %u\nbit depth: %u\ncolor type: %u:\n", ihdr.width, ihdr.height,
+        ihdr.bit_depth, ihdr.color_type);
 
     result = spng_decode_image(ctx, NULL, 0, SPNG_FMT_PNG, SPNG_DECODE_PROGRESSIVE);
     if (result) {
@@ -135,13 +135,13 @@ bool image_load(pt_image* image)
             }
             break;
         default:
-            log_print("How the hell do you have a %d bit image", ihdr.bit_depth);
+            log_print("image_load: How the hell do you have a %d bit image", ihdr.bit_depth);
             break;
         }
     } while (!result);
     free(row_buffer);
     if (result != SPNG_EOI) {
-        log_print("Expected EOI, got %d", result);
+        log_print("image_load: Expected EOI, got %d", result);
         spng_ctx_free(ctx);
         fclose(fp);
         return false;

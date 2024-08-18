@@ -66,7 +66,7 @@ void font_load_pages_block(FILE* fp, size_t size, pt_font* font, const char* pat
         size--;
         if (*ptr == '\0') {
             font->pages = realloc(font->pages, sizeof(pt_image*) * (font->page_count + 1));
-            size_t name_size = dir_size + strlen(buffer);
+            size_t name_size = dir_size + strlen(buffer) + 1;
             char* atlas_path = (char*)calloc(name_size, sizeof(char));
             // Prepend the directory of the font data to the atlas image
             memcpy(atlas_path, path, dir_size);
@@ -105,7 +105,7 @@ void font_load_chars_block(FILE* fp, size_t size, pt_font* font)
         font->chars[i].page = fread_u8(fp);
         font->chars[i].chnl = fread_u8(fp);
         // log_print("font_load_chars_block: id=%d, x=%d, y=%d, width=%d, height=%d\n", font->chars[i].id,
-        // font->chars[i].x, font->chars[i].y, font->chars[i].width, font->chars[i].height);
+        //      font->chars[i].x, font->chars[i].y, font->chars[i].width, font->chars[i].height);
     }
 }
 

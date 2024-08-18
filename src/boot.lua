@@ -1,30 +1,208 @@
---- Initial engine setup
+--- The Perentie scripting API.
+-- @module perentie
+
+--- General
+-- @section general
 
 SCREEN_WIDTH = 320
 SCREEN_HEIGHT = 200
 
---- Get the version number of the Perentie engine.
+--- Get the version string of the Perentie engine.
 -- @treturn string Version string.
 PTVersion = function()
     return _PTVersion()
 end
 
---- Print a message to the logging device. Use this instead of
--- Lua's print().
--- @tparam string formatstring Format string in sprintf syntax.
--- @tparam any arg .
+--- Print a message to the Perentie log file. This is a more accessible replacement for Lua's @{print} function, which will only output to the debug console.
+-- @tparam string format Format string in @{string.format} syntax.
+-- @param ... Arguments for format string.
 PTLog = function(...)
     return _PTLog(string.format(...))
 end
 
---- Object constructors
+--- Get the number of milliseconds elapsed since the engine started.
+-- @treturn integer Number of milliseconds.
+PTGetMillis = function()
+    return _PTGetMillis()
+end
+
+--- Quit Perentie.
+-- @tparam[opt=0] int retcode Return code.
+PTQuit = function(retcode)
+    if not retcode then
+        retcode = 0
+    end
+    _PTQuit(retcode)
+end
+
+_PTAddToList = function(list, object)
+    local exists = false
+    for i, obj in ipairs(list) do
+        if object == obj then
+            exists = true
+            break
+        end
+    end
+    if not exists then
+        table.insert(list, object)
+    end
+end
+
+_PTRemoveFromList = function(list, object)
+    for i, obj in ipairs(list) do
+        if object == obj then
+            table.remove(list, i)
+            break
+        end
+    end
+end
+
+--- Input
+-- @section input
+
+--- Get the last recorded mouse position.
+-- @treturn integer X coordinate in screen space.
+-- @treturn integer Y coordinate in screen space.
+PTGetMousePos = function()
+    return _PTGetMousePos()
+end
+
+--- Actors
+-- @section actor
+
+--- Actor structure.
+-- @tfield string _type "PTActor"
+-- @tfield[opt=0] integer x X coordinate in room space.
+-- @tfield[opt=0] integer y Y coordinate in room space.
+-- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tfield[opt=true] boolean visible
+-- @tfield[opt=nil] PTRoom room The room the actor is located.
+-- @tfield[opt=nil] table sprite The @{PTBackground}/@{PTSprite} object used for drawing. Perentie will proxy this; you only need to add the actor object to the rendering list.
+-- @tfield[opt=0] integer talk_x X coordinate in actor space for talk text.
+-- @tfield[opt=0] integer talk_y Y coordinate in actor space for talk text.
+-- @tfield[opt=nil] PTImage talk_img Handle used by the engine for caching the rendered talk text.
+-- @tfield[opt=nil] PTFont talk_font Font to use for rendering talk text.
+-- @tfield[opt={ 0xff 0xff 0xff }] table talk_colour Colour to use for rendering talk text.
+-- @tfield[opt=0] integer talk_millis The millisecond count at which to remove the talk text.
+-- @table PTActor
+
+--- Create a new actor.
+-- @tparam string name Name of the actor.
+-- @tparam[opt=0] integer x X coordinate in room space.
+-- @tparam[opt=0] integer y Y coordinate in room space.
+-- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @treturn PTActor The new actor.
+PTActor = function(name, x, y, z)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
+    return {
+        _type = "PTActor",
+        name = name,
+        x = x,
+        y = y,
+        z = z,
+        visible = true,
+        room = nil,
+        sprite = nil,
+        talk_x = 0,
+        talk_y = 0,
+        talk_img = nil,
+        talk_font = nil,
+        talk_colour = { 0xff, 0xff, 0xff },
+        talk_millis = 0,
+        walkdata_dest = PTPoint(0, 0),
+        walkdata_cur = PTPoint(0, 0),
+        walkdata_next = PTPoint(0, 0),
+        walkdata_frac = PTPoint(0, 0),
+        walkdata_delta_factor = PTPoint(0, 0),
+        walkdata_destbox = nil,
+        walkdata_curbox = nil,
+        walkbox = nil,
+        scale_x = 0xff,
+        scale_y = 0xff,
+        speed_x = 8,
+        speed_y = 2,
+        walk_rate = 8,
+        walkdata_next_wait = 0,
+        moving = 0,
+    }
+end
+
+PTActorSetWalkBox = function(actor, box)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorSetWalkBox: expected PTActor for first argument")
+    end
+    if not box or box._type ~= "PTWalkBox" then
+        error("PTActorSetWalkBox: expected PTWalkBox for second argument")
+    end
+    actor.walkbox = box
+    if box.z and box.z ~= actor.z then
+        actor.z = box.z
+        -- update the render list order
+        PTRoomAddObject(actor.room, nil)
+    end
+end
+
+PTActorUpdate = function(actor, fast_forward)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorUpdate: expected PTActor for first argument")
+    end
+    if actor.talk_img and actor.talk_millis then
+        if not fast_forward and _PTGetMillis() < actor.talk_millis then
+            return false
+        else
+            PTRoomRemoveObject(actor.room, actor.talk_img)
+            actor.talk_img = nil
+        end
+    end
+    return true
+end
+
+TALK_BASE_DELAY = 1000
+TALK_CHAR_DELAY = 85
+
+PTActorTalk = function(actor, message)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorTalk: expected PTActor for first argument")
+    end
+    if not actor.talk_font then
+        PTLog("PTActorTalk: no default font!!")
+        return
+    end
+    local text = PTText(message, actor.talk_font, 200, "center", actor.talk_colour)
+
+    local width, height = PTGetImageDims(text)
+    PTSetImageOrigin(text, width / 2, height)
+    local x = math.min(math.max(actor.x + actor.talk_x, width / 2), SCREEN_WIDTH - width / 2)
+    local y = math.min(math.max(actor.y + actor.talk_y, height), SCREEN_HEIGHT)
+
+    actor.talk_img = PTBackground(text, x, y, 10)
+    actor.talk_millis = _PTGetMillis() + TALK_BASE_DELAY + #message * TALK_CHAR_DELAY
+    -- TODO: Make room reference on actor?
+    PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
+end
+
+--- Rendering
+-- @section rendering
+
+--- Image structure.
+-- @tfield string _type "PTImage"
+-- @tfield userdata ptr Pointer to C data.
+-- @table PTImage
 
 --- Create a new image.
--- @tparam string path Path of the image (must be indexed PNG).
--- @tparam int origin_x Origin x coordinate, relative to top-left corner. Default is 0.
--- @tparam int origin_y Origin y coordinate, relative to top-left corner. Default is 0.
--- @tparam int colourkey Palette index to use as colourkey. Default is -1.
--- @tresult table The new image.
+-- @tparam string path Path of the image (must be 8-bit indexed or grayscale PNG).
+-- @tparam[opt=0] integer origin_x Origin x coordinate, relative to top-left corner.
+-- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
+-- @tparam[opt=-1] integer colourkey Palette index to use as colourkey.
+-- @treturn PTImage The new image.
 PTImage = function(path, origin_x, origin_y, colourkey)
     if not origin_x then
         origin_x = 0
@@ -38,6 +216,10 @@ PTImage = function(path, origin_x, origin_y, colourkey)
     return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey) }
 end
 
+--- Get the dimensions of an image
+-- @tparam PTImage image Image to query.
+-- @treturn integer Width of the image.
+-- @treturn integer Height of the image.
 PTGetImageDims = function(image)
     if not image or image._type ~= "PTImage" then
         return 0, 0
@@ -45,6 +227,14 @@ PTGetImageDims = function(image)
     return _PTGetImageDims(image.ptr)
 end
 
+--- Get the origin position of an image.
+-- This is the position in image coordinates to use as the origin point;
+-- so if the image is e.g. used by a PTBackground object with
+-- position (x, y), the image will be rendered with the top-left at position
+-- (x - origin_x, y - origin_y).
+-- @tparam PTImage image Image to query.
+-- @treturn integer X coordinate in image space.
+-- @treturn integer Y coordinate in image space.
 PTGetImageOrigin = function(image)
     if not image or image._type ~= "PTImage" then
         return 0, 0
@@ -52,6 +242,10 @@ PTGetImageOrigin = function(image)
     return _PTGetImageOrigin(image.ptr)
 end
 
+--- Set the origin position of an image.
+-- @tparam PTImage image Image to query.
+-- @tparam integer x X coordinate in image space.
+-- @tparam integer y Y coordinate in image space.
 PTSetImageOrigin = function(image, x, y)
     if not image or image._type ~= "PTImage" then
         return
@@ -59,20 +253,171 @@ PTSetImageOrigin = function(image, x, y)
     return _PTSetImageOrigin(image.ptr, x, y)
 end
 
+--- Background structure.
+-- @tfield string _type "PTBackground"
+-- @tfield[opt=0] integer x X coordinate in room space.
+-- @tfield[opt=0] integer y Y coordinate in room space.
+-- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
+-- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
+-- @table PTBackground
+
+--- Create a new background.
+-- @tparam PTImage image Image to use.
+-- @tparam[opt=0] integer x X coordinate in room space.
+-- @tparam[opt=0] integer y Y coordinate in room space.
+-- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @treturn PTBackground The new background.
+PTBackground = function(image, x, y, z)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
+    return { _type = "PTBackground", image = image, x = x, y = y, z = z, collision = false, visible = true }
+end
+
+--- Animation structure.
+-- @tfield string _type "PTAnimation"
+-- @tfield integer rate  Frame rate to use for playback.
+-- @tfield table frames List of @{PTImage} objects; one per frame.
+-- @tfield[opt=false] boolean looping Whether to loop the animation when completed.
+-- @tfield[opt=0] integer current_frame The current frame in the sequence to display.
+-- @tfield[opt=0] integer next_wait The millisecond count at which to show the next frame.
+-- @table PTAnimation
+
+--- Create a new animation.
+-- @tfield integer rate Frame rate to use for playback.
+-- @tfield table frames List of @{PTImage} objects; one per frame.
+-- @treturn PTAnimation The new animation.
+PTAnimation = function(rate, frames)
+    return {
+        _type = "PTAnimation",
+        rate = rate,
+        frames = frames,
+        looping = false,
+        current_frame = 0,
+        next_wait = 0,
+    }
+end
+
+--- Sprite structure.
+-- @tfield string _type "PTSprite"
+-- @tfield table animations Table of @{PTAnimation} objects indexed by name.
+-- @tfield[opt=0] integer x X coordinate in room space.
+-- @tfield[opt=0] integer y Y coordinate in room space.
+-- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tfield[opt=nil] string current_animation Name of the current animation from the animations table.
+-- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
+-- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
+-- @table PTSprite
+
+--- Create a new sprite.
+-- @tparam table animations Table of @{PTAnimation} objects indexed by name.
+-- @tparam[opt=0] integer x X coordinate in room space.
+-- @tparam[opt=0] integer y Y coordinate in room space.
+-- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @treturn PTSprite The new sprite.
+PTSprite = function(animations, x, y, z)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
+    return {
+        _type = "PTSprite",
+        animations = animations,
+        x = x,
+        y = y,
+        z = z,
+        current_animation = nil,
+        collision = false,
+        visible = true,
+    }
+end
+
+--- Fetch the image to use when rendering a @{PTActor}/@{PTBackground}/@{PTSprite} object.
+-- @tparam table object The object to query.
+-- @treturn PTImage The image for the current frame.
+PTGetAnimationFrame = function(object)
+    if object and object._type == "PTSprite" then
+        local anim = object.animations[object.current_animation]
+        if anim then
+            if anim.rate == 0 then
+                -- Rate is 0, don't automatically change frames
+                if anim.current_frame == 0 then
+                    anim.current_frame = 1
+                end
+            elseif anim.current_frame == 0 then
+                anim.current_frame = 1
+                anim.next_wait = PTGetMillis() + (1000 // anim.rate)
+            elseif PTGetMillis() > anim.next_wait then
+                anim.current_frame = (anim.current_frame % #anim.frames) + 1
+                anim.next_wait = PTGetMillis() + (1000 // anim.rate)
+            end
+            return anim.frames[anim.current_frame]
+        end
+    elseif object and object._type == "PTBackground" then
+        return object.image
+    elseif object and object._type == "PTActor" then
+        return PTGetAnimationFrame(object.sprite)
+    end
+    return nil
+end
+
+_PTGlobalRenderList = {}
+--- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) object to the global rendering list.
+-- @tparam table object Object to add.
+PTGlobalAddObject = function(object)
+    if object then
+        _PTAddToList(_PTGlobalRenderList, object)
+    end
+    table.sort(_PTGlobalRenderList, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) object from the global rendering list.
+-- @tparam table object Object to remove.
+PTGlobalRemoveObject = function(object)
+    if object then
+        _PTRemoveFromList(_PTGlobalRenderList, object)
+    end
+    table.sort(_PTGlobalRenderList, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Text
+-- @section text
+
+--- Bitmap font structure.
+-- @tfield string _type "PTFont"
+-- @tfield userdata ptr Pointer to C data.
+-- @table PTFont
+
 --- Create a new bitmap font.
 -- @tparam string path Path of the bitmap font (must be BMFont V3 binary).
--- @tresult table The new font.
+-- @treturn PTFont The new font.
 PTFont = function(path)
     return { _type = "PTFont", ptr = _PTFont(path) }
 end
 
 --- Create an new image containing rendered text.
 -- @tparam string text Unicode text to render.
--- @tparam table font Font object to use.
--- @tparam int width Width of bounding area in pixels. Default is 200.
--- @tparam str align Text alignment; one of "left", "center" or "right". Defaults to "left".
--- @tparam table colour Inner colour; list of 3 8-bit numbers. Default is white.
--- @tresult table The new image.
+-- @tparam PTFont font Font object to use.
+-- @tparam[opt=200] integer width Width of bounding area in pixels.
+-- @tparam[opt="left"] string align Text alignment; one of "left", "center" or "right".
+-- @tparam[opt={ 0xff 0xff 0xff }] table colour Inner colour; list of 3 8-bit numbers.
+-- @treturn PTImage The new image.
 PTText = function(text, font, width, align, colour)
     if not width then
         width = 200
@@ -99,133 +444,46 @@ PTText = function(text, font, width, align, colour)
     return { _type = "PTImage", ptr = _PTText(text, font.ptr, width, align_enum, r, g, b) }
 end
 
-_PTGlobalRenderList = {}
-PTGlobalAddObject = function(object)
-    if object then
-        table.insert(_PTGlobalRenderList, object)
-    end
-    table.sort(_PTGlobalRenderList, function(a, b)
-        return a.z < b.z
-    end)
-end
-
---- Create a new room.
--- @tparam string name Name of the room.
--- @tparam int width Width of the room in pixels.
--- @tparam int height Height of the room in pixels.
--- @tresult table The new room.
-PTRoom = function(name, width, height)
-    return {
-        _type = "PTRoom",
-        name = name,
-        width = width,
-        height = height,
-        x = 0,
-        y = 0,
-        origin_x = SCREEN_WIDTH // 2,
-        origin_y = SCREEN_HEIGHT // 2,
-        render_list = {},
-        boxes = {},
-        box_matrix = { {} },
-        actors = {},
-        camera_actor = nil,
-    }
-end
-
-_PTAddToList = function(list, object)
-    local exists = false
-    for i, obj in ipairs(list) do
-        if object == obj then
-            exists = true
-            break
-        end
-    end
-    if not exists then
-        table.insert(list, object)
-    end
-end
-
-_PTRemoveFromList = function(list, object)
-    for i, obj in ipairs(list) do
-        if object == obj then
-            table.remove(list, i)
-            break
-        end
-    end
-end
-
-PTRoomAddObject = function(room, object)
-    if not room or room._type ~= "PTRoom" then
-        error("PTRoomAddObject: expected PTRoom for first argument")
-        return
-    end
-    if object then
-        _PTAddToList(room.render_list, object)
-    end
-    table.sort(room.render_list, function(a, b)
-        return a.z < b.z
-    end)
-end
-
-PTRoomRemoveObject = function(room, object)
-    if not room or room._type ~= "PTRoom" then
-        error("PTRoomRemoveObject: expected PTRoom for first argument")
-    end
-    if object then
-        _PTRemoveFromList(room.render_list, object)
-    end
-    table.sort(room.render_list, function(a, b)
-        return a.z < b.z
-    end)
-end
-
-PTRoomSetWalkBoxes = function(room, boxes)
-    if not room or room._type ~= "PTRoom" then
-        error("PTRoomSetWalkboxes: expected PTRoom for first argument")
-    end
-    for i = 1, #boxes do
-        if not boxes[i] or boxes[i]._type ~= "PTWalkBox" then
-            error("PTRoomSetWalkboxes: expected an array of PTWalkBox for second argument")
-        end
-        boxes[i].id = i
-    end
-    room.boxes = boxes
-    room.box_links = PTGenLinksFromWalkBoxes(boxes)
-    room.box_matrix = PTGenWalkBoxMatrix(#boxes, room.box_links)
-end
-
-PTRoomGetNextBox = function(room, from_id, to_id)
-    if not room or room._type ~= "PTRoom" then
-        error("PTRoomGetNextBox: expected PTRoom for first argument")
-    end
-    if from_id <= 0 or from_id > #room.boxes then
-        error("PTRoomGetNextBox: argument 2 out of range")
-    end
-    if to_id <= 0 or to_id > #room.boxes then
-        error("PTRoomGetNextBox: argument 3 out of range")
-    end
-    local target = room.box_matrix[from_id][to_id]
-    if target == 0 then
-        return to_id
-    end
-    return room.boxes[target]
-end
-
------ walkbox code -----
-
--- algorithms nicked from ScummVM's SCUMM engine implementation
+--- Walk box
+-- @section walkbox
 
 MF_NEW_LEG = 1
 MF_IN_LEG = 2
 MF_TURN = 4
 MF_LAST_LEG = 8
 
+--- Point structure
+-- @tfield integer x X coordinate.
+-- @tfield integer y Y coordinate.
+-- @table PTPoint
+
+--- Walk box structure.
+-- Perentie uses the SCUMM walk box algorithm. All boxes are quads, which can be any convex shape. Two boxes are considered to be connected if they both have a fully horizontal or vertical edge which is coincident; that is, fully or partially overlapping. Boxes cover the pixel area inclusive of the coordinates; it's perfectly acceptable to make a 1px path.
+-- @tfield string _type "PTWalkBox"
+-- @tfield PTPoint ul Coordinates of upper-left corner.
+-- @tfield PTPoint ur Coordinates of upper-right corner.
+-- @tfield PTPoint lr Coordinates of lower-right corner.
+-- @tfield PTPoint ll Coordinates of lower-left corner.
+-- @tfield integer id Internal ID of the walk box. Used internally by the box matrix.
+-- @table PTWalkBox
+
+--- Create a new point.
+-- @tparam integer x X coordinate.
+-- @tparam integer y Y coordinate.
+-- @treturn PTPoint The new point.
 PTPoint = function(x, y)
     return { x = x, y = y }
 end
 
+--- Create a new walk box.
+-- @tparam PTPoint ul Coordinates of upper-left corner.
+-- @tparam PTPoint ur Coordinates of upper-right corner.
+-- @tparam PTPoint lr Coordinates of lower-right corner.
+-- @tparam PTPoint ll Coordinates of lower-left corner.
+-- @tparam integer z Depth coordinate; a higher number renders to the front. Used for setting the depth of PTActors.
+-- @treturn PTWalkBox The new walk box.
 PTWalkBox = function(ul, ur, lr, ll, z)
-    return { _type = "PTWalkBox", id = nil, ul = ul, ur = ur, lr = lr, ll = ll, z = z }
+    return { _type = "PTWalkBox", ul = ul, ur = ur, lr = lr, ll = ll, z = z, id = nil }
 end
 
 local _PTStraightLinesOverlap = function(a1, a2, b1, b2)
@@ -240,6 +498,10 @@ local _PTStraightLinesOverlap = function(a1, a2, b1, b2)
     return false
 end
 
+--- Generate a list of connections between PTWalkBoxes.
+-- Most of the time you won't need to call this yourself; @{PTRoomSetWalkboxes} will do this for you.
+-- @tparam table boxes List of PTWalkBoxes.
+-- @treturn table List of index pairs, each describing two directly connected PTWalkBoxes in the list.
 PTGenLinksFromWalkBoxes = function(boxes)
     local result = {}
     for i = 1, #boxes do
@@ -295,6 +557,11 @@ local _PTCopyMatrix = function(mat)
     return result
 end
 
+--- Generate a matrix describing the shortest path between walk boxes.
+-- Most of the time you won't need to call this yourself; @{PTRoomSetWalkboxes} will do this for you.
+-- @tparam int n Number of walk boxes.
+-- @tparam table links List of index pairs, each describing two directly connected walk boxes.
+-- @treturn table N x N matrix describing the shortest route between walk boxes; e.g. when starting from box ID i and trying to reach box ID j, result[i][j] is the ID of the next box you need to travel through in order to take the shortest path, or 0 if there is no path.
 PTGenWalkBoxMatrix = function(n, links)
     local result = _PTNewMatrix(n)
     for i, link in ipairs(links) do
@@ -702,10 +969,10 @@ local _PTCalcMovementFactor = function(actor, next)
     return _PTActorWalkStep(actor)
 end
 
---- Set the actor moving towards a point in the room.
--- @tparam table actor Actor to modify.
--- @tparam int x X coordinate in room space.
--- @tparam int y Y coordinate in room space.
+--- Set an actor moving towards a point in the room.
+-- @tparam PTActor actor Actor to modify.
+-- @tparam integer x X coordinate in room space.
+-- @tparam integer y Y coordinate in room space.
 PTActorSetWalk = function(actor, x, y)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorSetWalk: expected PTActor for first argument")
@@ -724,6 +991,8 @@ PTActorSetWalk = function(actor, x, y)
     actor.moving = MF_NEW_LEG
 end
 
+--- Make an actor take a single step towards the current walk target.
+-- @tparam PTActor actor Actor to move.
 PTActorWalk = function(actor)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorWalk: expected PTActor for first argument")
@@ -806,57 +1075,6 @@ PTActorWalk = function(actor)
     _PTCalcMovementFactor(actor, actor.walkdata_dest)
 end
 
------ actor code -----
-
-PTActor = function(name)
-    return {
-        _type = "PTActor",
-        name = name,
-        x = 0,
-        y = 0,
-        z = 0,
-        visible = true,
-        room = nil,
-        sprite = nil,
-        talk_x = 0,
-        talk_y = 0,
-        talk_img = nil,
-        talk_font = nil,
-        talk_color = { 0xff, 0xff, 0xff },
-        talk_millis = nil,
-        walkdata_dest = PTPoint(0, 0),
-        walkdata_cur = PTPoint(0, 0),
-        walkdata_next = PTPoint(0, 0),
-        walkdata_frac = PTPoint(0, 0),
-        walkdata_delta_factor = PTPoint(0, 0),
-        walkdata_destbox = nil,
-        walkdata_curbox = nil,
-        walkbox = nil,
-        scale_x = 0xff,
-        scale_y = 0xff,
-        speed_x = 8,
-        speed_y = 2,
-        walk_rate = 8,
-        walkdata_next_wait = 0,
-        moving = 0,
-    }
-end
-
-PTActorSetWalkBox = function(actor, box)
-    if not actor or actor._type ~= "PTActor" then
-        error("PTActorSetWalkBox: expected PTActor for first argument")
-    end
-    if not box or box._type ~= "PTWalkBox" then
-        error("PTActorSetWalkBox: expected PTWalkBox for second argument")
-    end
-    actor.walkbox = box
-    if box.z and box.z ~= actor.z then
-        actor.z = box.z
-        -- update the render list order
-        PTRoomAddObject(actor.room, nil)
-    end
-end
-
 PTActorSetRoom = function(actor, room, x, y)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorSetRoom: expected PTActor for first argument")
@@ -883,117 +1101,10 @@ PTActorSetRoom = function(actor, room, x, y)
     end
 end
 
-PTActorUpdate = function(actor, fast_forward)
-    if not actor or actor._type ~= "PTActor" then
-        error("PTActorUpdate: expected PTActor for first argument")
-    end
-    if actor.talk_img and actor.talk_millis then
-        if not fast_forward and _PTGetMillis() < actor.talk_millis then
-            return false
-        else
-            PTRoomRemoveObject(actor.room, actor.talk_img)
-            actor.talk_img = nil
-        end
-    end
-    return true
-end
+--- Audio
+-- @section audio
 
-TALK_BASE_DELAY = 1000
-TALK_CHAR_DELAY = 85
-
-PTActorTalk = function(actor, message)
-    if not actor or actor._type ~= "PTActor" then
-        error("PTActorTalk: expected PTActor for first argument")
-    end
-    if not actor.talk_font then
-        PTLog("PTActorTalk: no default font!!")
-        return
-    end
-    local text = PTText(message, actor.talk_font, 200, actor.talk_color)
-
-    local width, height = PTGetImageDims(text)
-    PTSetImageOrigin(text, width / 2, height)
-    local x = math.min(math.max(actor.x + actor.talk_x, width / 2), SCREEN_WIDTH - width / 2)
-    local y = math.min(math.max(actor.y + actor.talk_y, height), SCREEN_HEIGHT)
-
-    actor.talk_img = PTBackground(text, x, y, 10)
-    actor.talk_millis = _PTGetMillis() + TALK_BASE_DELAY + #message * TALK_CHAR_DELAY
-    -- TODO: Make room reference on actor?
-    PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
-end
-
-PTWaitForActor = function(actor)
-    local thread, _ = coroutine.running()
-    for k, v in pairs(_PTThreads) do
-        if v == thread then
-            _PTThreadsActorWait[k] = actor
-            coroutine.yield()
-            return
-        end
-    end
-    error(string.format("PTWaitForActor(): thread not found"))
-end
-
------ graphics code -----
-
-PTBackground = function(image, x, y, z)
-    if not x then
-        x = 0
-    end
-    if not y then
-        y = 0
-    end
-    if not z then
-        z = 0
-    end
-    return { _type = "PTBackground", image = image, x = x, y = y, z = z, collision = false, visible = true }
-end
-
-PTSprite = function(animations, x, y, z)
-    if not x then
-        x = 0
-    end
-    if not y then
-        y = 0
-    end
-    if not z then
-        z = 0
-    end
-    return {
-        _type = "PTSprite",
-        animations = animations,
-        x = x,
-        y = y,
-        z = z,
-        current_animation = nil,
-        collision = false,
-        visible = true,
-    }
-end
-
-PTAnimation = function(rate, frames)
-    return {
-        _type = "PTAnimation",
-        rate = rate,
-        frames = frames,
-        looping = false,
-        bounce = false,
-        current_frame = 0,
-        next_wait = 0,
-    }
-end
-
-PTGetMousePos = function()
-    return _PTGetMousePos()
-end
-
---- Get the number of milliseconds elapsed since the engine started.
--- @treturn int Number of milliseconds.
-PTGetMillis = function()
-    return _PTGetMillis()
-end
-
---- Play a tone on the PC speaker.
+--- Play a square wave tone on the PC speaker.
 -- The note will play until it is stopped by a call to PTStopBeep.
 -- @tparam number freq Audio frequency of the tone.
 PTPlayBeep = function(freq)
@@ -1004,6 +1115,9 @@ end
 PTStopBeep = function()
     return _PTStopBeep()
 end
+
+--- Threading
+-- @section threading
 
 local _PTOnlyRunOnce = {}
 --- Assert that this function can't be run more than once.
@@ -1017,29 +1131,37 @@ PTOnlyRunOnce = function(name)
     _PTOnlyRunOnce[name] = 1
 end
 
+local _PTThreads = {}
+local _PTThreadsSleepUntil = {}
+local _PTThreadsActorWait = {}
+local _PTThreadsFastForward = {}
+
 --- Start a function in a new thread.
 -- Perentie runs threads with cooperative multitasking; that is,
 -- a long-running thread must use a sleep function like PTSleep
 -- to yield control back to the engine.
 -- Perentie will exit when all threads have stopped.
--- @tparam name string Name of the thread.
--- @tparam func function Function body to run.
-_PTThreads = {}
-local _PTThreadsSleepUntil = {}
-_PTThreadsActorWait = {}
-_PTThreadsFastForward = {}
+-- @tparam string name Name of the thread. Must be unique.
+-- @tparam function func Function to run.
+-- @param ... Arguments to pass to the function.
 PTStartThread = function(name, func, ...)
     if _PTThreads[name] then
         error(string.format("PTStartThread(): thread named %s exists", name))
     end
     local varargs = ...
-    _PTThreads[name] = coroutine.create(function()
-        func(table.unpack(varargs))
-    end)
+    if varargs then
+        _PTThreads[name] = coroutine.create(function()
+            func(table.unpack(varargs))
+        end)
+    else
+        _PTThreads[name] = coroutine.create(function()
+            func()
+        end)
+    end
 end
 
 --- Stop a running thread.
--- @tparam name string Name of the thread.
+-- @tparam string name Name of the thread.
 PTStopThread = function(name)
     if not _PTThreads[name] then
         error(string.format("PTStopThread(): thread named %s doesn't exist", name))
@@ -1049,12 +1171,20 @@ PTStopThread = function(name)
     _PTThreadsFastForward[name] = nil
 end
 
+--- Check whether a thread is running.
+-- @tparam string name Name of the thread.
+-- @treturn bool Whether the thread exists.
+PTThreadExists = function(name)
+    return _PTThreads[name] ~= nil
+end
+
 --- Sleep the current thread.
--- Lua uses co-operative multitasking; for long-running background
--- tasks it is important to call a sleep function whenever possible,
+-- Perentie uses co-operative multitasking; for long-running background
+-- tasks it is important to call a wait or sleep function whenever possible,
 -- even with a delay of 0.
--- Not doing so will cause the scripting engine to freeze up.
--- @tparam int delay Time to wait in milliseconds.
+-- Not doing so will cause the engine to freeze up, until the thread is
+-- aborted early by the watchdog.
+-- @tparam integer millis Time to wait in milliseconds.
 PTSleep = function(millis)
     local thread, _ = coroutine.running()
     for k, v in pairs(_PTThreads) do
@@ -1067,10 +1197,169 @@ PTSleep = function(millis)
     error(string.format("PTSleep(): thread not found"))
 end
 
+--- Sleep the current thread until an actor finishes the action in progress.
+-- @tparam PTActor actor The PTActor to wait for.
+PTWaitForActor = function(actor)
+    local thread, _ = coroutine.running()
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            _PTThreadsActorWait[k] = actor
+            coroutine.yield()
+            return
+        end
+    end
+    error(string.format("PTWaitForActor(): thread not found"))
+end
+
+local _PTWatchdogEnabled = true
+--- Toggle the use of the watchdog to abort threads that take too long.
+-- Enabled by default.
+-- @tparam bool enable Whether to enable the watchdog.
+PTSetWatchdog = function(enable)
+    _PTWatchdogEnabled = enable
+end
+
+local _PTWatchdogLimit = 10000
+--- Set the number of Lua instructions that need to elapse without a sleep
+-- before the watchdog aborts a thread.
+-- Defaults to 10000.
+-- @tparam integer count Number of instructions.
+PTSetWatchdogLimit = function(count)
+    _PTWatchdogLimit = count
+end
+
+--- Hook callback for when a thread runs too many instructions
+-- without sleeping. Throws an error.
+-- @tparam string event Event provided by the debug layer. Should always be "count".
+local _PTWatchdog = function(event)
+    if event == "count" then
+        local info = debug.getinfo(2, "Sl")
+        error(string.format("PTWatchdog(): woof! woooooff!!! %s:%d took too long", info.source, info.currentline))
+    end
+end
+
+--- Rooms
+-- @section room
+
+--- Room structure.
+-- @table PTRoom
+-- @tfield string name Name of the table.
+-- @tfield integer width Width of the room in pixels.
+-- @tfield integer height Height of the room in pixels.
+-- @tfield integer x X coordinate of camera in room space.
+-- @tfield integer y Y coordinate of camera in room space.
+-- @tfield integer origin_x X coordinate of the camera offset in screen space.
+-- @tfield integer origin_y Y coordinate of the camera offset in screen space.
+-- @tfield table render_list List of renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) objects in the room.
+-- @tfield table boxes List of @{PTWalkBox} objects which make up the room's walkable area.
+-- @tfield table box_links List of box ID pairs, each describing two directly connected @{PTWalkBox}es.
+-- @tfield table box_matrix N x N matrix describing the shortest route between @{PTWalkBox}es; e.g. when starting from box ID i and trying to reach box ID j, box_matrix[i][j] is the ID of the next box you need to travel through in order to take the shortest path, or 0 if there is no path.
+
+--- Create a new room.
+-- @tparam string name Name of the room.
+-- @tparam integer width Width of the room in pixels.
+-- @tparam integer height Height of the room in pixels.
+-- @treturn PTRoom The new room.
+PTRoom = function(name, width, height)
+    return {
+        _type = "PTRoom",
+        name = name,
+        width = width,
+        height = height,
+        x = 0,
+        y = 0,
+        origin_x = SCREEN_WIDTH // 2,
+        origin_y = SCREEN_HEIGHT // 2,
+        render_list = {},
+        boxes = {},
+        box_links = {},
+        box_matrix = { {} },
+        actors = {},
+        camera_actor = nil,
+    }
+end
+
+--- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) object to the room rendering list.
+-- @tparam PTRoom room Room to modify.
+-- @tparam table object Object to add.
+PTRoomAddObject = function(room, object)
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomAddObject: expected PTRoom for first argument")
+        return
+    end
+    if object then
+        _PTAddToList(room.render_list, object)
+    end
+    table.sort(room.render_list, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) object from the room rendering list.
+-- @tparam PTRoom room Room to modify.
+-- @tparam table object Object to remove.
+PTRoomRemoveObject = function(room, object)
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomRemoveObject: expected PTRoom for first argument")
+    end
+    if object then
+        _PTRemoveFromList(room.render_list, object)
+    end
+    table.sort(room.render_list, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Set the walk boxes for a room.
+-- This will replace all existing walk boxes, and regenerate the box links and box matrix for the room.
+-- @tparam PTRoom room The room to modify.
+-- @tparam table boxes A list of @{PTWalkBox} objects.
+PTRoomSetWalkBoxes = function(room, boxes)
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomSetWalkboxes: expected PTRoom for first argument")
+    end
+    for i = 1, #boxes do
+        if not boxes[i] or boxes[i]._type ~= "PTWalkBox" then
+            error("PTRoomSetWalkboxes: expected an array of PTWalkBox for second argument")
+        end
+        boxes[i].id = i
+    end
+    room.boxes = boxes
+    room.box_links = PTGenLinksFromWalkBoxes(boxes)
+    room.box_matrix = PTGenWalkBoxMatrix(#boxes, room.box_links)
+end
+
+--- Find the next walk box in the shortest path to reach a target walk box.
+-- @tparam PTRoom room Room to query.
+-- @tparam integer from_id ID of the starting @{PTWalkBox} in the room.
+-- @tparam integer to_id ID of the target @{PTWalkBox} in the room.-- @treturn PTWalkBox Next walk box in the shortest path.
+PTRoomGetNextBox = function(room, from_id, to_id)
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomGetNextBox: expected PTRoom for first argument")
+    end
+    if from_id <= 0 or from_id > #room.boxes then
+        error("PTRoomGetNextBox: argument 2 out of range")
+    end
+    if to_id <= 0 or to_id > #room.boxes then
+        error("PTRoomGetNextBox: argument 3 out of range")
+    end
+    local target = room.box_matrix[from_id][to_id]
+    if target == 0 then
+        return to_id
+    end
+    return room.boxes[target]
+end
+
 local _PTCurrentRoom = nil
 local _PTOnRoomEnterHandlers = {}
 local _PTOnRoomExitHandlers = {}
 
+--- Convert coordinates in screen space to room space.
+-- Uses the current room.
+-- @tparam integer x X coordinate in screen space.
+-- @tparam integer y Y coordinate in screen space.
+-- @treturn int X coordinate in room space.
+-- @treturn int Y coordinate in room space.
 PTScreenToRoom = function(x, y)
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
         return x, y
@@ -1078,6 +1367,12 @@ PTScreenToRoom = function(x, y)
     return (_PTCurrentRoom.x - _PTCurrentRoom.origin_x) + x, (_PTCurrentRoom.y - _PTCurrentRoom.origin_y) + y
 end
 
+--- Convert coordinates in room space to screen space.
+-- Uses the current room.
+-- @tparam integer x X coordinate in room space.
+-- @tparam integer y Y coordinate in room space.
+-- @treturn X coordinate in screen space.
+-- @treturn Y coordinate in screen space.
 PTRoomToScreen = function(x, y)
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
         return x, y
@@ -1085,9 +1380,9 @@ PTRoomToScreen = function(x, y)
     return x - (_PTCurrentRoom.x - _PTCurrentRoom.origin_x), y - (_PTCurrentRoom.y - _PTCurrentRoom.origin_y)
 end
 
---- Set a callback for switching to a room.
--- @tparam name string Name of the room.
--- @tparam func function Function body to call, with an optional argument
+--- Set a callback for switching to a particular room.
+-- @tparam string name Name of the room.
+-- @tparam function func Function body to call, with an optional argument
 -- for context data.
 PTOnRoomEnter = function(name, func)
     if _PTOnRoomEnterHandlers[name] then
@@ -1097,8 +1392,8 @@ PTOnRoomEnter = function(name, func)
 end
 
 --- Set a callback for switching away from a room.
--- @tparam name string Name of the room.
--- @tparam func function Function body to call, with an optional argument
+-- @tparam string name Name of the room.
+-- @tparam function func Function body to call, with an optional argument
 -- for context data.
 PTOnRoomExit = function(name, func)
     if _PTOnRoomExitHandlers[name] then
@@ -1108,16 +1403,16 @@ PTOnRoomExit = function(name, func)
 end
 
 --- Return the current room
--- @treturn table Room data.
+-- @treturn PTRoom The current PTRoom.
 PTCurrentRoom = function()
     return _PTCurrentRoom
 end
 
 --- Switch the current room.
--- Will call the callbacks specified by PTOnRoomEnter and
--- PTOnRoomExit.
--- @tparam room table Room object.
--- @tparam ctx any Optional Context data to pass to the callbacks.
+-- Will call the callbacks specified by @{PTOnRoomEnter} and
+-- @{PTOnRoomExit}.
+-- @tparam PTRoom room Room object to switch to.
+-- @tparam table ctx Optional Context data to pass to the callbacks.
 PTSwitchRoom = function(room, ctx)
     PTLog("PTSwitchRoom: %s, %s", tostring(room), tostring(_PTCurrentRoom))
     if _PTCurrentRoom and _PTOnRoomExitHandlers[_PTCurrentRoom.name] then
@@ -1130,7 +1425,11 @@ PTSwitchRoom = function(room, ctx)
     PTLog("PTSwitchRoom: %s, %s", tostring(room), tostring(_PTCurrentRoom))
 end
 
+--- Verbs
+-- @section verb
+
 local _PTVerbCallbacks = {}
+
 PTOnVerb = function(verb_name, hotspot_id, callback)
     if not _PTVerbCallbacks[verb_name] then
         _PTVerbCallbacks[verb_name] = {}
@@ -1151,6 +1450,8 @@ PTSetVerbReadyCheck = function(callback)
     _PTVerbReadyCallback = callback
 end
 
+--- Return whether the current queued verb action is ready.
+-- @treturn bool Whether the
 PTVerbReady = function()
     if
         _PTCurrentVerb ~= nil
@@ -1166,11 +1467,17 @@ PTVerbReady = function()
     return false
 end
 
+--- Process any outstanding verb action.
+-- @local
 _PTRunVerb = function()
     if PTVerbReady() then
-        if _PTThreads["__verb"] then
+        if PTThreadExists("__verb") then
             -- interrupting another verb, stop the existing one
-            PTLog("attempted to replace running verb thread with %s %s!", _PTCurrentVerb, _PTCurrentHotspot)
+            PTLog(
+                "PTRunVerb(): attempted to replace running verb thread with %s %s!",
+                _PTCurrentVerb,
+                _PTCurrentHotspot
+            )
         else
             PTStartThread(
                 "__verb",
@@ -1193,45 +1500,9 @@ PTReleaseInput = function()
     _PTInputGrabbed = false
 end
 
-local _PTToggleWatchdog = true
---- Toggle the use of the watchdog to abort threads that take too long.
--- Enabled by default.
--- @tparam bool enable Whether to enable the watchdog.
-PTToggleWatchdog = function(enable)
-    _PTToggleWatchdog = enable
-end
-
-local _PTWatchdogLimit = 10000
---- Set the number of Lua instructions that need to elapse without a sleep
--- before the watchdog targets a thread.
--- Defaults to 10000.
--- @tparam int count Number of instructions.
-PTSetWatchdogLimit = function(count)
-    _PTWatchdogLimit = count
-end
-
---- Quit Perentie.
--- @param int retcode Return code. Defaults to 0.
-PTQuit = function(retcode)
-    if not retcode then
-        retcode = 0
-    end
-    _PTQuit(retcode)
-end
-
--- Stuff called by the C engine main loop.
-
---- Hook callback for when a thread runs too many instructions
--- without sleeping. Throws an error.
--- @tparam string event Event provided by the debug layer. Should always be "count".
-_PTWatchdog = function(event)
-    if event == "count" then
-        local info = debug.getinfo(2, "Sl")
-        error(string.format("PTWatchdog(): woof! woooooff!!! %s:%d took too long", info.source, info.currentline))
-    end
-end
 --- Run and handle execution for all of the threads.
--- @treturn int Number of threads still alive.
+-- @local
+-- @treturn integer Number of threads still alive.
 _PTRunThreads = function()
     _PTRunVerb()
     local count = 0
@@ -1254,15 +1525,13 @@ _PTRunThreads = function()
         end
         if is_awake then
             -- Tell the watchdog to chomp the thread if we take longer than 10000 instructions.
-            if _PTToggleWatchdog then
+            if _PTWatchdogEnabled then
                 debug.sethook(thread, _PTWatchdog, "", _PTWatchdogLimit)
             end
             -- Resume the thread, let it run until the next sleep command
             local success, result = coroutine.resume(thread)
             -- Pet the watchdog for a job well done
-            if _PTToggleWatchdog then
-                debug.sethook(thread)
-            end
+            debug.sethook(thread)
 
             -- Handle the response from the execution run.
             if not success then
@@ -1290,32 +1559,6 @@ PTSetMouseSprite = function(sprite)
     _PTMouseSprite = sprite
 end
 
-PTGetAnimationFrame = function(object)
-    if object and object._type == "PTSprite" then
-        local anim = object.animations[object.current_animation]
-        if anim then
-            if anim.rate == 0 then
-                -- Rate is 0, don't automatically change frames
-                if anim.current_frame == 0 then
-                    anim.current_frame = 1
-                end
-            elseif anim.current_frame == 0 then
-                anim.current_frame = 1
-                anim.next_wait = PTGetMillis() + (1000 // anim.rate)
-            elseif PTGetMillis() > anim.next_wait then
-                anim.current_frame = (anim.current_frame % #anim.frames) + 1
-                anim.next_wait = PTGetMillis() + (1000 // anim.rate)
-            end
-            return anim.frames[anim.current_frame]
-        end
-    elseif object and object._type == "PTBackground" then
-        return object.image
-    elseif object and object._type == "PTActor" then
-        return PTGetAnimationFrame(object.sprite)
-    end
-    return nil
-end
-
 local _PTGlobalEventConsumers = {}
 PTGlobalOnEvent = function(type, callback)
     _PTGlobalEventConsumers[type] = callback
@@ -1330,17 +1573,19 @@ end
 
 local _PTMouseOver = nil
 --- Get the current object which the mouse is hovering over
--- @treturn table The object (PTSprite, PTBackground), or nil.
+-- @treturn table The object (@{PTActor}/@{PTBackground}/@{PTSprite}), or nil.
 PTGetMouseOver = function()
     return _PTMouseOver
 end
 
+--- Set a callback for when the mouse moves over a new @{PTActor}/@{PTBackground}/@{PTSprite}.
+-- @tparam function callback Function body to call, with the moused-over object as an argument.
 local _PTMouseOverConsumer = nil
 PTOnMouseOver = function(callback)
     _PTMouseOverConsumer = callback
 end
 
-_PTUpdateMouseOver = function()
+local _PTUpdateMouseOver = function()
     local mouse_x, mouse_y = PTGetMousePos()
     local room_x, room_y = PTScreenToRoom(mouse_x, mouse_y)
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
@@ -1385,7 +1630,7 @@ _PTUpdateMouseOver = function()
     end
 end
 
-_PTUpdateRoom = function()
+local _PTUpdateRoom = function()
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
         return
     end
@@ -1408,6 +1653,8 @@ _PTUpdateRoom = function()
     _PTCurrentRoom.y = math.max(math.min(_PTCurrentRoom.y, y_max), y_min)
 end
 
+--- Process all input and room events.
+-- @local
 _PTEvents = function()
     local ev = _PTPumpEvent()
     while ev do

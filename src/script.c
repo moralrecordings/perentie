@@ -189,7 +189,7 @@ static int lua_pt_text(lua_State* L)
     uint8_t g = (uint8_t)luaL_checkinteger(L, 6);
     uint8_t b = (uint8_t)luaL_checkinteger(L, 7);
 
-    pt_text* text = create_text(string, len, *fontptr, width, ALIGN_CENTER);
+    pt_text* text = create_text(string, len, *fontptr, width, align);
     pt_image* image = text_to_image(text, r, g, b);
     destroy_text(text);
 
@@ -426,8 +426,8 @@ void script_init()
         exit(1);
     }
 
-    if (luaL_dofile(main_thread, "test.lua") != LUA_OK) {
-        log_print("script_init(): test.lua: %s\n", lua_tostring(main_thread, -1));
+    if (luaL_dofile(main_thread, "main.lua") != LUA_OK) {
+        log_print("script_init(): main.lua: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);
         log_print("%s", lua_tostring(main_thread, 1));
         lua_pop(main_thread, 1);

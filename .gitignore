@@ -1,5 +1,9 @@
 src/boot.h
 src/boot.lo
+src/inspect.h
+src/inspect.lo
+src/PERENTIE.LOG
+src/pt_base
 **.o
 **.a
 **.exe

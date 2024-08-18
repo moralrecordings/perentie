@@ -234,20 +234,27 @@ pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b)
     image->palette[0xff * 3] = r;
     image->palette[0xff * 3 + 1] = g;
     image->palette[0xff * 3 + 2] = b;
+    // log_print("text_to_image: creating %dx%d bitmap (%d bytes)\n", image->width, image->height, image->pitch *
+    // image->height);
 
     struct rect* char_rect = create_rect();
     struct rect* crop = create_rect_dims(image->width, image->height);
 
     for (int i = 0; i < text->line_count; i++) {
         pt_text_line* line = text->lines[i];
-        // log_print("line %d/%d %p\n", i, text->line_count, line);
+        // log_print("text_to_image: line %d, ypos=%d, %dx%d\n", i, line->y, line->width, line->height);
         for (int j = 0; j < line->word_count; j++) {
             pt_text_word* word = line->words[j];
+            // log_print("text_to_image: word %d, xpos=%d, %dx%d\n", j, word->x, word->width, word->height);
             for (int k = 0; k < word->glyph_count; k++) {
                 pt_text_glyph* glyph = &word->glyphs[k];
                 // log_print("font %d %d %p\n", k, glyph->char_idx);
                 pt_font_char* fchar = &text->font->chars[glyph->char_idx];
                 pt_image* page = text->font->pages[fchar->page];
+                if (!page->data) {
+                    log_print("text_to_image: page %d missing\n", fchar->page);
+                    break;
+                }
 
                 int16_t x = word->x + glyph->x;
                 int16_t y = line->y + glyph->y;
@@ -260,8 +267,8 @@ pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b)
                         fchar->width, fchar->height, image->width, image->height);
                     continue;
                 }
-                // log_print("rect: %d %d %d %d\n", char_rect->left, char_rect->top, char_rect->right,
-                // char_rect->bottom);
+                // log_print("text_to_image: char_rect: %d %d %d %d\n", char_rect->left, char_rect->top,
+                // char_rect->right, char_rect->bottom);
 
                 int16_t x_start = x;
                 // BMFont will produce greyscale PNG images; colours are one of:
@@ -270,7 +277,10 @@ pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b)
                 // (e.g. two letters with a shared outline pixel)
                 for (int yi = char_rect->top; yi < char_rect->bottom; yi++) {
                     for (int xi = char_rect->left; xi < char_rect->right; xi++) {
+                        // log_print("text_to_image: source (%d, %d) -> %d\n", (xi + fchar->x), (yi + fchar->y),
+                        // page->pitch * (yi + fchar->y) + (xi + fchar->x));
                         byte src = page->data[page->pitch * (yi + fchar->y) + (xi + fchar->x)];
+                        // log_print("text_to_image: target (%d, %d) -> %d\n", x, y, image->pitch * y + x);
                         image->data[image->pitch * (y) + x] |= src;
                         x++;
                     }
