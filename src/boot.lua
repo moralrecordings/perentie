@@ -83,7 +83,7 @@ end
 -- @tfield[opt=nil] PTImage talk_img Handle used by the engine for caching the rendered talk text.
 -- @tfield[opt=nil] PTFont talk_font Font to use for rendering talk text.
 -- @tfield[opt={ 0xff 0xff 0xff }] table talk_colour Colour to use for rendering talk text.
--- @tfield[opt=0] integer talk_millis The millisecond count at which to remove the talk text.
+-- @tfield[opt=0] integer talk_next_wait The millisecond count at which to remove the talk text.
 -- @table PTActor
 
 --- Create a new actor.
@@ -116,7 +116,7 @@ PTActor = function(name, x, y, z)
         talk_img = nil,
         talk_font = nil,
         talk_colour = { 0xff, 0xff, 0xff },
-        talk_millis = 0,
+        talk_next_wait = 0,
         walkdata_dest = PTPoint(0, 0),
         walkdata_cur = PTPoint(0, 0),
         walkdata_next = PTPoint(0, 0),
@@ -154,8 +154,8 @@ PTActorUpdate = function(actor, fast_forward)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorUpdate: expected PTActor for first argument")
     end
-    if actor.talk_img and actor.talk_millis then
-        if not fast_forward and _PTGetMillis() < actor.talk_millis then
+    if actor.talk_img and actor.talk_next_wait then
+        if not fast_forward and _PTGetMillis() < actor.talk_next_wait then
             return false
         else
             PTRoomRemoveObject(actor.room, actor.talk_img)
@@ -184,7 +184,7 @@ PTActorTalk = function(actor, message)
     local y = math.min(math.max(actor.y + actor.talk_y, height), SCREEN_HEIGHT)
 
     actor.talk_img = PTBackground(text, x, y, 10)
-    actor.talk_millis = _PTGetMillis() + TALK_BASE_DELAY + #message * TALK_CHAR_DELAY
+    actor.talk_next_wait = _PTGetMillis() + TALK_BASE_DELAY + #message * TALK_CHAR_DELAY
     -- TODO: Make room reference on actor?
     PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
 end
@@ -457,16 +457,6 @@ MF_LAST_LEG = 8
 -- @tfield integer y Y coordinate.
 -- @table PTPoint
 
---- Walk box structure.
--- Perentie uses the SCUMM walk box algorithm. All boxes are quads, which can be any convex shape. Two boxes are considered to be connected if they both have a fully horizontal or vertical edge which is coincident; that is, fully or partially overlapping. Boxes cover the pixel area inclusive of the coordinates; it's perfectly acceptable to make a 1px path.
--- @tfield string _type "PTWalkBox"
--- @tfield PTPoint ul Coordinates of upper-left corner.
--- @tfield PTPoint ur Coordinates of upper-right corner.
--- @tfield PTPoint lr Coordinates of lower-right corner.
--- @tfield PTPoint ll Coordinates of lower-left corner.
--- @tfield integer id Internal ID of the walk box. Used internally by the box matrix.
--- @table PTWalkBox
-
 --- Create a new point.
 -- @tparam integer x X coordinate.
 -- @tparam integer y Y coordinate.
@@ -474,6 +464,16 @@ MF_LAST_LEG = 8
 PTPoint = function(x, y)
     return { x = x, y = y }
 end
+
+--- Walk box structure.
+-- Perentie uses the SCUMM walk box algorithm. All boxes are quads, which can be any convex shape. Two boxes are considered to be connected if they both have a fully horizontal or vertical edge which is coincident; that is, fully or partially overlapping. Boxes cover the pixel area inclusive of the coordinates; it's perfectly acceptable to make a 1px path where each pair of corners is the same.
+-- @tfield string _type "PTWalkBox"
+-- @tfield PTPoint ul Coordinates of upper-left corner.
+-- @tfield PTPoint ur Coordinates of upper-right corner.
+-- @tfield PTPoint lr Coordinates of lower-right corner.
+-- @tfield PTPoint ll Coordinates of lower-left corner.
+-- @tfield integer id Internal ID of the walk box. Used internally by the box matrix.
+-- @table PTWalkBox
 
 --- Create a new walk box.
 -- @tparam PTPoint ul Coordinates of upper-left corner.
@@ -498,10 +498,10 @@ local _PTStraightLinesOverlap = function(a1, a2, b1, b2)
     return false
 end
 
---- Generate a list of connections between PTWalkBoxes.
--- Most of the time you won't need to call this yourself; @{PTRoomSetWalkboxes} will do this for you.
--- @tparam table boxes List of PTWalkBoxes.
--- @treturn table List of index pairs, each describing two directly connected PTWalkBoxes in the list.
+--- Generate a list of connections between @{PTWalkBox} objects.
+-- Most of the time you won't need to call this yourself; @{PTRoomSetWalkBoxes} will do this for you.
+-- @tparam table boxes List of @{PTWalkBox} objects.
+-- @treturn table List of index pairs, each describing two directly connected walk boxes in the list.
 PTGenLinksFromWalkBoxes = function(boxes)
     local result = {}
     for i = 1, #boxes do
@@ -558,7 +558,7 @@ local _PTCopyMatrix = function(mat)
 end
 
 --- Generate a matrix describing the shortest path between walk boxes.
--- Most of the time you won't need to call this yourself; @{PTRoomSetWalkboxes} will do this for you.
+-- Most of the time you won't need to call this yourself; @{PTRoomSetWalkBoxes} will do this for you.
 -- @tparam int n Number of walk boxes.
 -- @tparam table links List of index pairs, each describing two directly connected walk boxes.
 -- @treturn table N x N matrix describing the shortest route between walk boxes; e.g. when starting from box ID i and trying to reach box ID j, result[i][j] is the ID of the next box you need to travel through in order to take the shortest path, or 0 if there is no path.
@@ -992,6 +992,7 @@ PTActorSetWalk = function(actor, x, y)
 end
 
 --- Make an actor take a single step towards the current walk target.
+-- Called by the the event update loop.
 -- @tparam PTActor actor Actor to move.
 PTActorWalk = function(actor)
     if not actor or actor._type ~= "PTActor" then
@@ -1252,8 +1253,8 @@ end
 -- @tfield integer origin_y Y coordinate of the camera offset in screen space.
 -- @tfield table render_list List of renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) objects in the room.
 -- @tfield table boxes List of @{PTWalkBox} objects which make up the room's walkable area.
--- @tfield table box_links List of box ID pairs, each describing two directly connected @{PTWalkBox}es.
--- @tfield table box_matrix N x N matrix describing the shortest route between @{PTWalkBox}es; e.g. when starting from box ID i and trying to reach box ID j, box_matrix[i][j] is the ID of the next box you need to travel through in order to take the shortest path, or 0 if there is no path.
+-- @tfield table box_links List of box ID pairs, each describing two directly connected walk boxes.
+-- @tfield table box_matrix N x N matrix describing the shortest route between walk boxes; e.g. when starting from box ID i and trying to reach box ID j, box_matrix[i][j] is the ID of the next box you need to travel through in order to take the shortest path, or 0 if there is no path.
 
 --- Create a new room.
 -- @tparam string name Name of the room.
@@ -1316,11 +1317,11 @@ end
 -- @tparam table boxes A list of @{PTWalkBox} objects.
 PTRoomSetWalkBoxes = function(room, boxes)
     if not room or room._type ~= "PTRoom" then
-        error("PTRoomSetWalkboxes: expected PTRoom for first argument")
+        error("PTRoomSetWalkBoxes: expected PTRoom for first argument")
     end
     for i = 1, #boxes do
         if not boxes[i] or boxes[i]._type ~= "PTWalkBox" then
-            error("PTRoomSetWalkboxes: expected an array of PTWalkBox for second argument")
+            error("PTRoomSetWalkBoxes: expected an array of PTWalkBox for second argument")
         end
         boxes[i].id = i
     end
@@ -1668,7 +1669,7 @@ _PTEvents = function()
             if ev.type == "keyDown" and ev.key == "escape" then
                 _PTThreadsFastForward["__verb"] = true
             elseif ev.type == "mouseDown" and _PTThreadsActorWait["__verb"] then
-                _PTThreadsActorWait["__verb"].talk_millis = _PTGetMillis()
+                _PTThreadsActorWait["__verb"].talk_next_wait = _PTGetMillis()
             end
         end
         ev = _PTPumpEvent()
