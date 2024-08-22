@@ -39,7 +39,6 @@ version_txt = PTText(
 version = PTBackground(version_txt, 64, 24, 0)
 PTRoomAddObject(test_room, version)
 
-description_font = PTFont("assets/cozette.fnt")
 description_txt = PTText(
     [[To get started, edit "main.lua".
 

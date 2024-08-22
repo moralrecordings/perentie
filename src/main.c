@@ -16,6 +16,7 @@ int main(int argc, char** argv)
     log_init();
     event_init();
     timer_init();
+    sound_init();
     serial_init();
     video_init();
     mouse_init();
@@ -46,6 +47,7 @@ int main(int argc, char** argv)
     mouse_shutdown();
     keyboard_shutdown();
     serial_shutdown();
+    sound_shutdown();
     timer_shutdown();
     event_shutdown();
     log_shutdown();

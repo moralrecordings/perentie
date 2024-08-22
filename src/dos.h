@@ -66,4 +66,8 @@ int serial_printf(const char* format, ...);
 void serial_test();
 void serial_shutdown();
 
+void sound_init();
+void sound_opl3_out(void* obj, uint16_t addr, uint8_t data);
+void sound_shutdown();
+
 #endif
