@@ -4,9 +4,19 @@
 #include <stdint.h>
 
 typedef struct RADPlayer RADPlayer;
-void rad_init(RADPlayer* rad, const void* tune, void (*opl3)(void*, uint16_t, uint8_t), void* arg);
+RADPlayer* create_rad();
+void destroy_rad(RADPlayer* rad);
+void radplayer_init(void (*opl3)(void*, uint16_t, uint8_t), void* arg);
+void radplayer_shutdown();
+bool radplayer_load_file(const char* path);
+void radplayer_update();
+void radplayer_play();
+void radplayer_stop();
+
+void rad_load(RADPlayer* rad, uint8_t* tune);
+void rad_play(RADPlayer* rad);
 void rad_stop(RADPlayer* rad);
-bool rad_update(RADPlayer* Rad);
+bool rad_update(RADPlayer* rad);
 int rad_get_hertz(RADPlayer* rad);
 int rad_get_play_time_in_seconds(RADPlayer* rad);
 int rad_get_tune_pos(RADPlayer* rad);

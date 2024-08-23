@@ -936,125 +936,127 @@ void keyboard_shutdown()
 
 // Sound driver
 
-#define OPL3_ADDR_PORT 0x388
-#define OPL3_DATA_PORT 0x389
+#define OPL3_BASE_PORT 0x388
 
 static bool sound_opl2_available = false;
 static bool sound_opl3_available = false;
 
-inline byte sound_opl3_status()
+inline byte sound_opl3_status(uint16_t base)
 {
-    return inportb(OPL3_ADDR_PORT);
+    return inportb(base);
 }
 
-inline void sound_opl3_out_raw(byte addr, byte data)
+inline void sound_opl3_out_raw(uint16_t base, byte addr, byte data)
 {
-    outportb(OPL3_ADDR_PORT, addr);
+    outportb(base, addr);
     // have to wait for the card to switch registers
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
 
-    outportb(OPL3_DATA_PORT, data);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
-    inportb(OPL3_ADDR_PORT);
+    outportb(base + 1, data);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
+    inportb(base);
 }
 
 void sound_opl3_out(void* obj, uint16_t addr, uint8_t data)
 {
-    if (sound_opl3_available)
-        sound_opl3_out_raw(addr, data);
+    if (sound_opl3_available) {
+        sound_opl3_out_raw(OPL3_BASE_PORT + (addr & 0x100 ? 2 : 0), addr & 0xff, data);
+    }
 }
 
 // detection method nicked from https://moddingwiki.shikadi.net/wiki/OPL_chip#Detection_Methods
 void sound_init()
 {
     // Reset timer 1 and timer 2
-    sound_opl3_out_raw(0x4, 0x60);
+    sound_opl3_out_raw(OPL3_BASE_PORT, 0x4, 0x60);
 
     // Reset the IRQ
-    sound_opl3_out_raw(0x4, 0x80);
+    sound_opl3_out_raw(OPL3_BASE_PORT, 0x4, 0x80);
 
     // Read status register
-    byte status1 = sound_opl3_status();
+    byte status1 = sound_opl3_status(OPL3_BASE_PORT);
 
     // Set timer 1 to 0xff
-    sound_opl3_out_raw(0x2, 0xff);
+    sound_opl3_out_raw(OPL3_BASE_PORT, 0x2, 0xff);
 
     // Unmask and start timer 1
-    sound_opl3_out_raw(0x4, 0x21);
+    sound_opl3_out_raw(OPL3_BASE_PORT, 0x4, 0x21);
 
     // Wait for 80 microseconds
     timer_sleep(1);
 
     // Read status register
-    byte status2 = sound_opl3_status();
+    byte status2 = sound_opl3_status(OPL3_BASE_PORT);
 
     // Reset timer 1 and timer 2
-    sound_opl3_out_raw(0x4, 0x60);
+    sound_opl3_out_raw(OPL3_BASE_PORT, 0x4, 0x60);
 
     // Reset the IRQ
-    sound_opl3_out_raw(0x4, 0x80);
+    sound_opl3_out_raw(OPL3_BASE_PORT, 0x4, 0x80);
 
     if (((status1 & 0xe0) != 0x00) || ((status2 & 0xe0) != 0xc0)) {
-        log_print("sound_init: OPL2 not found: %02x %02x\n", status1, status2);
+        log_print("sound_init: Yamaha OPL not found: %02x %02x\n", status1, status2);
         return;
     }
     sound_opl2_available = true;
     if ((status2 & 0x06) != 0) {
-        log_print("sound_init: found OPL2\n");
+        log_print("sound_init: found Yamaha OPL2\n");
     } else {
         sound_opl3_available = true;
-        log_print("sound_init: found OPL3\n");
+        log_print("sound_init: found Yamaha OPL3\n");
     }
     // zero all the registers
-    for (int i = 1; i < 0xf5; i++) {
-        sound_opl3_out_raw(i, 0);
+    for (int i = 1; i < 0xf6; i++) {
+        sound_opl3_out_raw(OPL3_BASE_PORT, i, 0);
+        sound_opl3_out_raw(OPL3_BASE_PORT + 2, i, 0);
     }
 }
 
 void sound_shutdown()
 {
     if (sound_opl2_available || sound_opl3_available) {
-        for (int i = 1; i < 0xf5; i++) {
-            sound_opl3_out_raw(i, 0);
+        for (int i = 1; i < 0xf6; i++) {
+            sound_opl3_out_raw(OPL3_BASE_PORT, i, 0);
+            sound_opl3_out_raw(OPL3_BASE_PORT + 2, i, 0);
         }
     }
     sound_opl2_available = false;

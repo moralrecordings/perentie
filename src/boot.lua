@@ -1117,6 +1117,23 @@ PTStopBeep = function()
     return _PTStopBeep()
 end
 
+--- Load a music file in Reality Adlib Tracker format
+-- @tparam string path The path to the file.
+-- @tresult boolean Whether the file was successfully loaded.
+PTRadLoad = function(path)
+    return _PTRadLoad(path)
+end
+
+--- Start playing the music loaded in the RAD player.
+PTRadPlay = function()
+    _PTRadPlay()
+end
+
+--- Stop playing the music loaded in the RAD player.
+PTRadStop = function()
+    _PTRadStop()
+end
+
 --- Threading
 -- @section threading
 

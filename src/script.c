@@ -10,6 +10,7 @@
 #include "font.h"
 #include "image.h"
 #include "log.h"
+#include "musicrad.h"
 #include "repl.h"
 #include "text.h"
 #include "version.h"
@@ -61,6 +62,25 @@ static int lua_pt_play_beep(lua_State* L)
 static int lua_pt_stop_beep(lua_State* L)
 {
     pcspeaker_stop();
+    return 0;
+}
+
+static int lua_pt_rad_load(lua_State* L)
+{
+    const char* path = lua_strcpy(L, 1, NULL);
+    lua_pushboolean(L, radplayer_load_file(path));
+    return 1;
+}
+
+static int lua_pt_rad_play(lua_State* L)
+{
+    radplayer_play();
+    return 0;
+}
+
+static int lua_pt_rad_stop(lua_State* L)
+{
+    radplayer_stop();
     return 0;
 }
 
@@ -345,6 +365,9 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTGetMillis", lua_pt_get_millis },
     { "_PTPlayBeep", lua_pt_play_beep },
     { "_PTStopBeep", lua_pt_stop_beep },
+    { "_PTRadLoad", lua_pt_rad_load },
+    { "_PTRadPlay", lua_pt_rad_play },
+    { "_PTRadStop", lua_pt_rad_stop },
     { "_PTImage", lua_pt_image },
     { "_PTGetImageDims", lua_pt_get_image_dims },
     { "_PTGetImageOrigin", lua_pt_get_image_origin },

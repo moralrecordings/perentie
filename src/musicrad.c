@@ -1,6 +1,9 @@
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
+#include "dos.h"
 #include "musicrad.h"
 
 // Rough C port of the Reality Adlib Tracker 2.0a player example code.
@@ -93,6 +96,7 @@ typedef struct {
 struct RADPlayer {
     void (*OPL3)(void*, uint16_t, uint8_t);
     void* OPL3Arg;
+    uint8_t* Data;
     CInstrument Instruments[kInstruments];
     CChannel Channels[kChannels];
     uint32_t PlayTime;
@@ -106,6 +110,7 @@ struct RADPlayer {
     uint8_t* Riffs[kRiffTracks][kChannels];
     uint8_t* Track;
     bool Initialised;
+    bool Playing;
     uint8_t Speed;
     uint8_t OrderListSize;
     uint8_t SpeedCnt;
@@ -173,26 +178,112 @@ uint8_t rad_get_opl3(RADPlayer* rad, uint16_t reg);
 void rad_portamento(RADPlayer* rad, uint16_t channum, CEffects* fx, int8_t amount, bool toneslide);
 void rad_transpose(RADPlayer* rad, int8_t note, int8_t octave);
 
+RADPlayer* create_rad()
+{
+    RADPlayer* rad = (RADPlayer*)calloc(1, sizeof(RADPlayer));
+
+    return rad;
+}
+
+void destroy_rad(RADPlayer* rad)
+{
+    if (rad) {
+        if (rad->Data) {
+            free(rad->Data);
+            rad->Data = NULL;
+        }
+        free(rad);
+    }
+}
+
+static RADPlayer* rad_player = NULL;
+static int rad_player_update_millis = 0;
+static int rad_player_next_millis = 0;
+
+void radplayer_init(void (*opl3)(void*, uint16_t, uint8_t), void* arg)
+{
+    rad_player = create_rad();
+    rad_player->OPL3 = opl3;
+    rad_player->OPL3Arg = arg;
+}
+
+void radplayer_shutdown()
+{
+    if (rad_player) {
+        rad_stop(rad_player);
+        destroy_rad(rad_player);
+    }
+    rad_player = NULL;
+    rad_player_update_millis = 0;
+    rad_player_next_millis = 0;
+}
+
+bool radplayer_load_file(const char* path)
+{
+    if (!rad_player)
+        return false;
+
+    rad_stop(rad_player);
+
+    FILE* fp = fopen(path, "rb");
+    if (!fp)
+        return false;
+    // get the file size
+    fseek(fp, 0, SEEK_END);
+    size_t rad_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    uint8_t* rad_buffer = (uint8_t*)malloc(rad_size);
+    fread(rad_buffer, rad_size, 1, fp);
+    fclose(fp);
+    rad_load(rad_player, rad_buffer);
+
+    rad_player_update_millis = 1000 / rad_get_hertz(rad_player);
+    rad_player_next_millis = timer_millis() + rad_player_update_millis;
+
+    return true;
+}
+
+void radplayer_update()
+{
+    if (!rad_player)
+        return;
+
+    if (timer_millis() > rad_player_next_millis) {
+        rad_update(rad_player);
+        rad_player_next_millis = timer_millis() + rad_player_update_millis;
+    }
+}
+
+void radplayer_play()
+{
+    rad_play(rad_player);
+}
+
+void radplayer_stop()
+{
+    rad_stop(rad_player);
+}
+
 //==================================================================================================
 // Initialise a RAD tune for playback.  This assumes the tune data is valid and does minimal data
 // checking.
 //==================================================================================================
-void rad_init(RADPlayer* rad, const void* tune, void (*opl3)(void*, uint16_t, uint8_t), void* arg)
+void rad_load(RADPlayer* rad, uint8_t* tune)
 {
     if (!rad)
         return;
 
     rad->Initialised = false;
+    rad->Playing = false;
+    if (rad->Data)
+        free(rad->Data);
+    rad->Data = tune;
 
     // Version check; we only support version 2.1 tune files
     if (*((uint8_t*)tune + 0x10) != 0x21) {
         rad->Hertz = -1;
         return;
     }
-
-    // The OPL3 call-back
-    rad->OPL3 = opl3;
-    rad->OPL3Arg = arg;
 
     for (int i = 0; i < kTracks; i++)
         rad->Tracks[i] = 0;
@@ -321,12 +412,25 @@ void rad_init(RADPlayer* rad, const void* tune, void (*opl3)(void*, uint16_t, ui
     rad->Initialised = true;
 }
 
+void rad_play(RADPlayer* rad)
+{
+    if (!rad->Initialised)
+        return;
+
+    rad->Playing = true;
+}
+
 //==================================================================================================
 // Stop all sounds and reset the tune.  Tune will play from the beginning again if you continue to
 // Update().
 //==================================================================================================
 void rad_stop(RADPlayer* rad)
 {
+    if (!rad->Initialised)
+        return;
+
+    if (!rad->Playing)
+        return;
 
     // Clear all registers
     for (uint16_t reg = 0x20; reg < 0xF6; reg++) {
@@ -374,6 +478,8 @@ void rad_stop(RADPlayer* rad)
         chan->Riff.SpeedCnt = 0;
         chan->IRiff.SpeedCnt = 0;
     }
+
+    rad->Playing = false;
 }
 
 //==================================================================================================
@@ -386,6 +492,9 @@ bool rad_update(RADPlayer* rad)
         return false;
 
     if (!rad->Initialised)
+        return false;
+
+    if (!rad->Playing)
         return false;
 
     // Run riffs
