@@ -6,7 +6,7 @@
 typedef struct RADPlayer RADPlayer;
 RADPlayer* create_rad();
 void destroy_rad(RADPlayer* rad);
-void radplayer_init(void (*opl3)(void*, uint16_t, uint8_t), void* arg);
+void radplayer_init();
 void radplayer_shutdown();
 bool radplayer_load_file(const char* path);
 void radplayer_update();

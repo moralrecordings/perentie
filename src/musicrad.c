@@ -3,8 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "dos.h"
 #include "musicrad.h"
+#include "system.h"
 
 // Rough C port of the Reality Adlib Tracker 2.0a player example code.
 
@@ -94,8 +94,6 @@ typedef struct {
 } CChannel;
 
 struct RADPlayer {
-    void (*OPL3)(void*, uint16_t, uint8_t);
-    void* OPL3Arg;
     uint8_t* Data;
     CInstrument Instruments[kInstruments];
     CChannel Channels[kChannels];
@@ -200,11 +198,9 @@ static RADPlayer* rad_player = NULL;
 static int rad_player_update_millis = 0;
 static int rad_player_next_millis = 0;
 
-void radplayer_init(void (*opl3)(void*, uint16_t, uint8_t), void* arg)
+void radplayer_init()
 {
     rad_player = create_rad();
-    rad_player->OPL3 = opl3;
-    rad_player->OPL3Arg = arg;
 }
 
 void radplayer_shutdown()
@@ -238,7 +234,7 @@ bool radplayer_load_file(const char* path)
     rad_load(rad_player, rad_buffer);
 
     rad_player_update_millis = 1000 / rad_get_hertz(rad_player);
-    rad_player_next_millis = timer_millis() + rad_player_update_millis;
+    rad_player_next_millis = pt_sys.timer->millis() + rad_player_update_millis;
 
     return true;
 }
@@ -248,9 +244,9 @@ void radplayer_update()
     if (!rad_player)
         return;
 
-    if (timer_millis() > rad_player_next_millis) {
+    if (pt_sys.timer->millis() > rad_player_next_millis) {
         rad_update(rad_player);
-        rad_player_next_millis = timer_millis() + rad_player_update_millis;
+        rad_player_next_millis = pt_sys.timer->millis() + rad_player_update_millis;
     }
 }
 
@@ -1326,7 +1322,7 @@ void rad_transpose(RADPlayer* rad, int8_t note, int8_t octave)
 void rad_set_opl3(RADPlayer* rad, uint16_t reg, uint8_t val)
 {
     rad->OPL3Regs[reg] = val;
-    rad->OPL3(rad->OPL3Arg, reg, val);
+    pt_sys.opl->write_reg(reg, val);
 }
 uint8_t rad_get_opl3(RADPlayer* rad, uint16_t reg)
 {

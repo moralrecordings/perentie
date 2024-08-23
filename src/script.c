@@ -5,13 +5,13 @@
 #include "lua/lua.h"
 #include "lua/lualib.h"
 
-#include "dos.h"
 #include "event.h"
 #include "font.h"
 #include "image.h"
 #include "log.h"
 #include "musicrad.h"
 #include "repl.h"
+#include "system.h"
 #include "text.h"
 #include "version.h"
 
@@ -48,20 +48,20 @@ static int lua_pt_version(lua_State* L)
 
 static int lua_pt_get_millis(lua_State* L)
 {
-    lua_pushinteger(L, timer_millis());
+    lua_pushinteger(L, pt_sys.timer->millis());
     return 1;
 }
 
 static int lua_pt_play_beep(lua_State* L)
 {
     float freq = luaL_checknumber(L, 1);
-    pcspeaker_tone(freq);
+    pt_sys.beep->tone(freq);
     return 0;
 }
 
 static int lua_pt_stop_beep(lua_State* L)
 {
-    pcspeaker_stop();
+    pt_sys.beep->stop();
     return 0;
 }
 
@@ -227,7 +227,7 @@ static int lua_pt_text(lua_State* L)
 
 static int lua_pt_clear_screen(lua_State* L)
 {
-    video_clear();
+    pt_sys.video->clear();
     return 0;
 }
 
@@ -242,7 +242,7 @@ static int lua_pt_draw_image(lua_State* L)
     int16_t x = luaL_checkinteger(L, 2);
     int16_t y = luaL_checkinteger(L, 3);
     // log_print("lua_pt_draw_image: %p %d %d\n", *imageptr, x, y);
-    video_blit_image(*imageptr, x, y);
+    pt_sys.video->blit_image(*imageptr, x, y);
     return 0;
 }
 
@@ -348,8 +348,8 @@ static int lua_pt_pump_event(lua_State* L)
 
 static int lua_pt_get_mouse_pos(lua_State* L)
 {
-    lua_pushinteger(L, mouse_get_x());
-    lua_pushinteger(L, mouse_get_y());
+    lua_pushinteger(L, pt_sys.mouse->get_x());
+    lua_pushinteger(L, pt_sys.mouse->get_y());
     return 2;
 };
 

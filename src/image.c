@@ -6,9 +6,9 @@
 
 #include "spng/spng.h"
 
-#include "dos.h"
 #include "image.h"
 #include "log.h"
+#include "system.h"
 
 pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey)
 {
@@ -175,7 +175,7 @@ void destroy_image(pt_image* image)
         image->data = NULL;
     }
     if (image->hw_image) {
-        video_destroy_hw_image(image->hw_image);
+        pt_sys.video->destroy_hw_image(image->hw_image);
         image->hw_image = NULL;
     }
     free(image);

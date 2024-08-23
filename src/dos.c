@@ -52,9 +52,9 @@ inline byte* vga_ptr()
 
 static byte* framebuffer = NULL;
 
-void video_shutdown();
+void vga_shutdown();
 
-void video_init()
+void vga_init()
 {
     // Memory protection is for chumps
     if (__djgpp_nearptr_enable() == 0) {
@@ -68,17 +68,19 @@ void video_init()
     int86(0x10, &regs, &regs);
 
     framebuffer = (byte*)calloc(SCREEN_WIDTH * SCREEN_HEIGHT, sizeof(byte));
-    atexit(video_shutdown);
+    atexit(vga_shutdown);
 }
 
-void video_clear()
+void vga_clear()
 {
     if (!framebuffer)
         return;
     memset(framebuffer, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
 }
 
-void video_blit_image(pt_image* image, int16_t x, int16_t y)
+pt_image_vga* vga_convert_image(pt_image* image);
+
+void vga_blit_image(pt_image* image, int16_t x, int16_t y)
 {
     if (!framebuffer) {
         log_print("framebuffer missing ya dingus!\n");
@@ -91,7 +93,7 @@ void video_blit_image(pt_image* image, int16_t x, int16_t y)
     }
 
     if (!image->hw_image) {
-        image->hw_image = (void*)video_convert_image(image);
+        image->hw_image = (void*)vga_convert_image(image);
     }
 
     pt_image_vga* hw_image = (pt_image_vga*)image->hw_image;
@@ -129,14 +131,14 @@ void video_blit_image(pt_image* image, int16_t x, int16_t y)
     destroy_rect(crop);
 }
 
-bool video_is_vblank()
+bool vga_is_vblank()
 {
     // sleep until the start of the next vertical blanking interval
     // CRT mode and status - CGA/EGA/VGA input status 1 register - in vertical retrace
     return inportb(0x3da) & 8;
 }
 
-void video_flip()
+void vga_flip()
 {
     // copy the framebuffer
     if (!framebuffer)
@@ -144,7 +146,7 @@ void video_flip()
     memcpy(vga_ptr(), framebuffer, SCREEN_WIDTH * SCREEN_HEIGHT);
 }
 
-void video_load_palette_colour(int idx)
+void vga_load_palette_colour(int idx)
 {
     disable();
     outportb(0x3c6, 0xff);
@@ -192,7 +194,7 @@ uint8_t vga_remap[] = {
 };
 // clang-format on
 
-uint8_t video_map_colour(uint8_t r, uint8_t g, uint8_t b)
+uint8_t vga_map_colour(uint8_t r, uint8_t g, uint8_t b)
 {
     byte r_v = vga_remap[r];
     byte g_v = vga_remap[g];
@@ -208,8 +210,8 @@ uint8_t video_map_colour(uint8_t r, uint8_t g, uint8_t b)
         vga_palette[3 * idx] = r_v;
         vga_palette[3 * idx + 1] = g_v;
         vga_palette[3 * idx + 2] = b_v;
-        video_load_palette_colour(idx);
-        log_print("video_map_colour: vga_palette[%d] = %d, %d, %d -> %d, %d, %d\n", idx, r, g, b, r_v, g_v, b_v);
+        vga_load_palette_colour(idx);
+        log_print("vga_map_colour: vga_palette[%d] = %d, %d, %d -> %d, %d, %d\n", idx, r, g, b, r_v, g_v, b_v);
         return idx;
     }
     // Out of palette slots; need to macguyver the nearest colour.
@@ -231,7 +233,7 @@ uint8_t video_map_colour(uint8_t r, uint8_t g, uint8_t b)
     return best_color;
 }
 
-pt_image_vga* video_convert_image(pt_image* image)
+pt_image_vga* vga_convert_image(pt_image* image)
 {
     pt_image_vga* result = (pt_image_vga*)calloc(1, sizeof(pt_image_vga));
     result->width = image->width;
@@ -242,7 +244,7 @@ pt_image_vga* video_convert_image(pt_image* image)
 
     byte palette_map[256];
     for (int i = 0; i < 256; i++) {
-        palette_map[i] = video_map_colour(image->palette[3 * i], image->palette[3 * i + 1], image->palette[3 * i + 2]);
+        palette_map[i] = vga_map_colour(image->palette[3 * i], image->palette[3 * i + 1], image->palette[3 * i + 2]);
     }
 
     for (int y = 0; y < result->height; y++) {
@@ -255,7 +257,7 @@ pt_image_vga* video_convert_image(pt_image* image)
     return result;
 }
 
-void video_destroy_hw_image(void* hw_image)
+void vga_destroy_hw_image(void* hw_image)
 {
     pt_image_vga* image = (pt_image_vga*)hw_image;
     if (!image)
@@ -271,7 +273,7 @@ void video_destroy_hw_image(void* hw_image)
     free(image);
 }
 
-void video_shutdown()
+void vga_shutdown()
 {
     // Mode 3h - text, 16 colours, 80x25
     union REGS regs;
@@ -283,6 +285,11 @@ void video_shutdown()
     free(framebuffer);
     framebuffer = NULL;
 }
+
+pt_drv_video dos_vga = { &vga_init, &vga_shutdown, &vga_clear, &vga_blit_image, &vga_is_vblank, &vga_flip,
+    &vga_map_colour, &vga_destroy_hw_image };
+
+uint32_t timer_millis();
 
 bool sys_idle(int (*idle_callback)(), int idle_callback_period)
 {
@@ -468,8 +475,6 @@ void timer_shutdown()
 {
     if (_timer.installed) {
         disable();
-        // Silence the PC speaker
-        pcspeaker_stop();
 
         // PIT control register -
         outportb(0x43, 0x36);
@@ -507,6 +512,18 @@ void timer_shutdown()
     }
 }
 
+pt_drv_timer dos_timer = { &timer_init, &timer_shutdown, &timer_ticks, &timer_millis, &timer_sleep };
+
+void pcspeaker_stop();
+void pcspeaker_init()
+{
+}
+
+void pcspeaker_shutdown()
+{
+    pcspeaker_stop();
+}
+
 void pcspeaker_tone(float freq)
 {
     uint32_t units = TIMER_PIT_CLOCK / freq;
@@ -524,6 +541,13 @@ void pcspeaker_stop()
     // Disable PC speaker gate on keyboard controller
     outportb(0x61, inportb(0x61) & 0xfc);
 }
+
+pt_drv_beep dos_beep = {
+    &pcspeaker_init,
+    &pcspeaker_shutdown,
+    &pcspeaker_tone,
+    &pcspeaker_stop,
+};
 
 // Serial port
 // Info: https://www.lammertbies.nl/comm/info/serial-uart
@@ -587,6 +611,8 @@ bool serial_tx_ready()
 
     return true;
 }
+
+byte serial_getc();
 
 int serial_gets(byte* buffer, size_t length)
 {
@@ -657,13 +683,25 @@ void serial_shutdown()
 {
 }
 
+pt_drv_serial dos_serial = {
+    &serial_init,
+    &serial_shutdown,
+    &serial_rx_ready,
+    &serial_tx_ready,
+    &serial_getc,
+    &serial_gets,
+    &serial_putc,
+    &serial_write,
+    &serial_printf,
+};
+
 // Mouse handler
 // Adapted from lovedos
 
 int mouse_inited;
 int mouse_x, mouse_y;
 int mouse_last_x, mouse_last_y;
-int mouse_button_states[MOUSE_BUTTON_MAX];
+bool mouse_button_states[MOUSE_BUTTON_MAX];
 
 void mouse_init()
 {
@@ -717,13 +755,13 @@ void mouse_update()
                 ev->mouse.x = mouse_x;
                 ev->mouse.y = mouse_y;
                 // Save the button states
-                mouse_button_states[i] = t == 0 ? 1 : 0;
+                mouse_button_states[i] = t == 0;
             }
         }
     }
 }
 
-int mouse_is_down(int button)
+bool mouse_is_down(enum pt_mouse_button button)
 {
     return mouse_button_states[button];
 }
@@ -742,6 +780,15 @@ void mouse_shutdown()
 {
     // noop
 }
+
+pt_drv_mouse dos_mouse = {
+    &mouse_init,
+    &mouse_update,
+    &mouse_shutdown,
+    &mouse_get_x,
+    &mouse_get_y,
+    &mouse_is_down,
+};
 
 // Keyboard handler
 // Adapted from lovedos
@@ -934,6 +981,9 @@ void keyboard_shutdown()
     enable();
 }
 
+pt_drv_keyboard dos_keyboard
+    = { &keyboard_init, &keyboard_update, &keyboard_shutdown, &keyboard_set_key_repeat, &keyboard_is_down };
+
 // Sound driver
 
 #define OPL3_BASE_PORT 0x388
@@ -996,7 +1046,7 @@ inline void sound_opl3_out_raw(uint16_t base, byte addr, byte data)
     inportb(base);
 }
 
-void sound_opl3_out(void* obj, uint16_t addr, uint8_t data)
+void opl_write_reg(uint16_t addr, uint8_t data)
 {
     if (sound_opl3_available) {
         sound_opl3_out_raw(OPL3_BASE_PORT + (addr & 0x100 ? 2 : 0), addr & 0xff, data);
@@ -1004,7 +1054,7 @@ void sound_opl3_out(void* obj, uint16_t addr, uint8_t data)
 }
 
 // detection method nicked from https://moddingwiki.shikadi.net/wiki/OPL_chip#Detection_Methods
-void sound_init()
+void opl_init()
 {
     // Reset timer 1 and timer 2
     sound_opl3_out_raw(OPL3_BASE_PORT, 0x4, 0x60);
@@ -1051,7 +1101,7 @@ void sound_init()
     }
 }
 
-void sound_shutdown()
+void opl_shutdown()
 {
     if (sound_opl2_available || sound_opl3_available) {
         for (int i = 1; i < 0xf6; i++) {
@@ -1062,3 +1112,5 @@ void sound_shutdown()
     sound_opl2_available = false;
     sound_opl3_available = false;
 }
+
+pt_drv_opl dos_opl = { &opl_init, &opl_shutdown, &opl_write_reg };

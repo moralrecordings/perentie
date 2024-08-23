@@ -3,10 +3,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+
+#include "system.h"
+
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 200
 
-typedef uint8_t byte;
 typedef struct pt_image pt_image;
 typedef struct pt_image_vga pt_image_vga;
 
@@ -18,56 +20,20 @@ struct pt_image_vga {
     uint16_t pitch;
 };
 
-void video_init();
-void video_clear();
-void video_blit_image(pt_image* image, int16_t x, int16_t y);
-bool video_is_vblank();
-void video_flip();
-void video_load_palette_colour(int idx);
-uint8_t video_map_colour(uint8_t r, uint8_t g, uint8_t b);
-pt_image_vga* video_convert_image(pt_image* image);
-void video_destroy_hw_image(void* hw_image);
-void video_shutdown();
-
 bool sys_idle(int (*idle_callback)(), int idle_callback_period);
 
-void timer_init();
-uint32_t timer_ticks();
-uint32_t timer_millis();
-void timer_sleep(uint32_t delay_millis);
-void timer_shutdown();
+extern pt_drv_video dos_vga;
 
-void pcspeaker_tone(float freq);
-void pcspeaker_stop();
+extern pt_drv_timer dos_timer;
 
-void mouse_init();
-void mouse_update();
-int mouse_is_down(int button);
-int mouse_get_x();
-int mouse_get_y();
-void mouse_shutdown();
+extern pt_drv_beep dos_beep;
 
-enum { MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_MAX };
+extern pt_drv_mouse dos_mouse;
 
-void keyboard_init();
-void keyboard_set_key_repeat(bool allow);
-bool keyboard_is_down(const char* key);
-void keyboard_update();
-void keyboard_shutdown();
+extern pt_drv_keyboard dos_keyboard;
 
-void serial_init();
-bool serial_rx_ready();
-bool serial_tx_ready();
-byte serial_getc();
-int serial_gets(byte* buffer, size_t length);
-void serial_putc(byte data);
-size_t serial_write(const void* buffer, size_t size);
-int serial_printf(const char* format, ...);
-void serial_test();
-void serial_shutdown();
+extern pt_drv_serial dos_serial;
 
-void sound_init();
-void sound_opl3_out(void* obj, uint16_t addr, uint8_t data);
-void sound_shutdown();
+extern pt_drv_opl dos_opl;
 
 #endif

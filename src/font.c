@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "dos.h"
 #include "font.h"
 #include "log.h"
 #include "utils.h"

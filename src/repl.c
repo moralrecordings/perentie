@@ -19,8 +19,8 @@
 #include "lua/lauxlib.h"
 #include "lua/lualib.h"
 
-#include "dos.h"
 #include "log.h"
+#include "system.h"
 #include "version.h"
 
 #define PROGNAME "perentie"
@@ -46,8 +46,8 @@ void repl_init(lua_State* L)
 static void l_message(const char* pname, const char* msg)
 {
     if (pname)
-        serial_printf("%s: ", pname);
-    serial_printf("%s\n", msg);
+        pt_sys.serial->printf("%s: ", pname);
+    pt_sys.serial->printf("%s\n", msg);
 }
 
 /*
@@ -77,11 +77,11 @@ static int lua_serial_print(lua_State* L)
         lua_call(L, 1, 1);
         const char* s = lua_tolstring(L, -1, &l); /* convert it to string */
         if (i > 1) /* not the first element? */
-            serial_write("\t", 1); /* add a tab before it */
-        serial_write(s, l); /* print it */
+            pt_sys.serial->write("\t", 1); /* add a tab before it */
+        pt_sys.serial->write(s, l); /* print it */
         lua_pop(L, 1); /* pop result */
     }
-    serial_write("\n", 1);
+    pt_sys.serial->write("\n", 1);
     return 0;
 }
 
@@ -289,8 +289,8 @@ void repl_update(lua_State* L)
     // Check the serial port to see if there's any input.
     // We're using telnet, so this should be buffered client-side
     // until they hit Enter.
-    if (serial_rx_ready()) {
-        line_end = serial_gets(line_buffer, sizeof(line_buffer));
+    if (pt_sys.serial->rx_ready()) {
+        line_end = pt_sys.serial->gets(line_buffer, sizeof(line_buffer));
     }
 
     if (line_end > 0) {
@@ -305,9 +305,9 @@ void repl_update(lua_State* L)
         if (!repl_activated) {
             repl_activated = true;
             // Show prompt
-            serial_printf("┈┅━┥ Perentie v%s - Console ┝━┅┈\n", VERSION);
-            serial_printf("%s\n\n", LUA_COPYRIGHT);
-            serial_printf("%s", repl_in_multiline ? " ... > " : ">> ");
+            pt_sys.serial->printf("┈┅━┥ Perentie v%s - Console ┝━┅┈\n", VERSION);
+            pt_sys.serial->printf("%s\n\n", LUA_COPYRIGHT);
+            pt_sys.serial->printf("%s", repl_in_multiline ? " ... > " : ">> ");
             log_print("repl_update: console activated!\n");
             line_end = 0;
             return;
@@ -330,7 +330,7 @@ void repl_update(lua_State* L)
         if (idx - idx_start)
             repl_process_line(L, line_buffer + idx_start, idx - idx_start + 1);
 
-        serial_printf("%s", repl_in_multiline ? " ... > " : ">> ");
+        pt_sys.serial->printf("%s", repl_in_multiline ? " ... > " : ">> ");
     }
     // reset the buffer
     line_end = 0;
