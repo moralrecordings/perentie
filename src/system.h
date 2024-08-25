@@ -74,6 +74,7 @@ struct pt_drv_video {
     void (*clear)();
     void (*blit_image)(pt_image* image, int16_t x, int16_t y);
     bool (*is_vblank)();
+    void (*blit)();
     void (*flip)();
     uint8_t (*map_colour)(uint8_t r, uint8_t g, uint8_t b);
     void (*destroy_hw_image)(void*);

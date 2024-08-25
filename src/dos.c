@@ -50,7 +50,19 @@ inline byte* vga_ptr()
     return (byte*)0xA0000 + __djgpp_conventional_base;
 }
 
-static byte* framebuffer = NULL;
+#define VGA_SC_INDEX 0x3c4
+#define VGA_SC_DATA 0x3c5
+#define VGA_GC_INDEX 0x3ce
+#define VGA_GC_DATA 0x3cf
+#define VGA_CRTC_INDEX 0x3d4
+#define VGA_CRTC_DATA 0x3d5
+#define VGA_INPUT_STATUS_1 0x3da
+
+static byte* vga_framebuffer = NULL;
+
+static bool vga_available = false;
+
+static int vga_page_offset = 0;
 
 void vga_shutdown();
 
@@ -61,29 +73,65 @@ void vga_init()
         log_print("Couldn't access the first 640K of memory. Boourns.\n");
         exit(-1);
     }
-    // Mode 13h - raster, 256 colours, 320x200
     union REGS regs;
+    // INT 10h AX=1a00h - Get display combination code
+    regs.h.ah = 0x1a;
+    regs.h.al = 0x00;
+    regs.h.bh = 0x00;
+    regs.h.bl = 0x00;
+    int86(0x10, &regs, &regs);
+    if (regs.h.bl == 0x00) {
+        log_print("VGA not found, aborting");
+        return;
+    }
+
+    // Mode 13h - raster, 256 colours, 320x200
     regs.h.ah = 0x00;
     regs.h.al = 0x13;
     int86(0x10, &regs, &regs);
 
-    framebuffer = (byte*)calloc(SCREEN_WIDTH * SCREEN_HEIGHT, sizeof(byte));
+    // Turn off chain-4 mode
+    outportb(VGA_SC_INDEX, 0x4);
+    outportb(VGA_SC_DATA, 0x06);
+
+    // Set map mask to all 4 planes
+    outportb(VGA_SC_INDEX, 0x02);
+    outportb(VGA_SC_DATA, 0x0f);
+    // Clear all 256kb of VGA memory
+    memset(vga_ptr(), 0, 0x10000);
+    // Set map mask to plane 1
+    outportb(VGA_SC_INDEX, 0x02);
+    outportb(VGA_SC_DATA, 0x01);
+    // Set read plane to 1
+    outportb(VGA_GC_INDEX, 0x03);
+    outportb(VGA_GC_DATA, 0x00);
+
+    // Underline location register - Turn off long mode
+    outportb(VGA_CRTC_INDEX, 0x14);
+    outportb(VGA_CRTC_DATA, 0x00);
+
+    // Mode control register - Turn on byte mode
+    outportb(VGA_CRTC_INDEX, 0x17);
+    outportb(VGA_CRTC_DATA, 0xe3);
+
+    vga_framebuffer = (byte*)calloc(SCREEN_WIDTH * SCREEN_HEIGHT, sizeof(byte));
     atexit(vga_shutdown);
+    vga_available = true;
 }
 
 void vga_clear()
 {
-    if (!framebuffer)
+    if (!vga_framebuffer)
         return;
-    memset(framebuffer, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+    memset(vga_framebuffer, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
 }
 
 pt_image_vga* vga_convert_image(pt_image* image);
 
 void vga_blit_image(pt_image* image, int16_t x, int16_t y)
 {
-    if (!framebuffer) {
-        log_print("framebuffer missing ya dingus!\n");
+    if (!vga_framebuffer) {
+        log_print("vga_framebuffer missing ya dingus!\n");
 
         return;
     }
@@ -117,12 +165,15 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y)
     // The source data is then drawn from the image rectangle.
     int16_t x_start = x;
     for (int yi = ir->top; yi < ir->bottom; yi++) {
-        for (int xi = ir->left; xi < ir->right; xi += sizeof(uint8_t)) {
-            size_t hw_offset = (yi * hw_image->pitch) + xi;
+        for (int xi = ir->left; xi < ir->right; xi += 1) {
+            int p = xi % 4;
+            int xp = xi >> 2;
+            int sp = x % 4;
+            size_t hw_offset = (p * hw_image->plane) + (yi * hw_image->plane_pitch) + xp;
             uint8_t mask = *(uint8_t*)(hw_image->mask + hw_offset);
-            uint8_t* ptr = (uint8_t*)(framebuffer + (y << 8) + (y << 6) + x);
+            uint8_t* ptr = (uint8_t*)(vga_framebuffer + (y * (SCREEN_WIDTH >> 2)) + (sp * SCREEN_PLANE) + (x >> 2));
             *ptr = (*ptr & ~mask) | (*(uint8_t*)(hw_image->bitmap + hw_offset) & mask);
-            x += sizeof(uint8_t);
+            x += 1;
         }
         y++;
         x = x_start;
@@ -134,16 +185,66 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y)
 bool vga_is_vblank()
 {
     // sleep until the start of the next vertical blanking interval
+    // - do drawing cycle
+    // - wait until bit is 0
+    // - flip page
+    // - wait until bit is 1
+
     // CRT mode and status - CGA/EGA/VGA input status 1 register - in vertical retrace
-    return inportb(0x3da) & 8;
+    return inportb(VGA_INPUT_STATUS_1) & 8;
+}
+
+void vga_blit()
+{
+    // copy the framebuffer to VGA memory
+    if (!vga_framebuffer)
+        return;
+    byte* vga = vga_ptr() + vga_page_offset;
+    byte* buf = vga_framebuffer;
+    // Set map mask to plane 0
+    outportb(VGA_SC_INDEX, 0x02);
+    outportb(VGA_SC_DATA, 0x01);
+    memcpy(vga, buf, SCREEN_PLANE);
+    // Set map mask to plane 1
+    outportb(VGA_SC_DATA, 0x02);
+    buf += SCREEN_PLANE;
+    memcpy(vga, buf, SCREEN_PLANE);
+    // Set map mask to plane 2
+    outportb(VGA_SC_DATA, 0x04);
+    buf += SCREEN_PLANE;
+    memcpy(vga, buf, SCREEN_PLANE);
+    // Set map mask to plane 3
+    outportb(VGA_SC_DATA, 0x08);
+    buf += SCREEN_PLANE;
+    memcpy(vga, buf, SCREEN_PLANE);
 }
 
 void vga_flip()
 {
-    // copy the framebuffer
-    if (!framebuffer)
+    // flip the VGA page
+
+    if (!vga_framebuffer)
         return;
-    memcpy(vga_ptr(), framebuffer, SCREEN_WIDTH * SCREEN_HEIGHT);
+
+    // wait until we're out of vblank
+    while (vga_is_vblank()) {
+        __dpmi_yield();
+    }
+
+    // Flip page by setting the address
+    disable();
+    outportb(VGA_CRTC_INDEX, 0x0c);
+    outportb(VGA_CRTC_DATA, 0xff & (vga_page_offset >> 8));
+    outportb(VGA_CRTC_INDEX, 0x0d);
+    outportb(VGA_CRTC_DATA, 0xff & vga_page_offset);
+    enable();
+
+    vga_page_offset = vga_page_offset ? 0 : SCREEN_PLANE;
+
+    // wait until the next vblank interval
+    while (!vga_is_vblank()) {
+        __dpmi_yield();
+    }
 }
 
 void vga_load_palette_colour(int idx)
@@ -239,6 +340,8 @@ pt_image_vga* vga_convert_image(pt_image* image)
     result->width = image->width;
     result->height = image->height;
     result->pitch = image->pitch;
+    result->plane = (image->pitch * image->height) >> 2;
+    result->plane_pitch = (image->pitch) >> 2;
     result->bitmap = (byte*)calloc(result->pitch * result->height, sizeof(byte));
     result->mask = (byte*)calloc(result->pitch * result->height, sizeof(byte));
 
@@ -247,10 +350,15 @@ pt_image_vga* vga_convert_image(pt_image* image)
         palette_map[i] = vga_map_colour(image->palette[3 * i], image->palette[3 * i + 1], image->palette[3 * i + 2]);
     }
 
-    for (int y = 0; y < result->height; y++) {
-        for (int x = 0; x < result->width; x++) {
-            result->bitmap[y * result->pitch + x] = palette_map[image->data[y * result->pitch + x]];
-            result->mask[y * result->pitch + x] = image->data[y * result->pitch + x] == image->colourkey ? 0x00 : 0xff;
+    for (int p = 0; p < 4; p++) {
+        byte* bitmap = result->bitmap + (p * result->plane);
+        byte* mask = result->mask + (p * result->plane);
+        for (int y = 0; y < result->height; y++) {
+            for (int x = 0; x < result->plane_pitch; x++) {
+                bitmap[y * result->plane_pitch + x] = palette_map[image->data[y * result->pitch + (x << 2) + p]];
+                mask[y * result->plane_pitch + x]
+                    = image->data[y * result->pitch + (x << 2) + p] == image->colourkey ? 0x00 : 0xff;
+            }
         }
     }
 
@@ -282,11 +390,11 @@ void vga_shutdown()
     int86(0x10, &regs, &regs);
     // Fine, maybe we should stop being unsafe
     __djgpp_nearptr_disable();
-    free(framebuffer);
-    framebuffer = NULL;
+    free(vga_framebuffer);
+    vga_framebuffer = NULL;
 }
 
-pt_drv_video dos_vga = { &vga_init, &vga_shutdown, &vga_clear, &vga_blit_image, &vga_is_vblank, &vga_flip,
+pt_drv_video dos_vga = { &vga_init, &vga_shutdown, &vga_clear, &vga_blit_image, &vga_is_vblank, &vga_blit, &vga_flip,
     &vga_map_colour, &vga_destroy_hw_image };
 
 uint32_t timer_millis();
@@ -452,6 +560,9 @@ uint32_t timer_ticks()
 
 uint32_t timer_millis()
 {
+    // shortcut; we know the installed timer is 1000Hz
+    if (_timer.installed)
+        return _timer.ticks;
     return timer_ticks() * _timer_ms_per_tick;
 }
 

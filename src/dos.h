@@ -8,6 +8,7 @@
 
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 200
+#define SCREEN_PLANE ((SCREEN_WIDTH * SCREEN_HEIGHT) >> 2)
 
 typedef struct pt_image pt_image;
 typedef struct pt_image_vga pt_image_vga;
@@ -18,6 +19,8 @@ struct pt_image_vga {
     uint16_t width;
     uint16_t height;
     uint16_t pitch;
+    uint16_t plane;
+    uint16_t plane_pitch;
 };
 
 bool sys_idle(int (*idle_callback)(), int idle_callback_period);

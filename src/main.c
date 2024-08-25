@@ -40,25 +40,15 @@ int main(int argc, char** argv)
     bool running = true;
 
     while (!script_has_quit()) {
-        // sleep until the start of the next vertical blanking interval
-        if (pt_sys.video->is_vblank()) {
-            // in the middle of a vblank, wait until the next draw
-            do {
-                running = sys_idle(script_exec, 10);
-                radplayer_update();
-            } while (pt_sys.video->is_vblank());
-        }
-        // in the middle of a draw, wait for the start of the next vblank
-        do {
-            running = sys_idle(script_exec, 10);
-            radplayer_update();
-        } while (!pt_sys.video->is_vblank());
-        pt_sys.video->flip();
+        script_exec();
+        radplayer_update();
         pt_sys.keyboard->update();
         pt_sys.mouse->update();
         script_events();
         script_render();
+        pt_sys.video->blit();
         script_repl();
+        pt_sys.video->flip();
     }
 
     radplayer_shutdown();
