@@ -39,7 +39,11 @@ int main(int argc, char** argv)
     script_init();
     bool running = true;
 
+    uint32_t samples[16] = { 0 };
+    uint32_t sample_idx = 0;
+
     while (!script_has_quit()) {
+        uint32_t ticks = pt_sys.timer->millis();
         script_exec();
         radplayer_update();
         pt_sys.keyboard->update();
@@ -48,8 +52,15 @@ int main(int argc, char** argv)
         script_render();
         pt_sys.video->blit();
         script_repl();
+        samples[sample_idx] = pt_sys.timer->millis() - ticks;
+        sample_idx = (sample_idx + 1) % 16;
+
         pt_sys.video->flip();
     }
+
+    log_print("Last frame times: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", samples[0], samples[1], samples[2],
+        samples[3], samples[4], samples[5], samples[6], samples[7], samples[8], samples[9], samples[10], samples[11],
+        samples[12], samples[13], samples[14], samples[15]);
 
     radplayer_shutdown();
     pt_sys.video->shutdown();

@@ -122,7 +122,7 @@ inline bool rect_blit_clip(int16_t* x, int16_t* y, struct rect* src, struct rect
 
     int bottom = *y + src->bottom;
     if (bottom > clip->bottom)
-        src->bottom -= clip->bottom + src->top - *y;
+        src->bottom = clip->bottom + src->top - *y;
     return !rect_is_empty(src);
 }
 

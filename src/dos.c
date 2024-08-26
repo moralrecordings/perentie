@@ -132,7 +132,6 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y)
 {
     if (!vga_framebuffer) {
         log_print("vga_framebuffer missing ya dingus!\n");
-
         return;
     }
     if (!image) {
@@ -152,31 +151,62 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y)
     x -= image->origin_x;
     y -= image->origin_y;
     // log_print("Blitting %s to (%d,%d) %dx%d ->", image->path, x, y, image->width, image->height);
-    //  Constrain x and y to be an absolute start offset in screen space.
-    //  Crop the image rectangle, based on its location in screen space.
+
+    // Constrain x and y to be an absolute start offset in screen space.
+    // Crop the image rectangle, based on its location in screen space.
     if (!rect_blit_clip(&x, &y, ir, crop)) {
         // log_print("Rectangle off screen\n");
         destroy_rect(ir);
         destroy_rect(crop);
         return;
     }
-    // log_print("image coords (%d,%d) %dx%d\n", ir->left, ir->top, rect_width(ir), rect_height(ir));
+    // log_print("image coords for %s: (%d, %d) %dx%d -> (%d, %d)\n", image->path, ir->left, ir->top, rect_width(ir),
+    // rect_height(ir), x, y);
 
     // The source data is then drawn from the image rectangle.
-    int16_t x_start = x;
-    for (int yi = ir->top; yi < ir->bottom; yi++) {
-        for (int xi = ir->left; xi < ir->right; xi += 1) {
-            int p = xi % 4;
-            int xp = xi >> 2;
-            int sp = x % 4;
-            size_t hw_offset = (p * hw_image->plane) + (yi * hw_image->plane_pitch) + xp;
-            uint8_t mask = *(uint8_t*)(hw_image->mask + hw_offset);
-            uint8_t* ptr = (uint8_t*)(vga_framebuffer + (y * (SCREEN_WIDTH >> 2)) + (sp * SCREEN_PLANE) + (x >> 2));
-            *ptr = (*ptr & ~mask) | (*(uint8_t*)(hw_image->bitmap + hw_offset) & mask);
-            x += 1;
+
+    // y start position in the framebuffer
+    int16_t y_start = y;
+    // plane ID in the source image.
+    for (int pi = 0; pi < 4; pi++) {
+        // destination plane ID in the framebuffer
+        // don't ask me how the below works!
+        // it was found by trial and error to sort the planes properly!
+        uint8_t pf = (x + (4 - (ir->left % 4)) + pi) % 4;
+        // image x start/end positions (corrected for plane)
+        int16_t ir_left = (ir->left >> 2) + ((ir->left % 4) > pi ? 1 : 0);
+        int16_t ir_right = (ir->right >> 2) + ((ir->right % 4) > pi ? 1 : 0);
+        // framebuffer x start position (corrected for plane)
+        int16_t fx = (x >> 2) + ((x % 4) > pf ? 1 : 0);
+
+        // log_print("pi: %d, pf: %d, ir_left: %d, ir_right: %d, fx: %d\n", pi, pf, ir_left, ir_right, fx);
+        // start address of the current plane of the source image
+        uint8_t* hw_bitmap_base = hw_image->bitmap + pi * hw_image->plane;
+        // start address of the current plane of the source image mask
+        uint8_t* hw_mask_base = hw_image->mask + pi * hw_image->plane;
+        // start address of the current plane of the framebuffer
+        uint8_t* fb_base = vga_framebuffer + pf * SCREEN_PLANE;
+        // log_print("hw_base: %d, fb_base: %d\n", pi * hw_image->plane, pf * SCREEN_PLANE);
+
+        for (int yi = ir->top; yi < ir->bottom; yi++) {
+            // start address of the current horizontal run of pixels in the source image
+            uint8_t* hw_bitmap = hw_bitmap_base + yi * hw_image->plane_pitch + ir_left;
+            // start address of the current horizontal run of pixels in the source image mask
+            uint8_t* hw_mask = hw_mask_base + yi * hw_image->plane_pitch + ir_left;
+            // start address of the current horizontal run of pixels in the framebuffer
+            uint8_t* fb_ptr = fb_base + (y * (SCREEN_WIDTH >> 2)) + fx;
+            for (int xi = ir_left; xi < ir_right; xi++) {
+                // log_print("xi: %d, yi: %d, pi: %d, hw_off: %d, fb_off: %d\n", xi, yi, pi, hw_bitmap -
+                // hw_image->bitmap, fb_ptr - vga_framebuffer);
+                //  in the framebuffer, replace masked bits with source image data
+                *fb_ptr = (*fb_ptr & ~(*hw_mask)) | (*hw_bitmap & *hw_mask);
+                hw_bitmap++;
+                hw_mask++;
+                fb_ptr++;
+            }
+            y++;
         }
-        y++;
-        x = x_start;
+        y = y_start;
     }
     destroy_rect(ir);
     destroy_rect(crop);
@@ -241,7 +271,7 @@ void vga_flip()
 
     vga_page_offset = vga_page_offset ? 0 : SCREEN_PLANE;
 
-    // wait until the next vblank interval
+    // wait until the next vblank interval starts
     while (!vga_is_vblank()) {
         __dpmi_yield();
     }
