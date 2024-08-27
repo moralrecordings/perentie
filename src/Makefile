@@ -20,7 +20,7 @@ LIB_MINIZ = $(PATH_MINIZ)/libminiz.a
 CFLAGS = -O2 -g -DSYSTEM_DOS
 LDFLAGS = -lm -L./$(PATH_LUA) -llua -L./$(PATH_SPNG) -lspng -L./$(PATH_MINIZ) -lminiz 
 
-OBJECTS = system.o dos.o main.o image.o script.o log.o font.o text.o event.o repl.o musicrad.o stb/stb.o
+OBJECTS = system.o dos.o dos_vga.o main.o image.o script.o log.o font.o text.o event.o repl.o musicrad.o stb/stb.o
 
 all: perentie.exe
 

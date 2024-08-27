@@ -403,9 +403,9 @@ void rad_load(RADPlayer* rad, uint8_t* tune)
     // Done parsing tune, now set up for play
     for (int i = 0; i < 512; i++)
         rad->OPL3Regs[i] = 255;
-    rad_stop(rad);
 
     rad->Initialised = true;
+    rad_stop(rad); // zero registers, set OPL3 flags
 }
 
 void rad_play(RADPlayer* rad)
@@ -423,9 +423,6 @@ void rad_play(RADPlayer* rad)
 void rad_stop(RADPlayer* rad)
 {
     if (!rad->Initialised)
-        return;
-
-    if (!rad->Playing)
         return;
 
     // Clear all registers
