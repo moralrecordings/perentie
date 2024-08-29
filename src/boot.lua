@@ -288,6 +288,7 @@ end
 -- @tfield[opt=false] boolean looping Whether to loop the animation when completed.
 -- @tfield[opt=0] integer current_frame The current frame in the sequence to display.
 -- @tfield[opt=0] integer next_wait The millisecond count at which to show the next frame.
+-- @tfield[opt=0] integer flags Flags for rendering the image.
 -- @table PTAnimation
 
 --- Create a new animation.
@@ -302,6 +303,7 @@ PTAnimation = function(rate, frames)
         looping = false,
         current_frame = 0,
         next_wait = 0,
+        flags = 0,
     }
 end
 
@@ -347,6 +349,7 @@ end
 --- Fetch the image to use when rendering a @{PTActor}/@{PTBackground}/@{PTSprite} object.
 -- @tparam table object The object to query.
 -- @treturn PTImage The image for the current frame.
+-- @treturn integer Flags to render the image with.
 PTGetAnimationFrame = function(object)
     if object and object._type == "PTSprite" then
         local anim = object.animations[object.current_animation]
@@ -363,14 +366,14 @@ PTGetAnimationFrame = function(object)
                 anim.current_frame = (anim.current_frame % #anim.frames) + 1
                 anim.next_wait = PTGetMillis() + (1000 // anim.rate)
             end
-            return anim.frames[anim.current_frame]
+            return anim.frames[anim.current_frame], anim.flags
         end
     elseif object and object._type == "PTBackground" then
-        return object.image
+        return object.image, 0
     elseif object and object._type == "PTActor" then
         return PTGetAnimationFrame(object.sprite)
     end
-    return nil
+    return nil, 0
 end
 
 _PTGlobalRenderList = {}
@@ -1613,8 +1616,8 @@ local _PTUpdateMouseOver = function()
     for i = #_PTGlobalRenderList, 1, -1 do
         local obj = _PTGlobalRenderList[i]
         if obj.collision then
-            local frame = PTGetAnimationFrame(obj)
-            if frame and _PTImageTestCollision(frame.ptr, mouse_x - obj.x, mouse_y - obj.y) then
+            local frame, flags = PTGetAnimationFrame(obj)
+            if frame and _PTImageTestCollision(frame.ptr, mouse_x - obj.x, mouse_y - obj.y, flags) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
@@ -1628,8 +1631,8 @@ local _PTUpdateMouseOver = function()
     for i = #_PTCurrentRoom.render_list, 1, -1 do
         local obj = _PTCurrentRoom.render_list[i]
         if obj.collision then
-            frame = PTGetAnimationFrame(obj)
-            if frame and _PTImageTestCollision(frame.ptr, room_x - obj.x, room_y - obj.y) then
+            frame, flags = PTGetAnimationFrame(obj)
+            if frame and _PTImageTestCollision(frame.ptr, room_x - obj.x, room_y - obj.y, flags) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
@@ -1706,27 +1709,27 @@ _PTRender = function()
     end
     for i, obj in pairs(_PTCurrentRoom.render_list) do
         if obj.visible then
-            local frame = PTGetAnimationFrame(obj)
+            local frame, flags = PTGetAnimationFrame(obj)
             if frame then
                 local tmp_x, tmp_y = PTRoomToScreen(obj.x, obj.y)
-                _PTDrawImage(frame.ptr, tmp_x, tmp_y)
+                _PTDrawImage(frame.ptr, tmp_x, tmp_y, flags)
             end
         end
     end
     for i, obj in pairs(_PTGlobalRenderList) do
         if obj.visible then
-            local frame = PTGetAnimationFrame(obj)
+            local frame, flags = PTGetAnimationFrame(obj)
             if frame then
-                _PTDrawImage(frame.ptr, obj.x, obj.y)
+                _PTDrawImage(frame.ptr, obj.x, obj.y, flags)
             end
         end
     end
 
     if _PTMouseSprite and not _PTInputGrabbed and _PTMouseSprite.visible then
         local mouse_x, mouse_y = _PTGetMousePos()
-        local frame = PTGetAnimationFrame(_PTMouseSprite)
+        local frame, flags = PTGetAnimationFrame(_PTMouseSprite)
         if frame then
-            _PTDrawImage(frame.ptr, mouse_x, mouse_y)
+            _PTDrawImage(frame.ptr, mouse_x, mouse_y, flags)
         end
     end
 end

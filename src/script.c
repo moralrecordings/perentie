@@ -241,8 +241,9 @@ static int lua_pt_draw_image(lua_State* L)
     }
     int16_t x = luaL_checkinteger(L, 2);
     int16_t y = luaL_checkinteger(L, 3);
+    uint8_t flags = luaL_checkinteger(L, 4);
     // log_print("lua_pt_draw_image: %p %d %d\n", *imageptr, x, y);
-    pt_sys.video->blit_image(*imageptr, x, y);
+    pt_sys.video->blit_image(*imageptr, x, y, flags);
     return 0;
 }
 
@@ -256,7 +257,8 @@ static int lua_pt_image_test_collision(lua_State* L)
     }
     int16_t x = luaL_checkinteger(L, 2);
     int16_t y = luaL_checkinteger(L, 3);
-    lua_pushboolean(L, image_test_collision(*imageptr, x, y, true));
+    uint8_t flags = luaL_checkinteger(L, 4);
+    lua_pushboolean(L, image_test_collision(*imageptr, x, y, true, flags));
     return 1;
 }
 

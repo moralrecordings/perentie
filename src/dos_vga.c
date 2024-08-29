@@ -119,14 +119,14 @@ void vga_clear()
 
 pt_image_vga* vga_convert_image(pt_image* image);
 
-void vga_blit_image(pt_image* image, int16_t x, int16_t y)
+void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
 {
     if (!vga_framebuffer) {
-        log_print("vga_framebuffer missing ya dingus!\n");
+        log_print("vga_blit_image: driver not inited!\n");
         return;
     }
     if (!image) {
-        log_print("WARNING: Tried to blit nothing ya dingus\n");
+        log_print("vga_blit_image: image is NULL!\n");
         return;
     }
 
@@ -184,16 +184,32 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y)
             uint8_t* hw_bitmap = hw_bitmap_base + yi * hw_image->plane_pitch + ir_left;
             // start address of the current horizontal run of pixels in the source image mask
             uint8_t* hw_mask = hw_mask_base + yi * hw_image->plane_pitch + ir_left;
+            // invert framebuffer y coordinate if vertical flipped
+            int16_t yf = flags & FLIP_V ? (ir->bottom - ir->top - 1) - (y - y_start) + y_start : y;
             // start address of the current horizontal run of pixels in the framebuffer
-            uint8_t* fb_ptr = fb_base + (y * (SCREEN_WIDTH >> 2)) + fx;
-            for (int xi = ir_left; xi < ir_right; xi++) {
-                // log_print("xi: %d, yi: %d, pi: %d, hw_off: %d, fb_off: %d\n", xi, yi, pi, hw_bitmap -
-                // hw_image->bitmap, fb_ptr - vga_framebuffer);
-                //  in the framebuffer, replace masked bits with source image data
-                *fb_ptr = (*fb_ptr & ~(*hw_mask)) | (*hw_bitmap & *hw_mask);
-                hw_bitmap++;
-                hw_mask++;
-                fb_ptr++;
+            uint8_t* fb_ptr = fb_base + (yf * (SCREEN_WIDTH >> 2)) + fx;
+            if (flags & FLIP_H) {
+                // invert framebuffer x position if horizontal flipped
+                fb_ptr += ir_right - ir_left - 1;
+                for (int xi = ir_left; xi < ir_right; xi++) {
+                    // log_print("xi: %d, yi: %d, pi: %d, hw_off: %d, fb_off: %d\n", xi, yi, pi, hw_bitmap -
+                    // hw_image->bitmap, fb_ptr - vga_framebuffer);
+                    //  in the framebuffer, replace masked bits with source image data
+                    *fb_ptr = (*fb_ptr & ~(*hw_mask)) | (*hw_bitmap & *hw_mask);
+                    hw_bitmap++;
+                    hw_mask++;
+                    fb_ptr--;
+                }
+            } else {
+                for (int xi = ir_left; xi < ir_right; xi++) {
+                    // log_print("xi: %d, yi: %d, pi: %d, hw_off: %d, fb_off: %d\n", xi, yi, pi, hw_bitmap -
+                    // hw_image->bitmap, fb_ptr - vga_framebuffer);
+                    //  in the framebuffer, replace masked bits with source image data
+                    *fb_ptr = (*fb_ptr & ~(*hw_mask)) | (*hw_bitmap & *hw_mask);
+                    hw_bitmap++;
+                    hw_mask++;
+                    fb_ptr++;
+                }
             }
             y++;
         }

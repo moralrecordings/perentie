@@ -165,7 +165,7 @@ bool image_load(pt_image* image)
     return true;
 }
 
-bool image_test_collision(pt_image* image, int16_t x, int16_t y, bool mask)
+bool image_test_collision(pt_image* image, int16_t x, int16_t y, bool mask, uint8_t flags)
 {
     if (!image)
         return false;
@@ -173,8 +173,13 @@ bool image_test_collision(pt_image* image, int16_t x, int16_t y, bool mask)
     if (x < image_left(image) || x >= image_right(image) || y < image_top(image) || y >= image_bottom(image))
         return false;
     // pixel check
-    if (mask && image->data[image->pitch * (y - image_top(image)) + (x - image_left(image))] == image->colourkey)
-        return false;
+    if (mask) {
+        byte* ptr = image->data;
+        ptr += image->pitch * ((flags & FLIP_V) ? (image_bottom(image) - 1 - y) : (y - image_top(image)));
+        ptr += (flags & FLIP_H) ? (image_right(image) - 1 - x) : (x - image_left(image));
+        if ((*ptr == image->colourkey) || (image->palette_alpha[*ptr] == 0x00))
+            return false;
+    }
     return true;
 }
 

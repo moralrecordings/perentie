@@ -68,11 +68,13 @@ struct pt_drv_beep {
     void (*stop)();
 };
 
+enum pt_blit_flags { FLIP_H = 0x01, FLIP_V = 0x02 };
+
 struct pt_drv_video {
     void (*init)();
     void (*shutdown)();
     void (*clear)();
-    void (*blit_image)(pt_image* image, int16_t x, int16_t y);
+    void (*blit_image)(pt_image* image, int16_t x, int16_t y, uint8_t flags);
     bool (*is_vblank)();
     void (*blit)();
     void (*flip)();
