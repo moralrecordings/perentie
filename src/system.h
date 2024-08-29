@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "colour.h"
+
 typedef uint8_t byte;
 typedef struct pt_image pt_image;
 
@@ -90,6 +92,8 @@ struct pt_system {
     pt_drv_opl* opl;
     pt_drv_beep* beep;
     pt_drv_video* video;
+    int palette_top;
+    pt_color_rgb palette[256];
 };
 
 extern pt_system pt_sys;

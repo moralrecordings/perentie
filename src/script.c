@@ -355,6 +355,20 @@ static int lua_pt_get_mouse_pos(lua_State* L)
     return 2;
 };
 
+static int lua_pt_get_palette(lua_State* L)
+{
+    lua_createtable(L, 3 * 256, 0);
+    for (int i = 0; i < pt_sys.palette_top; i++) {
+        lua_pushinteger(L, pt_sys.palette[i].r);
+        lua_seti(L, -2, 3 * i + 1);
+        lua_pushinteger(L, pt_sys.palette[i].g);
+        lua_seti(L, -2, 3 * i + 2);
+        lua_pushinteger(L, pt_sys.palette[i].b);
+        lua_seti(L, -2, 3 * i + 3);
+    }
+    return 1;
+};
+
 static int lua_pt_quit(lua_State* L)
 {
     pt_event* ev = event_push(EVENT_QUIT);
@@ -382,6 +396,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTLog", lua_pt_log },
     { "_PTPumpEvent", lua_pt_pump_event },
     { "_PTGetMousePos", lua_pt_get_mouse_pos },
+    { "_PTGetPalette", lua_pt_get_palette },
     { "_PTQuit", lua_pt_quit },
     { NULL, NULL },
 };

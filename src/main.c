@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "colour.h"
 #include "dos.h"
 #include "event.h"
 #include "log.h"
@@ -14,6 +15,7 @@
 
 int main(int argc, char** argv)
 {
+
 #ifdef SYSTEM_DOS
     pt_sys.timer = &dos_timer;
     pt_sys.keyboard = &dos_keyboard;
@@ -25,6 +27,12 @@ int main(int argc, char** argv)
 #else
     return 0;
 #endif
+    for (int i = 0; i < 16; i++) {
+        pt_sys.palette[i].r = ega_palette[i].r;
+        pt_sys.palette[i].g = ega_palette[i].g;
+        pt_sys.palette[i].b = ega_palette[i].b;
+    }
+    pt_sys.palette_top = 16;
 
     log_init();
     event_init();
