@@ -11,6 +11,7 @@ struct pt_image {
     const char* path;
     byte* data;
     byte palette[3 * 256];
+    byte palette_alpha[256];
     uint16_t width;
     uint16_t height;
     int16_t origin_x;

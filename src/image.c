@@ -16,6 +16,7 @@ pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y, int
     image->path = path;
     image->origin_x = origin_x;
     image->origin_y = origin_y;
+    memset(image->palette_alpha, 0xff, 256);
     image->colourkey = colourkey;
     image_load(image);
     return image;
@@ -84,11 +85,23 @@ bool image_load(pt_image* image)
             image->palette[3 * i + 1] = pal.entries[i].green;
             image->palette[3 * i + 2] = pal.entries[i].blue;
         }
+        struct spng_trns trns;
+        spng_get_trns(ctx, &trns);
+        for (size_t i = 0; i < (trns.n_type3_entries > 256 ? 256 : trns.n_type3_entries); i++) {
+            log_print("%d: %02x\n", i, trns.type3_alpha);
+            image->palette_alpha[i] = trns.type3_alpha[i];
+        }
+
     } else if (ihdr.color_type == SPNG_COLOR_TYPE_GRAYSCALE) {
         for (size_t i = 0; i < 256; i++) {
             image->palette[3 * i] = i;
             image->palette[3 * i + 1] = i;
             image->palette[3 * i + 2] = i;
+        }
+        struct spng_trns trns;
+        spng_get_trns(ctx, &trns);
+        if (trns.gray < 256) {
+            image->palette_alpha[trns.gray] = 0x00;
         }
     }
 

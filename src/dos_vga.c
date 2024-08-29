@@ -376,9 +376,10 @@ pt_image_vga* vga_convert_image(pt_image* image)
         byte* mask = result->mask + (p * result->plane);
         for (int y = 0; y < result->height; y++) {
             for (int x = 0; x < result->plane_pitch; x++) {
-                bitmap[y * result->plane_pitch + x] = palette_map[image->data[y * result->pitch + (x << 2) + p]];
+                byte pixel = image->data[y * result->pitch + (x << 2) + p];
+                bitmap[y * result->plane_pitch + x] = palette_map[pixel];
                 mask[y * result->plane_pitch + x]
-                    = image->data[y * result->pitch + (x << 2) + p] == image->colourkey ? 0x00 : 0xff;
+                    = ((pixel == image->colourkey) || (image->palette_alpha[pixel] == 0x00)) ? 0x00 : 0xff;
             }
         }
     }
