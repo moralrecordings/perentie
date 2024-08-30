@@ -369,6 +369,53 @@ static int lua_pt_get_palette(lua_State* L)
     return 1;
 };
 
+static int lua_pt_set_palette_remapper(lua_State* L)
+{
+    enum pt_palette_remapper remapper = luaL_checkinteger(L, 1);
+    pt_sys.video->set_palette_remapper(remapper);
+    return 0;
+};
+
+static int lua_pt_set_dither_hint(lua_State* L)
+{
+    pt_color_rgb src = { 0 };
+    lua_geti(L, 1, 1);
+    src.r = luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    lua_geti(L, 1, 2);
+    src.g = luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    lua_geti(L, 1, 3);
+    src.b = luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+
+    enum pt_dither_type type = luaL_checkinteger(L, 2);
+
+    pt_color_rgb a = { 0 };
+    pt_color_rgb b = { 0 };
+    lua_geti(L, 3, 1);
+    a.r = luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    lua_geti(L, 3, 2);
+    a.g = luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    lua_geti(L, 3, 3);
+    a.b = luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    lua_geti(L, 3, 4);
+    b.r = luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    lua_geti(L, 3, 5);
+    b.g = luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+    lua_geti(L, 3, 6);
+    b.b = luaL_checkinteger(L, -1);
+    lua_pop(L, 1);
+
+    pt_sys.video->set_dither_hint(&src, type, &a, &b);
+    return 0;
+};
+
 static int lua_pt_quit(lua_State* L)
 {
     pt_event* ev = event_push(EVENT_QUIT);
@@ -397,6 +444,8 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTPumpEvent", lua_pt_pump_event },
     { "_PTGetMousePos", lua_pt_get_mouse_pos },
     { "_PTGetPalette", lua_pt_get_palette },
+    { "_PTSetPaletteRemapper", lua_pt_set_palette_remapper },
+    { "_PTSetDitherHint", lua_pt_set_dither_hint },
     { "_PTQuit", lua_pt_quit },
     { NULL, NULL },
 };

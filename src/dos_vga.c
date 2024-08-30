@@ -17,6 +17,22 @@
 
 static byte vga_palette[256 * 3] = { 0 };
 static pt_dither vga_dither[256] = { 0 };
+static pt_color_oklab* ega_dither_list = NULL;
+static enum pt_palette_remapper vga_remapper = REMAPPER_NONE;
+
+void set_dither_from_remapper(uint8_t idx, pt_dither* dest)
+{
+    switch (vga_remapper) {
+    case REMAPPER_EGA:
+        get_ega_dither_for_color(ega_dither_list, 256, &pt_sys.palette[idx], dest);
+        break;
+    case REMAPPER_NONE:
+    default:
+        // Don't auto change the dither.
+        // Can be manually overridden.
+        break;
+    }
+}
 
 inline byte* vga_ptr()
 {
@@ -74,6 +90,8 @@ static bool vga_available = false;
 
 static int vga_page_offset = 0;
 
+static int vga_revision = 0;
+
 void vga_shutdown();
 
 void vga_init()
@@ -126,7 +144,7 @@ void vga_init()
 
     vga_framebuffer = (byte*)calloc(SCREEN_WIDTH * SCREEN_HEIGHT, sizeof(byte));
 
-    for (int i = 0; i < 256; i++) {
+    for (int i = 0; i < pt_sys.palette_top; i++) {
         vga_palette[3 * i] = vga_remap[pt_sys.palette[i].r];
         vga_palette[3 * i + 1] = vga_remap[pt_sys.palette[i].g];
         vga_palette[3 * i + 2] = vga_remap[pt_sys.palette[i].b];
@@ -134,6 +152,8 @@ void vga_init()
 
     // Generate the EGA dither table.
     // Move this to the EGA driver later on.
+
+    ega_dither_list = generate_ega_dither_list();
 
     atexit(vga_shutdown);
     vga_available = true;
@@ -147,6 +167,7 @@ void vga_clear()
 }
 
 pt_image_vga* vga_convert_image(pt_image* image);
+void vga_destroy_hw_image(void* hw_image);
 
 void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
 {
@@ -157,6 +178,11 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
     if (!image) {
         log_print("vga_blit_image: image is NULL!\n");
         return;
+    }
+
+    if (image->hw_image && ((pt_image_vga*)image->hw_image)->revision != vga_revision) {
+        vga_destroy_hw_image(image->hw_image);
+        image->hw_image = NULL;
     }
 
     if (!image->hw_image) {
@@ -344,7 +370,10 @@ uint8_t vga_map_colour(uint8_t r, uint8_t g, uint8_t b)
         vga_palette[3 * idx + 1] = g_v;
         vga_palette[3 * idx + 2] = b_v;
         vga_load_palette_colour(idx);
-        log_print("vga_map_colour: vga_palette[%d] = %d, %d, %d -> %d, %d, %d\n", idx, r, g, b, r_v, g_v, b_v);
+        set_dither_from_remapper(idx, &vga_dither[idx]);
+        log_print("vga_map_colour: vga_palette[%d] = %d, %d, %d -> %d, %d, %d (dither %d %d)\n", idx, r, g, b, r_v, g_v,
+            b_v, vga_dither[idx].idx_a, vga_dither[idx].idx_b);
+        vga_revision++;
         return idx;
     }
     // Out of palette slots; need to macguyver the nearest colour.
@@ -376,6 +405,7 @@ pt_image_vga* vga_convert_image(pt_image* image)
     result->plane_pitch = (image->pitch) >> 2;
     result->bitmap = (byte*)calloc(result->pitch * result->height, sizeof(byte));
     result->mask = (byte*)calloc(result->pitch * result->height, sizeof(byte));
+    result->revision = vga_revision;
 
     byte palette_map[256];
     for (int i = 0; i < 256; i++) {
@@ -388,7 +418,22 @@ pt_image_vga* vga_convert_image(pt_image* image)
         for (int y = 0; y < result->height; y++) {
             for (int x = 0; x < result->plane_pitch; x++) {
                 byte pixel = image->data[y * result->pitch + (x << 2) + p];
-                bitmap[y * result->plane_pitch + x] = palette_map[pixel];
+                pt_dither* dither = &vga_dither[palette_map[pixel]];
+                switch (dither->type) {
+                case DITHER_D50:
+                    bitmap[y * result->plane_pitch + x] = (((x << 2) + y + p) % 2) ? dither->idx_b : dither->idx_a;
+                    break;
+                case DITHER_FILL_A:
+                    bitmap[y * result->plane_pitch + x] = dither->idx_a;
+                    break;
+                case DITHER_FILL_B:
+                    bitmap[y * result->plane_pitch + x] = dither->idx_b;
+                    break;
+                case DITHER_NONE:
+                default:
+                    bitmap[y * result->plane_pitch + x] = palette_map[pixel];
+                    break;
+                }
                 mask[y * result->plane_pitch + x]
                     = ((pixel == image->colourkey) || (image->palette_alpha[pixel] == 0x00)) ? 0x00 : 0xff;
             }
@@ -414,6 +459,36 @@ void vga_destroy_hw_image(void* hw_image)
     free(image);
 }
 
+void vga_set_palette_remapper(enum pt_palette_remapper remapper)
+{
+    vga_remapper = remapper;
+    for (int i = 0; i < pt_sys.palette_top; i++) {
+        if (remapper == REMAPPER_NONE) {
+            // If we're explicitly setting the mapper to be NONE,
+            // clear the dither table.
+            vga_dither[i].type = DITHER_NONE;
+            vga_dither[i].idx_a = 0;
+            vga_dither[i].idx_b = 0;
+        } else {
+            set_dither_from_remapper(i, &vga_dither[i]);
+        }
+    }
+
+    // Force all hardware images to be recalculated
+    vga_revision++;
+}
+
+void vga_set_dither_hint(pt_color_rgb* src, enum pt_dither_type type, pt_color_rgb* a, pt_color_rgb* b)
+{
+    uint8_t idx_src = vga_map_colour(src->r, src->g, src->b);
+    uint8_t idx_a = vga_map_colour(a->r, a->g, a->b);
+    uint8_t idx_b = vga_map_colour(b->r, b->g, b->b);
+    vga_dither[idx_src].type = type;
+    vga_dither[idx_src].idx_a = idx_a;
+    vga_dither[idx_src].idx_b = idx_b;
+    vga_revision++;
+}
+
 void vga_shutdown()
 {
     // Mode 3h - text, 16 colours, 80x25
@@ -423,9 +498,15 @@ void vga_shutdown()
     int86(0x10, &regs, &regs);
     // Fine, maybe we should stop being unsafe
     __djgpp_nearptr_disable();
-    free(vga_framebuffer);
-    vga_framebuffer = NULL;
+    if (vga_framebuffer) {
+        free(vga_framebuffer);
+        vga_framebuffer = NULL;
+    }
+    if (ega_dither_list) {
+        free(ega_dither_list);
+        ega_dither_list = NULL;
+    }
 }
 
 pt_drv_video dos_vga = { &vga_init, &vga_shutdown, &vga_clear, &vga_blit_image, &vga_is_vblank, &vga_blit, &vga_flip,
-    &vga_map_colour, &vga_destroy_hw_image };
+    &vga_map_colour, &vga_destroy_hw_image, &vga_set_palette_remapper, &vga_set_dither_hint };

@@ -82,6 +82,8 @@ struct pt_drv_video {
     void (*flip)();
     uint8_t (*map_colour)(uint8_t r, uint8_t g, uint8_t b);
     void (*destroy_hw_image)(void*);
+    void (*set_palette_remapper)(enum pt_palette_remapper);
+    void (*set_dither_hint)(pt_color_rgb* src, enum pt_dither_type type, pt_color_rgb* a, pt_color_rgb* b);
 };
 
 struct pt_system {

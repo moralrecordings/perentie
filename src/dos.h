@@ -21,6 +21,7 @@ struct pt_image_vga {
     uint16_t pitch;
     uint16_t plane;
     uint16_t plane_pitch;
+    int revision;
 };
 
 bool sys_idle(int (*idle_callback)(), int idle_callback_period);

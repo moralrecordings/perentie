@@ -34,6 +34,20 @@ struct pt_dither {
     uint8_t idx_b;
 };
 
+enum pt_palette_remapper {
+    REMAPPER_NONE = 0,
+    REMAPPER_EGA = 1,
+    REMAPPER_CGA0A = 2,
+    REMAPPER_CGA0B = 3,
+    REMAPPER_CGA1A = 4,
+    REMAPPER_CGA1B = 5,
+    REMAPPER_CGA2A = 6,
+    REMAPPER_CGA2B = 7,
+};
+
 extern pt_color_rgb ega_palette[16];
+
+pt_color_oklab* generate_ega_dither_list();
+void get_ega_dither_for_color(pt_color_oklab* ega_dither_list, size_t n, pt_color_rgb* src, pt_dither* dest);
 
 #endif
