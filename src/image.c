@@ -61,8 +61,8 @@ bool image_load(pt_image* image)
         return false;
     }
 
-    log_print("image_load: width: %u\nheight: %u\nbit depth: %u\ncolor type: %u:\n", ihdr.width, ihdr.height,
-        ihdr.bit_depth, ihdr.color_type);
+    log_print("image_load: path: %s\nwidth: %u\nheight: %u\nbit depth: %u\ncolor type: %u:\n", image->path, ihdr.width,
+        ihdr.height, ihdr.bit_depth, ihdr.color_type);
 
     result = spng_decode_image(ctx, NULL, 0, SPNG_FMT_PNG, SPNG_DECODE_PROGRESSIVE);
     if (result) {
@@ -86,12 +86,14 @@ bool image_load(pt_image* image)
             image->palette[3 * i + 2] = pal.entries[i].blue;
         }
         struct spng_trns trns;
-        spng_get_trns(ctx, &trns);
-        for (size_t i = 0; i < (trns.n_type3_entries > 256 ? 256 : trns.n_type3_entries); i++) {
-            log_print("%d: %02x\n", i, trns.type3_alpha);
-            image->palette_alpha[i] = trns.type3_alpha[i];
+        int result = spng_get_trns(ctx, &trns);
+        if (result == 0) {
+            // log_print("trns: %d\n", result);
+            for (size_t i = 0; i < (trns.n_type3_entries > 256 ? 256 : trns.n_type3_entries); i++) {
+                // log_print("%d: %02x\n", i, trns.type3_alpha[i]);
+                image->palette_alpha[i] = trns.type3_alpha[i];
+            }
         }
-
     } else if (ihdr.color_type == SPNG_COLOR_TYPE_GRAYSCALE) {
         for (size_t i = 0; i < 256; i++) {
             image->palette[3 * i] = i;
@@ -99,9 +101,11 @@ bool image_load(pt_image* image)
             image->palette[3 * i + 2] = i;
         }
         struct spng_trns trns;
-        spng_get_trns(ctx, &trns);
-        if (trns.gray < 256) {
-            image->palette_alpha[trns.gray] = 0x00;
+        int result = spng_get_trns(ctx, &trns);
+        if (result == 0) {
+            if (trns.gray < 256) {
+                image->palette_alpha[trns.gray] = 0x00;
+            }
         }
     }
 
