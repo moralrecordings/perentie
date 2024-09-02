@@ -4,8 +4,6 @@
 #include <stdint.h>
 
 typedef struct RADPlayer RADPlayer;
-RADPlayer* create_rad();
-void destroy_rad(RADPlayer* rad);
 void radplayer_init();
 void radplayer_shutdown();
 bool radplayer_load_file(const char* path);
@@ -13,7 +11,7 @@ void radplayer_update();
 void radplayer_play();
 void radplayer_stop();
 
-void rad_load(RADPlayer* rad, uint8_t* tune);
+void rad_load(RADPlayer* rad);
 void rad_play(RADPlayer* rad);
 void rad_stop(RADPlayer* rad);
 bool rad_update(RADPlayer* rad);

@@ -2,6 +2,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef SYSTEM_DOS
+#include <dpmi.h>
+#endif
 
 #include "musicrad.h"
 #include "system.h"
@@ -94,7 +97,7 @@ typedef struct {
 } CChannel;
 
 struct RADPlayer {
-    uint8_t* Data;
+    byte Data[65536];
     CInstrument Instruments[kInstruments];
     CChannel Channels[kChannels];
     uint32_t PlayTime;
@@ -128,6 +131,9 @@ struct RADPlayer {
     bool LastNote;
 };
 typedef struct RADPlayer RADPlayer;
+
+static RADPlayer rad_player = { 0 };
+static uint32_t rad_timer = 0;
 
 //--------------------------------------------------------------------------------------------------
 // clang-format off
@@ -176,50 +182,31 @@ uint8_t rad_get_opl3(RADPlayer* rad, uint16_t reg);
 void rad_portamento(RADPlayer* rad, uint16_t channum, CEffects* fx, int8_t amount, bool toneslide);
 void rad_transpose(RADPlayer* rad, int8_t note, int8_t octave);
 
-RADPlayer* create_rad()
-{
-    RADPlayer* rad = (RADPlayer*)calloc(1, sizeof(RADPlayer));
-
-    return rad;
-}
-
-void destroy_rad(RADPlayer* rad)
-{
-    if (rad) {
-        if (rad->Data) {
-            free(rad->Data);
-            rad->Data = NULL;
-        }
-        free(rad);
-    }
-}
-
-static RADPlayer* rad_player = NULL;
-static int rad_player_update_millis = 0;
-static int rad_player_next_millis = 0;
+void _radplayer_lock();
 
 void radplayer_init()
 {
-    rad_player = create_rad();
+#ifdef SYSTEM_DOS
+    _radplayer_lock();
+#endif
 }
 
 void radplayer_shutdown()
 {
-    if (rad_player) {
-        rad_stop(rad_player);
-        destroy_rad(rad_player);
-    }
-    rad_player = NULL;
-    rad_player_update_millis = 0;
-    rad_player_next_millis = 0;
+    rad_stop(&rad_player);
+    pt_sys.timer->remove_callback(rad_timer);
+    rad_timer = 0;
+}
+
+uint32_t radplayer_callback(uint32_t interval, void* data)
+{
+    rad_update(&rad_player);
+    return interval;
 }
 
 bool radplayer_load_file(const char* path)
 {
-    if (!rad_player)
-        return false;
-
-    rad_stop(rad_player);
+    rad_stop(&rad_player);
 
     FILE* fp = fopen(path, "rb");
     if (!fp)
@@ -228,55 +215,48 @@ bool radplayer_load_file(const char* path)
     fseek(fp, 0, SEEK_END);
     size_t rad_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
+    if (rad_size > 65536) {
+        // too big for the music buffer!
+        fclose(fp);
+        return false;
+    }
     uint8_t* rad_buffer = (uint8_t*)malloc(rad_size);
-    fread(rad_buffer, rad_size, 1, fp);
+    fread(rad_player.Data, rad_size, 1, fp);
     fclose(fp);
-    rad_load(rad_player, rad_buffer);
+    rad_load(&rad_player);
 
-    rad_player_update_millis = 1000 / rad_get_hertz(rad_player);
-    rad_player_next_millis = pt_sys.timer->millis() + rad_player_update_millis;
+    if (rad_timer)
+        pt_sys.timer->remove_callback(rad_timer);
+
+    rad_timer = pt_sys.timer->add_callback(1000 / rad_get_hertz(&rad_player), radplayer_callback, NULL);
 
     return true;
 }
 
-void radplayer_update()
-{
-    if (!rad_player)
-        return;
-
-    if (pt_sys.timer->millis() > rad_player_next_millis) {
-        rad_update(rad_player);
-        rad_player_next_millis = pt_sys.timer->millis() + rad_player_update_millis;
-    }
-}
-
 void radplayer_play()
 {
-    rad_play(rad_player);
+    rad_play(&rad_player);
 }
 
 void radplayer_stop()
 {
-    rad_stop(rad_player);
+    rad_stop(&rad_player);
 }
 
 //==================================================================================================
 // Initialise a RAD tune for playback.  This assumes the tune data is valid and does minimal data
 // checking.
 //==================================================================================================
-void rad_load(RADPlayer* rad, uint8_t* tune)
+void rad_load(RADPlayer* rad)
 {
     if (!rad)
         return;
 
     rad->Initialised = false;
     rad->Playing = false;
-    if (rad->Data)
-        free(rad->Data);
-    rad->Data = tune;
 
     // Version check; we only support version 2.1 tune files
-    if (*((uint8_t*)tune + 0x10) != 0x21) {
+    if (*((uint8_t*)rad->Data + 0x10) != 0x21) {
         rad->Hertz = -1;
         return;
     }
@@ -288,7 +268,7 @@ void rad_load(RADPlayer* rad, uint8_t* tune)
         for (int j = 0; j < kChannels; j++)
             rad->Riffs[i][j] = 0;
 
-    uint8_t* s = (uint8_t*)tune + 0x11;
+    uint8_t* s = (uint8_t*)rad->Data + 0x11;
 
     uint8_t flags = *s++;
     rad->Speed = flags & 0x1F;
@@ -1349,5 +1329,21 @@ uint32_t rad_compute_total_time(RADPlayer* rad)
     rad->OPL3 = old_opl3;
 
     return total / rad->Hertz;
+}
+#endif
+
+#ifdef SYSTEM_DOS
+void _radplayer_lock()
+{
+    // Lock the memory pages that contain the RAD player
+    _go32_dpmi_lock_data((void*)&rad_player, sizeof(rad_player));
+    _go32_dpmi_lock_data((void*)&rad_timer, sizeof(rad_timer));
+    _go32_dpmi_lock_data((void*)&NoteSize, sizeof(NoteSize));
+    _go32_dpmi_lock_data((void*)&ChanOffsets3, sizeof(ChanOffsets3));
+    _go32_dpmi_lock_data((void*)&Chn2Offsets3, sizeof(Chn2Offsets3));
+    _go32_dpmi_lock_data((void*)&NoteFreq, sizeof(NoteFreq));
+    _go32_dpmi_lock_data((void*)&OpOffsets3, sizeof(OpOffsets3));
+    _go32_dpmi_lock_data((void*)&AlgCarriers, sizeof(AlgCarriers));
+    _go32_dpmi_lock_code(radplayer_init, (uint32_t)(_radplayer_lock - radplayer_init));
 }
 #endif

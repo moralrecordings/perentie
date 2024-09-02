@@ -53,7 +53,6 @@ int main(int argc, char** argv)
     while (!script_has_quit()) {
         uint32_t ticks = pt_sys.timer->millis();
         script_exec();
-        radplayer_update();
         pt_sys.keyboard->update();
         pt_sys.mouse->update();
         script_events();
