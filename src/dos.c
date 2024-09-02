@@ -862,9 +862,19 @@ void opl_write_reg(uint16_t addr, uint8_t data)
     }
 }
 
+void _opl_lock()
+{
+    // Lock the memory page that contains all of the OPL code
+    _go32_dpmi_lock_code(opl_write_reg, (uint32_t)((void*)_opl_lock - (void*)opl_write_reg));
+    _go32_dpmi_lock_data((void*)&sound_opl2_available, sizeof(sound_opl2_available));
+    _go32_dpmi_lock_data((void*)&sound_opl3_available, sizeof(sound_opl3_available));
+}
+
 // detection method nicked from https://moddingwiki.shikadi.net/wiki/OPL_chip#Detection_Methods
 void opl_init()
 {
+    _opl_lock();
+
     // Reset timer 1 and timer 2
     sound_opl3_out_raw(OPL3_BASE_PORT, 0x4, 0x60);
 

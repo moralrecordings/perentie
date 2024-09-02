@@ -3,6 +3,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#ifdef SYSTEM_DOS
+#include <dpmi.h>
+#endif
 
 #include "colour.h"
 #include "dos.h"
@@ -17,6 +20,15 @@ int main(int argc, char** argv)
 {
 
 #ifdef SYSTEM_DOS
+    // Lock data so that pt_sys is accessible from interrupts
+    _go32_dpmi_lock_data((void*)&pt_sys, sizeof(pt_sys));
+    _go32_dpmi_lock_data((void*)&dos_timer, sizeof(dos_timer));
+    _go32_dpmi_lock_data((void*)&dos_keyboard, sizeof(dos_keyboard));
+    _go32_dpmi_lock_data((void*)&dos_mouse, sizeof(dos_mouse));
+    _go32_dpmi_lock_data((void*)&dos_serial, sizeof(dos_serial));
+    _go32_dpmi_lock_data((void*)&dos_opl, sizeof(dos_opl));
+    _go32_dpmi_lock_data((void*)&dos_beep, sizeof(dos_beep));
+    _go32_dpmi_lock_data((void*)&dos_vga, sizeof(dos_vga));
     pt_sys.timer = &dos_timer;
     pt_sys.keyboard = &dos_keyboard;
     pt_sys.mouse = &dos_mouse;
