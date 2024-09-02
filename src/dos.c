@@ -46,6 +46,14 @@ bool sys_idle(int (*idle_callback)(), int idle_callback_period)
 #define TIMER_DEFAULT_TICK_PER_MS 0.0182068
 #define TIMER_DEFAULT_MS_PER_TICK 54.9246551
 
+struct timer_slot_t {
+    uint32_t id;
+    pt_timer_callback callback;
+    void* param;
+    uint32_t interval;
+    uint32_t count;
+};
+
 struct timer_data_t {
     int16_t counter;
     int16_t reset;
@@ -60,6 +68,9 @@ struct timer_data_t {
     _go32_dpmi_seginfo handler_prot_new;
     _go32_dpmi_registers r;
     _go32_dpmi_registers r1;
+    struct timer_slot_t slots[256];
+    uint32_t max_callback_id;
+    int slot_head;
 };
 static struct timer_data_t _timer = { 0 };
 static float _timer_tick_per_ms = TIMER_DEFAULT_TICK_PER_MS;
@@ -80,6 +91,33 @@ void _int_8h_prot()
     } else {
         _timer.flag = TIMER_TERM_OUTPORTB;
         outportb(0x20, 0x20);
+    }
+    // run the timer callbacks
+    for (int i = 0; i < _timer.slot_head; i++) {
+        _timer.slots[i].count++;
+        if (_timer.slots[i].count == _timer.slots[i].interval) {
+            uint32_t result = _timer.slots[i].callback(_timer.slots[i].interval, _timer.slots[i].param);
+            if (result == 0) {
+                // remove the callback
+                _timer.slot_head--;
+                if (i != _timer.slot_head) {
+                    _timer.slots[i].callback = _timer.slots[_timer.slot_head].callback;
+                    _timer.slots[i].count = _timer.slots[_timer.slot_head].count;
+                    _timer.slots[i].id = _timer.slots[_timer.slot_head].id;
+                    _timer.slots[i].interval = _timer.slots[_timer.slot_head].interval;
+                    _timer.slots[i].param = _timer.slots[_timer.slot_head].param;
+                }
+                _timer.slots[_timer.slot_head].callback = NULL;
+                _timer.slots[_timer.slot_head].count = 0;
+                _timer.slots[_timer.slot_head].id = 0;
+                _timer.slots[_timer.slot_head].interval = 0;
+                _timer.slots[_timer.slot_head].param = NULL;
+            } else {
+                // set the new update interval
+                _timer.slots[i].interval = result;
+                _timer.slots[i].count = 0;
+            }
+        }
     }
     enable();
 }
@@ -246,7 +284,44 @@ void timer_shutdown()
     }
 }
 
-pt_drv_timer dos_timer = { &timer_init, &timer_shutdown, &timer_ticks, &timer_millis, &timer_sleep };
+uint32_t timer_add_callback(uint32_t interval, pt_timer_callback callback, void* param)
+{
+    if (_timer.slot_head >= 256)
+        return 0;
+
+    _timer.max_callback_id++;
+    _timer.slots[_timer.slot_head].id = _timer.max_callback_id;
+    _timer.slots[_timer.slot_head].count = 0;
+    _timer.slots[_timer.slot_head].interval = interval;
+    _timer.slots[_timer.slot_head].callback = callback;
+    _timer.slots[_timer.slot_head].param = param;
+    _timer.slot_head++;
+}
+
+bool timer_remove_callback(uint32_t id)
+{
+    bool result = false;
+    for (int i = 0; i < _timer.slot_head; i++) {
+        if (_timer.slots[i].id == id) {
+            _timer.slot_head--;
+            if (_timer.slot_head == i) {
+                // removed timer was in the last slot
+                memset(&_timer.slots[i], 0, sizeof(struct timer_slot_t));
+            } else if (_timer.slot_head > 0) {
+                // move last slot into cleared slot
+                memmove(&_timer.slots[i], &_timer.slots[_timer.slot_head], sizeof(struct timer_slot_t));
+                // clear last slot
+                memset(&_timer.slots[_timer.slot_head], 0, sizeof(struct timer_slot_t));
+            }
+            result = true;
+            break;
+        }
+    }
+    return result;
+}
+
+pt_drv_timer dos_timer = { &timer_init, &timer_shutdown, &timer_ticks, &timer_millis, &timer_sleep, &timer_add_callback,
+    &timer_remove_callback };
 
 void pcspeaker_stop();
 void pcspeaker_init()

@@ -18,12 +18,16 @@ typedef struct pt_drv_beep pt_drv_beep;
 typedef struct pt_drv_video pt_drv_video;
 typedef struct pt_system pt_system;
 
+typedef uint32_t (*pt_timer_callback)(uint32_t, void*);
+
 struct pt_drv_timer {
     void (*init)();
     void (*shutdown)();
     uint32_t (*ticks)();
     uint32_t (*millis)();
-    void (*sleep)(uint32_t);
+    void (*sleep)(uint32_t millis);
+    uint32_t (*add_callback)(uint32_t interval, pt_timer_callback callback, void* param);
+    bool (*remove_callback)(uint32_t id);
 };
 
 struct pt_drv_keyboard {
