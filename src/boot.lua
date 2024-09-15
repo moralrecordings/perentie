@@ -128,8 +128,8 @@ PTActor = function(name, x, y, z)
         scale_x = 0xff,
         scale_y = 0xff,
         speed_x = 8,
-        speed_y = 2,
-        walk_rate = 8,
+        speed_y = 4,
+        walk_rate = 12,
         walkdata_next_wait = 0,
         moving = 0,
     }
@@ -492,11 +492,15 @@ end
 local _PTStraightLinesOverlap = function(a1, a2, b1, b2)
     if a1.x == a2.x and b1.x == b2.x and a1.x == b1.x then
         -- vertical line
-        return a1.y <= b2.y and b1.y <= a2.y
+        local a_start, a_end = math.min(a1.y, a2.y), math.max(a1.y, a2.y)
+        local b_start, b_end = math.min(b1.y, b2.y), math.max(b1.y, b2.y)
+        return math.max(a_start, b_start) <= math.min(a_end, b_end)
     end
     if a1.y == a2.y and b1.y == b2.y and a1.y == b1.y then
         -- horizontal line
-        return a1.x <= b2.x and b1.x <= a2.x
+        local a_start, a_end = math.min(a1.x, a2.x), math.max(a1.x, a2.x)
+        local b_start, b_end = math.min(b1.x, b2.x), math.max(b1.x, b2.x)
+        return math.max(a_start, b_start) <= math.min(a_end, b_end)
     end
     return false
 end
@@ -1042,7 +1046,21 @@ PTActorWalk = function(actor)
         end
 
         local next_box = PTRoomGetNextBox(actor.room, actor.walkbox.id, actor.walkdata_destbox.id)
+        if not next_box then
+            actor.moving = 0
+            return
+        end
         actor.walkdata_curbox = next_box
+        --print(string.format(
+        --    "PTFindPathTowards: (%d, %d) (%d, %d) %d %d %d",
+        --    actor.x,
+        --    actor.y,
+        --    actor.walkdata_dest.x,
+        --    actor.walkdata_dest.y,
+        --    actor.walkbox.id,
+        --    next_box.id,
+        --    actor.walkdata_destbox.id
+        --    ))
 
         local result, found_path = _PTFindPathTowards(
             actor.x,
@@ -1054,17 +1072,17 @@ PTActorWalk = function(actor)
             actor.walkdata_destbox
         )
         --print(string.format(
-        --    "PTFindPathTowards: (%d, %d) (%d, %d) %s %s %s -> %s, (%d, %d)",
-        --    actor.x,
-        --    actor.y,
-        --    actor.walkdata_dest.x,
-        --    actor.walkdata_dest.y,
-        --    inspect(actor.walkbox.id),
-        --    inspect(next_box.id),
-        --    inspect(actor.walkdata_destbox.id),
+        --    "PTFindPathTowards: -> %s, (%d, %d)",
         --    inspect(result),
         --    found_path.x,
         --    found_path.y))
+
+        -- If there's no path to the destination, stop walking.
+        -- This feels a bit jank; ideally all walk paths
+        -- should terminate at closest spot?
+        if actor.walkbox.id == next_box.id then
+            break
+        end
         if result then
             break
         end
@@ -1353,7 +1371,8 @@ end
 --- Find the next walk box in the shortest path to reach a target walk box.
 -- @tparam PTRoom room Room to query.
 -- @tparam integer from_id ID of the starting @{PTWalkBox} in the room.
--- @tparam integer to_id ID of the target @{PTWalkBox} in the room.-- @treturn PTWalkBox Next walk box in the shortest path.
+-- @tparam integer to_id ID of the target @{PTWalkBox} in the room.
+-- @treturn PTWalkBox Next walk box in the shortest path, or nil if there is no path.
 PTRoomGetNextBox = function(room, from_id, to_id)
     if not room or room._type ~= "PTRoom" then
         error("PTRoomGetNextBox: expected PTRoom for first argument")
@@ -1364,9 +1383,12 @@ PTRoomGetNextBox = function(room, from_id, to_id)
     if to_id <= 0 or to_id > #room.boxes then
         error("PTRoomGetNextBox: argument 3 out of range")
     end
+    if from_id == to_id then
+        return room.boxes[from_id]
+    end
     local target = room.box_matrix[from_id][to_id]
     if target == 0 then
-        return to_id
+        return nil
     end
     return room.boxes[target]
 end
