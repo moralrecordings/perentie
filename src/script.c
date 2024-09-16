@@ -247,6 +247,20 @@ static int lua_pt_draw_image(lua_State* L)
     return 0;
 }
 
+static int lua_pt_draw_line(lua_State* L)
+{
+    int16_t x0 = luaL_checkinteger(L, 1);
+    int16_t y0 = luaL_checkinteger(L, 2);
+    int16_t x1 = luaL_checkinteger(L, 3);
+    int16_t y1 = luaL_checkinteger(L, 4);
+    pt_colour_rgb colour = { 0 };
+    colour.r = luaL_checkinteger(L, 5);
+    colour.g = luaL_checkinteger(L, 6);
+    colour.b = luaL_checkinteger(L, 7);
+    pt_sys.video->blit_line(x0, y0, x1, y1, &colour);
+    return 0;
+}
+
 static int lua_pt_image_test_collision(lua_State* L)
 {
     pt_image** imageptr = (pt_image**)lua_touserdata(L, 1);
@@ -439,6 +453,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTText", lua_pt_text },
     { "_PTClearScreen", lua_pt_clear_screen },
     { "_PTDrawImage", lua_pt_draw_image },
+    { "_PTDrawLine", lua_pt_draw_line },
     { "_PTImageTestCollision", lua_pt_image_test_collision },
     { "_PTLog", lua_pt_log },
     { "_PTPumpEvent", lua_pt_pump_event },

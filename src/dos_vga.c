@@ -274,6 +274,116 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
     destroy_rect(crop);
 }
 
+void vga_load_palette_colour(int idx)
+{
+    disable();
+    outportb(0x3c6, 0xff);
+    outportb(0x3c8, (uint8_t)idx);
+    outportb(0x3c9, vga_palette[3 * idx]);
+    outportb(0x3c9, vga_palette[3 * idx + 1]);
+    outportb(0x3c9, vga_palette[3 * idx + 2]);
+    enable();
+}
+
+uint8_t vga_map_colour(uint8_t r, uint8_t g, uint8_t b)
+{
+    for (int i = 0; i < pt_sys.palette_top; i++) {
+        if (pt_sys.palette[i].r == r && pt_sys.palette[i].g == g && pt_sys.palette[i].b == b)
+            return i;
+    }
+    byte r_v = vga_remap[r];
+    byte g_v = vga_remap[g];
+    byte b_v = vga_remap[b];
+    // add a new colour
+    if (pt_sys.palette_top < 256) {
+        int idx = pt_sys.palette_top;
+        pt_sys.palette_top++;
+        pt_sys.palette[idx].r = r;
+        pt_sys.palette[idx].g = g;
+        pt_sys.palette[idx].b = b;
+        vga_palette[3 * idx] = r_v;
+        vga_palette[3 * idx + 1] = g_v;
+        vga_palette[3 * idx + 2] = b_v;
+        vga_load_palette_colour(idx);
+        set_dither_from_remapper(idx, &vga_dither[idx]);
+        log_print("vga_map_colour: vga_palette[%d] = %d, %d, %d -> %d, %d, %d (dither %d %d)\n", idx, r, g, b, r_v, g_v,
+            b_v, vga_dither[idx].idx_a, vga_dither[idx].idx_b);
+        vga_revision++;
+        return idx;
+    }
+    // Out of palette slots; need to macguyver the nearest colour.
+    // Formula borrowed from ScummVM's palette code.
+    uint8_t best_color = 0;
+    uint32_t min = 0xffffffff;
+    for (int i = 0; i < 256; ++i) {
+        int rmean = (vga_palette[3 * i + 0] + r_v) / 2;
+        int dr = vga_palette[3 * i + 0] - r_v;
+        int dg = vga_palette[3 * i + 1] - g_v;
+        int db = vga_palette[3 * i + 2] - b_v;
+
+        uint32_t dist_squared = (((512 + rmean) * dr * dr) >> 8) + 4 * dg * dg + (((767 - rmean) * db * db) >> 8);
+        if (dist_squared < min) {
+            best_color = i;
+            min = dist_squared;
+        }
+    }
+    return best_color;
+}
+
+void vga_plot(int16_t x, int16_t y, uint8_t value)
+{
+    if ((x < 0) || (x >= SCREEN_WIDTH) || (y < 0) || (y >= SCREEN_HEIGHT))
+        return;
+    if (!vga_framebuffer)
+        return;
+    *(vga_framebuffer + ((x % 4) * SCREEN_PLANE) + (y * (SCREEN_WIDTH >> 2)) + (x >> 2)) = value;
+}
+
+void vga_blit_line(int16_t x0, int16_t y0, int16_t x1, int16_t y1, pt_colour_rgb* colour)
+{
+    // bresenham line algorithm - borrowed from ScummVM's drawLine function
+    const bool steep = abs(y1 - y0) > abs(x1 - x0);
+
+    if (steep) {
+        int16_t tmp;
+        tmp = x0;
+        x0 = y0;
+        y0 = tmp;
+        tmp = x1;
+        x1 = y1;
+        y1 = tmp;
+    }
+
+    int16_t dx = abs(x1 - x0);
+    int16_t dy = abs(y1 - y0);
+    int16_t D = dy;
+    int16_t x = x0;
+    int16_t y = y0;
+    int16_t err = 0;
+    int16_t x_inc = (x0 < x1) ? 1 : -1;
+    int16_t y_inc = (y0 < y1) ? 1 : -1;
+
+    uint8_t value = vga_map_colour(colour->r, colour->g, colour->b);
+
+    if (steep)
+        vga_plot(y, x, value);
+    else
+        vga_plot(x, y, value);
+
+    while (x != x1) {
+        x += x_inc;
+        err += D;
+        if (2 * err > dx) {
+            y += y_inc;
+            err -= dx;
+        }
+        if (steep)
+            vga_plot(y, x, value);
+        else
+            vga_plot(x, y, value);
+    }
+}
+
 bool vga_is_vblank()
 {
     // sleep until the start of the next vertical blanking interval
@@ -337,62 +447,6 @@ void vga_flip()
     while (!vga_is_vblank()) {
         __dpmi_yield();
     }
-}
-
-void vga_load_palette_colour(int idx)
-{
-    disable();
-    outportb(0x3c6, 0xff);
-    outportb(0x3c8, (uint8_t)idx);
-    outportb(0x3c9, vga_palette[3 * idx]);
-    outportb(0x3c9, vga_palette[3 * idx + 1]);
-    outportb(0x3c9, vga_palette[3 * idx + 2]);
-    enable();
-}
-
-uint8_t vga_map_colour(uint8_t r, uint8_t g, uint8_t b)
-{
-    for (int i = 0; i < pt_sys.palette_top; i++) {
-        if (pt_sys.palette[i].r == r && pt_sys.palette[i].g == g && pt_sys.palette[i].b == b)
-            return i;
-    }
-    byte r_v = vga_remap[r];
-    byte g_v = vga_remap[g];
-    byte b_v = vga_remap[b];
-    // add a new colour
-    if (pt_sys.palette_top < 256) {
-        int idx = pt_sys.palette_top;
-        pt_sys.palette_top++;
-        pt_sys.palette[idx].r = r;
-        pt_sys.palette[idx].g = g;
-        pt_sys.palette[idx].b = b;
-        vga_palette[3 * idx] = r_v;
-        vga_palette[3 * idx + 1] = g_v;
-        vga_palette[3 * idx + 2] = b_v;
-        vga_load_palette_colour(idx);
-        set_dither_from_remapper(idx, &vga_dither[idx]);
-        log_print("vga_map_colour: vga_palette[%d] = %d, %d, %d -> %d, %d, %d (dither %d %d)\n", idx, r, g, b, r_v, g_v,
-            b_v, vga_dither[idx].idx_a, vga_dither[idx].idx_b);
-        vga_revision++;
-        return idx;
-    }
-    // Out of palette slots; need to macguyver the nearest colour.
-    // Formula borrowed from ScummVM's palette code.
-    uint8_t best_color = 0;
-    uint32_t min = 0xffffffff;
-    for (int i = 0; i < 256; ++i) {
-        int rmean = (vga_palette[3 * i + 0] + r_v) / 2;
-        int dr = vga_palette[3 * i + 0] - r_v;
-        int dg = vga_palette[3 * i + 1] - g_v;
-        int db = vga_palette[3 * i + 2] - b_v;
-
-        uint32_t dist_squared = (((512 + rmean) * dr * dr) >> 8) + 4 * dg * dg + (((767 - rmean) * db * db) >> 8);
-        if (dist_squared < min) {
-            best_color = i;
-            min = dist_squared;
-        }
-    }
-    return best_color;
 }
 
 pt_image_vga* vga_convert_image(pt_image* image)
@@ -508,5 +562,5 @@ void vga_shutdown()
     }
 }
 
-pt_drv_video dos_vga = { &vga_init, &vga_shutdown, &vga_clear, &vga_blit_image, &vga_is_vblank, &vga_blit, &vga_flip,
-    &vga_map_colour, &vga_destroy_hw_image, &vga_set_palette_remapper, &vga_set_dither_hint };
+pt_drv_video dos_vga = { &vga_init, &vga_shutdown, &vga_clear, &vga_blit_image, &vga_blit_line, &vga_is_vblank,
+    &vga_blit, &vga_flip, &vga_map_colour, &vga_destroy_hw_image, &vga_set_palette_remapper, &vga_set_dither_hint };

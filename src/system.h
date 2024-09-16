@@ -81,6 +81,7 @@ struct pt_drv_video {
     void (*shutdown)();
     void (*clear)();
     void (*blit_image)(pt_image* image, int16_t x, int16_t y, uint8_t flags);
+    void (*blit_line)(int16_t x0, int16_t y0, int16_t x1, int16_t y1, pt_colour_rgb* colour);
     bool (*is_vblank)();
     void (*blit)();
     void (*flip)();

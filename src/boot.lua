@@ -1614,6 +1614,13 @@ PTSetAutoClearScreen = function(val)
     _PTAutoClearScreen = val
 end
 
+local _PTWalkBoxDebug = false
+--- Set whether to draw the walkbox of the current room
+-- @tparam bool val true if the walk box is to be drawn, false otherwise.
+PTSetWalkBoxDebug = function(val)
+    _PTWalkBoxDebug = val
+end
+
 local _PTMouseOver = nil
 --- Get the current object which the mouse is hovering over
 -- @treturn table The object (@{PTActor}/@{PTBackground}/@{PTSprite}), or nil.
@@ -1736,6 +1743,18 @@ _PTRender = function()
                 local tmp_x, tmp_y = PTRoomToScreen(obj.x, obj.y)
                 _PTDrawImage(frame.ptr, tmp_x, tmp_y, flags)
             end
+        end
+    end
+    if _PTWalkBoxDebug then
+        for i, box in pairs(_PTCurrentRoom.boxes) do
+            local ul_x, ul_y = PTRoomToScreen(box.ul.x, box.ul.y)
+            local ur_x, ur_y = PTRoomToScreen(box.ur.x, box.ur.y)
+            local lr_x, lr_y = PTRoomToScreen(box.lr.x, box.lr.y)
+            local ll_x, ll_y = PTRoomToScreen(box.ll.x, box.ll.y)
+            _PTDrawLine(ul_x, ul_y, ur_x, ur_y, 0xff, 0x55, 0x55)
+            _PTDrawLine(ur_x, ur_y, lr_x, lr_y, 0xff, 0x55, 0x55)
+            _PTDrawLine(lr_x, lr_y, ll_x, ll_y, 0xff, 0x55, 0x55)
+            _PTDrawLine(ll_x, ll_y, ul_x, ul_y, 0xff, 0x55, 0x55)
         end
     end
     for i, obj in pairs(_PTGlobalRenderList) do
