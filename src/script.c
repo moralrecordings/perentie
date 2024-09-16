@@ -378,7 +378,7 @@ static int lua_pt_set_palette_remapper(lua_State* L)
 
 static int lua_pt_set_dither_hint(lua_State* L)
 {
-    pt_color_rgb src = { 0 };
+    pt_colour_rgb src = { 0 };
     lua_geti(L, 1, 1);
     src.r = luaL_checkinteger(L, -1);
     lua_pop(L, 1);
@@ -391,8 +391,8 @@ static int lua_pt_set_dither_hint(lua_State* L)
 
     enum pt_dither_type type = luaL_checkinteger(L, 2);
 
-    pt_color_rgb a = { 0 };
-    pt_color_rgb b = { 0 };
+    pt_colour_rgb a = { 0 };
+    pt_colour_rgb b = { 0 };
     lua_geti(L, 3, 1);
     a.r = luaL_checkinteger(L, -1);
     lua_pop(L, 1);

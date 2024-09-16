@@ -4,7 +4,7 @@
 
 #include "colour.h"
 
-pt_color_rgb ega_palette[] = {
+pt_colour_rgb ega_palette[] = {
     { 0x00, 0x00, 0x00 },
     { 0x00, 0x00, 0xaa },
     { 0x00, 0xaa, 0x00 },
@@ -39,7 +39,7 @@ float linear_to_gamma(float n)
     return n >= 0.0031308f ? 1.055f * powf(n, 1 / 2.4f) - 0.055f : 12.92f * n;
 }
 
-void rgb8_to_oklab(pt_color_rgb* src, pt_color_oklab* dest)
+void rgb8_to_oklab(pt_colour_rgb* src, pt_colour_oklab* dest)
 {
     float t = gamma_to_linear(src->r / 255.0f);
     float i = gamma_to_linear(src->g / 255.0f);
@@ -58,7 +58,7 @@ void rgb8_to_oklab(pt_color_rgb* src, pt_color_oklab* dest)
     return;
 }
 
-void oklab_to_rgb8(pt_color_oklab* src, pt_color_rgb* dest)
+void oklab_to_rgb8(pt_colour_oklab* src, pt_colour_rgb* dest)
 {
     float u = src->L + src->a * 0.3963377774f + src->b * 0.2158037573f;
     float f = src->L + src->a * -0.1055613458f + src->b * -0.0638541728f;
@@ -75,7 +75,7 @@ void oklab_to_rgb8(pt_color_oklab* src, pt_color_rgb* dest)
     return;
 }
 
-void oklab_colour_blend(pt_color_oklab* a, pt_color_oklab* b, float alpha, pt_color_oklab* dest)
+void oklab_colour_blend(pt_colour_oklab* a, pt_colour_oklab* b, float alpha, pt_colour_oklab* dest)
 {
     dest->L = a->L * (1 - alpha) + b->L * alpha;
     dest->a = a->a * (1 - alpha) + b->a * alpha;
@@ -83,18 +83,18 @@ void oklab_colour_blend(pt_color_oklab* a, pt_color_oklab* b, float alpha, pt_co
     return;
 }
 
-float oklab_distance(pt_color_oklab* a, pt_color_oklab* b)
+float oklab_distance(pt_colour_oklab* a, pt_colour_oklab* b)
 {
     return (b->L - a->L) * (b->L - a->L) + (b->a - a->a) * (b->a - a->a) + (b->b - a->b) * (b->b - a->b);
 }
 
-pt_color_oklab* generate_ega_dither_list()
+pt_colour_oklab* generate_ega_dither_list()
 {
-    pt_color_oklab* ega_oklab = (pt_color_oklab*)calloc(16, sizeof(pt_color_oklab));
+    pt_colour_oklab* ega_oklab = (pt_colour_oklab*)calloc(16, sizeof(pt_colour_oklab));
     for (int i = 0; i < 16; i++) {
         rgb8_to_oklab(&ega_palette[i], &ega_oklab[i]);
     }
-    pt_color_oklab* ega_halftone_oklab = (pt_color_oklab*)calloc(256, sizeof(pt_color_oklab));
+    pt_colour_oklab* ega_halftone_oklab = (pt_colour_oklab*)calloc(256, sizeof(pt_colour_oklab));
     for (int i = 0; i < 256; i++) {
         oklab_colour_blend(&ega_oklab[i / 16], &ega_oklab[i % 16], 0.5f, &ega_halftone_oklab[i]);
     }
@@ -127,9 +127,9 @@ pt_color_oklab* generate_ega_dither_list()
     return ega_halftone_oklab;
 }
 
-void get_ega_dither_for_color(pt_color_oklab* ega_dither_list, size_t n, pt_color_rgb* src, pt_dither* dest)
+void get_ega_dither_for_color(pt_colour_oklab* ega_dither_list, size_t n, pt_colour_rgb* src, pt_dither* dest)
 {
-    pt_color_oklab src_oklab = { 0 };
+    pt_colour_oklab src_oklab = { 0 };
     rgb8_to_oklab(src, &src_oklab);
     int nearest = 0;
     float nearest_val = oklab_distance(&src_oklab, &ega_dither_list[0]);

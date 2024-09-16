@@ -17,7 +17,7 @@
 
 static byte vga_palette[256 * 3] = { 0 };
 static pt_dither vga_dither[256] = { 0 };
-static pt_color_oklab* ega_dither_list = NULL;
+static pt_colour_oklab* ega_dither_list = NULL;
 static enum pt_palette_remapper vga_remapper = REMAPPER_NONE;
 
 void set_dither_from_remapper(uint8_t idx, pt_dither* dest)
@@ -478,7 +478,7 @@ void vga_set_palette_remapper(enum pt_palette_remapper remapper)
     vga_revision++;
 }
 
-void vga_set_dither_hint(pt_color_rgb* src, enum pt_dither_type type, pt_color_rgb* a, pt_color_rgb* b)
+void vga_set_dither_hint(pt_colour_rgb* src, enum pt_dither_type type, pt_colour_rgb* a, pt_colour_rgb* b)
 {
     uint8_t idx_src = vga_map_colour(src->r, src->g, src->b);
     uint8_t idx_a = vga_map_colour(a->r, a->g, a->b);

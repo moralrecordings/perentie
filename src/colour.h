@@ -5,17 +5,17 @@
 
 typedef uint8_t byte;
 
-typedef struct pt_color_rgb pt_color_rgb;
-typedef struct pt_color_oklab pt_color_oklab;
+typedef struct pt_colour_rgb pt_colour_rgb;
+typedef struct pt_colour_oklab pt_colour_oklab;
 typedef struct pt_dither pt_dither;
 
-struct pt_color_rgb {
+struct pt_colour_rgb {
     byte r;
     byte g;
     byte b;
 };
 
-struct pt_color_oklab {
+struct pt_colour_oklab {
     float L;
     float a;
     float b;
@@ -45,9 +45,9 @@ enum pt_palette_remapper {
     REMAPPER_CGA2B = 7,
 };
 
-extern pt_color_rgb ega_palette[16];
+extern pt_colour_rgb ega_palette[16];
 
-pt_color_oklab* generate_ega_dither_list();
-void get_ega_dither_for_color(pt_color_oklab* ega_dither_list, size_t n, pt_color_rgb* src, pt_dither* dest);
+pt_colour_oklab* generate_ega_dither_list();
+void get_ega_dither_for_color(pt_colour_oklab* ega_dither_list, size_t n, pt_colour_rgb* src, pt_dither* dest);
 
 #endif
