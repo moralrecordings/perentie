@@ -8,14 +8,14 @@ PTRoomAddObject(test_room, background)
 
 -- Set the cursor sprite
 cursor_sp = PTSprite({
-    default = PTAnimation(0, {
+    PTAnimation("default", {
         PTImage("assets/cursor.png", 9, 9, 0),
     }),
-    selected = PTAnimation(0, {
+    PTAnimation("selected", {
         PTImage("assets/curssel.png", 9, 9, 0),
     }),
 })
-cursor_sp.current_animation = "default"
+PTSpriteSetAnimation(cursor_sp, "default")
 PTSetMouseSprite(cursor_sp)
 
 -- Add in the perentie head logo
@@ -74,10 +74,10 @@ PTOnMouseOver(function(sprite)
         mouseover_text.image = PTText(sprite.name, font, SCREEN_WIDTH - 32, "center", { 85, 255, 85 })
         local width, height = PTGetImageDims(mouseover_text.image)
         PTSetImageOrigin(mouseover_text.image, width / 2, height)
-        cursor_sp.current_animation = "selected"
+        PTSpriteSetAnimation(cursor_sp, "selected")
     else
         mouseover_text.image = nil
-        cursor_sp.current_animation = "default"
+        PTSpriteSetAnimation(cursor_sp, "default")
     end
 end)
 

@@ -84,6 +84,7 @@ end
 -- @tfield[opt=nil] PTFont talk_font Font to use for rendering talk text.
 -- @tfield[opt={ 0xff 0xff 0xff }] table talk_colour Colour to use for rendering talk text.
 -- @tfield[opt=0] integer talk_next_wait The millisecond count at which to remove the talk text.
+-- @tfield[opt=0] integer facing Direction of the actor; angle in degrees clockwise from north.
 -- @table PTActor
 
 --- Create a new actor.
@@ -125,6 +126,7 @@ PTActor = function(name, x, y, z)
         walkdata_destbox = nil,
         walkdata_curbox = nil,
         walkbox = nil,
+        facing = 0,
         scale_x = 0xff,
         scale_y = 0xff,
         speed_x = 8,
@@ -283,8 +285,10 @@ end
 
 --- Animation structure.
 -- @tfield string _type "PTAnimation"
--- @tfield integer rate  Frame rate to use for playback.
+-- @tfield string name Name of the animation.
 -- @tfield table frames List of @{PTImage} objects; one per frame.
+-- @tfield[opt=0] integer rate Frame rate to use for playback.
+-- @tfield[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
 -- @tfield[opt=false] boolean looping Whether to loop the animation when completed.
 -- @tfield[opt=0] integer current_frame The current frame in the sequence to display.
 -- @tfield[opt=0] integer next_wait The millisecond count at which to show the next frame.
@@ -292,14 +296,24 @@ end
 -- @table PTAnimation
 
 --- Create a new animation.
--- @tfield integer rate Frame rate to use for playback.
--- @tfield table frames List of @{PTImage} objects; one per frame.
+-- @tparam string name Name of the animation.
+-- @tparam table frames List of @{PTImage} objects; one per frame.
+-- @tparam[opt=0] integer rate Frame rate to use for playback.
+-- @tparam[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
 -- @treturn PTAnimation The new animation.
-PTAnimation = function(rate, frames)
+PTAnimation = function(name, frames, rate, facing)
+    if not rate then
+        rate = 0
+    end
+    if not facing then
+        facing = 0
+    end
     return {
         _type = "PTAnimation",
-        rate = rate,
+        name = name,
         frames = frames,
+        rate = rate,
+        facing = facing,
         looping = false,
         current_frame = 0,
         next_wait = 0,
@@ -313,7 +327,7 @@ end
 -- @tfield[opt=0] integer x X coordinate in room space.
 -- @tfield[opt=0] integer y Y coordinate in room space.
 -- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
--- @tfield[opt=nil] string current_animation Name of the current animation from the animations table.
+-- @tfield[opt=nil] integer anim_index Index of the current animation from the animations table.
 -- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
 -- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
 -- @table PTSprite
@@ -340,10 +354,45 @@ PTSprite = function(animations, x, y, z)
         x = x,
         y = y,
         z = z,
-        current_animation = nil,
+        anim_index = nil,
         collision = false,
         visible = true,
     }
+end
+
+--- Set the current animation to play on a sprite.
+-- @tparam PTSprite sprite The sprite to modify.
+-- @tparam string name Name of the animation.
+-- @tparam[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
+-- @treturn boolean Whether the current animation was changed.
+PTSpriteSetAnimation = function(sprite, name, facing)
+    if not sprite or sprite._type ~= "PTSprite" then
+        error("PTSpriteSetAnimation: expected PTSprite for first argument")
+    end
+
+    if not facing then
+        facing = 0
+    end
+
+    local best_idx = nil
+    local best_delta = 0
+
+    for i, anim in pairs(sprite.animations) do
+        if anim.name == name then
+            local new_delta = ((anim.facing - facing + 180) % 360) - 180
+            if not best_idx or new_delta < best_delta then
+                best_idx = i
+                best_delta = new_delta
+            end
+        end
+    end
+    if best_idx then
+        if sprite.anim_index ~= best_idx then
+            sprite.anim_index = best_idx
+            return true
+        end
+    end
+    return false
 end
 
 --- Fetch the image to use when rendering a @{PTActor}/@{PTBackground}/@{PTSprite} object.
@@ -352,7 +401,7 @@ end
 -- @treturn integer Flags to render the image with.
 PTGetAnimationFrame = function(object)
     if object and object._type == "PTSprite" then
-        local anim = object.animations[object.current_animation]
+        local anim = object.animations[object.anim_index]
         if anim then
             if anim.rate == 0 then
                 -- Rate is 0, don't automatically change frames
@@ -972,7 +1021,7 @@ local _PTCalcMovementFactor = function(actor, next)
     actor.walkdata_cur = PTPoint(actor.x, actor.y)
     actor.walkdata_next = next
     actor.walkdata_delta_factor = PTPoint(delta_x_factor, delta_y_factor)
-    actor.walkdata_facing = (math.floor(math.atan(delta_x_factor, -delta_y_factor) * 180 / math.pi) + 360) % 360
+    actor.facing = (math.floor(math.atan(delta_x_factor, -delta_y_factor) * 180 / math.pi) + 360) % 360
     return _PTActorWalkStep(actor)
 end
 
