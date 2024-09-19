@@ -218,6 +218,9 @@ PTImage = function(path, origin_x, origin_y, colourkey)
     return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey) }
 end
 
+FLIP_H = 0x01
+FLIP_V = 0x02
+
 --- Get the dimensions of an image
 -- @tparam PTImage image Image to query.
 -- @treturn integer Width of the image.
@@ -253,6 +256,23 @@ PTSetImageOrigin = function(image, x, y)
         return
     end
     return _PTSetImageOrigin(image.ptr, x, y)
+end
+
+--- Calculate the delta angle between two directions.
+-- @tparam integer src Start direction, in degrees clockwise from north.
+-- @tparam integer dest End direction, in degrees clockwise from north.
+-- @tresult integer Angle between the two directions, in degrees clockwise.
+PTAngleDelta = function(src, dest)
+    return ((dest - src + 180) % 360) - 180
+end
+
+--- Calculate a direction angle mirrored by a plane.
+-- @tparam integer src Start direction, in degrees clockwise from north.
+-- @tparam integer plane Plane direction, in degrees clockwise from north.
+-- @tresult integer Reflected direction, in degrees clockwise from north.
+PTAngleMirror = function(src, plane)
+    local delta = PTAngleDelta(plane, src)
+    return (plane - delta + 360) % 360
 end
 
 --- Background structure.
@@ -300,13 +320,21 @@ end
 -- @tparam table frames List of @{PTImage} objects; one per frame.
 -- @tparam[opt=0] integer rate Frame rate to use for playback.
 -- @tparam[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
+-- @tparam[opt=false] boolean h_mirror Whether the animation can be mirrored horizontally.
+-- @tparam[opt=false] boolean v_mirror Whether the animation can be mirrored vertically.
 -- @treturn PTAnimation The new animation.
-PTAnimation = function(name, frames, rate, facing)
+PTAnimation = function(name, frames, rate, facing, h_mirror, v_mirror)
     if not rate then
         rate = 0
     end
     if not facing then
         facing = 0
+    end
+    if not h_mirror then
+        h_mirror = false
+    end
+    if not v_mirror then
+        v_mirror = false
     end
     return {
         _type = "PTAnimation",
@@ -317,6 +345,8 @@ PTAnimation = function(name, frames, rate, facing)
         looping = false,
         current_frame = 0,
         next_wait = 0,
+        h_mirror = h_mirror,
+        v_mirror = v_mirror,
         flags = 0,
     }
 end
@@ -328,6 +358,7 @@ end
 -- @tfield[opt=0] integer y Y coordinate in room space.
 -- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
 -- @tfield[opt=nil] integer anim_index Index of the current animation from the animations table.
+-- @tfield[opt=0] integer anim_flags Transformation flags to be applied to the frames.
 -- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
 -- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
 -- @table PTSprite
@@ -355,6 +386,7 @@ PTSprite = function(animations, x, y, z)
         y = y,
         z = z,
         anim_index = nil,
+        anim_flags = 0,
         collision = false,
         visible = true,
     }
@@ -367,28 +399,55 @@ end
 -- @treturn boolean Whether the current animation was changed.
 PTSpriteSetAnimation = function(sprite, name, facing)
     if not sprite or sprite._type ~= "PTSprite" then
-        error("PTSpriteSetAnimation: expected PTSprite for first argument")
+        return false
     end
 
     if not facing then
         facing = 0
     end
 
-    local best_idx = nil
+    local best_index = nil
     local best_delta = 0
+    local best_flags = 0
 
     for i, anim in pairs(sprite.animations) do
         if anim.name == name then
-            local new_delta = ((anim.facing - facing + 180) % 360) - 180
-            if not best_idx or new_delta < best_delta then
-                best_idx = i
+            local new_delta = math.abs(PTAngleDelta(facing, anim.facing))
+            if not best_index or new_delta < best_delta then
+                best_index = i
                 best_delta = new_delta
+                best_flags = 0
+            end
+            if anim.h_mirror then
+                new_delta = math.abs(PTAngleDelta(facing, PTAngleMirror(anim.facing, 0)))
+                if new_delta < best_delta then
+                    best_index = i
+                    best_delta = new_delta
+                    best_flags = FLIP_H
+                end
+            end
+            if anim.v_mirror then
+                new_delta = math.abs(PTAngleDelta(facing, PTAngleMirror(anim.facing, 90)))
+                if new_delta < best_delta then
+                    best_index = i
+                    best_delta = new_delta
+                    best_flags = FLIP_V
+                end
+                if anim.h_mirror then
+                    new_delta = math.abs(PTAngleDelta(facing, PTAngleMirror(PTAngleMirror(anim.facing, 90), 0)))
+                    if new_delta < best_delta then
+                        best_index = i
+                        best_delta = new_delta
+                        best_flags = FLIP_H | FLIP_V
+                    end
+                end
             end
         end
     end
-    if best_idx then
-        if sprite.anim_index ~= best_idx then
-            sprite.anim_index = best_idx
+    if best_index then
+        if sprite.anim_index ~= best_index or sprite.anim_flags ~= best_flags then
+            sprite.anim_index = best_index
+            sprite.anim_flags = best_flags
             return true
         end
     end
@@ -415,7 +474,7 @@ PTGetAnimationFrame = function(object)
                 anim.current_frame = (anim.current_frame % #anim.frames) + 1
                 anim.next_wait = PTGetMillis() + (1000 // anim.rate)
             end
-            return anim.frames[anim.current_frame], anim.flags
+            return anim.frames[anim.current_frame], object.anim_flags
         end
     elseif object and object._type == "PTBackground" then
         return object.image, 0
@@ -1022,6 +1081,7 @@ local _PTCalcMovementFactor = function(actor, next)
     actor.walkdata_next = next
     actor.walkdata_delta_factor = PTPoint(delta_x_factor, delta_y_factor)
     actor.facing = (math.floor(math.atan(delta_x_factor, -delta_y_factor) * 180 / math.pi) + 360) % 360
+    PTSpriteSetAnimation(actor.sprite, "walk", actor.facing)
     return _PTActorWalkStep(actor)
 end
 
@@ -1061,6 +1121,7 @@ PTActorWalk = function(actor)
 
     if actor.moving == MF_LAST_LEG and actor.x == actor.walkdata_dest.x and actor.y == actor.walkdata_dest.y then
         actor.moving = 0
+        PTSpriteSetAnimation(actor.sprite, "stand", actor.facing)
         return
     end
 
@@ -1070,6 +1131,7 @@ PTActorWalk = function(actor)
         end
         if actor.moving == MF_LAST_LEG then
             actor.moving = 0
+            PTSpriteSetAnimation(actor.sprite, "stand", actor.facing)
             PTActorSetWalkBox(actor, actor.walkdata_destbox)
             -- turn anim here
         end
@@ -1097,6 +1159,7 @@ PTActorWalk = function(actor)
         local next_box = PTRoomGetNextBox(actor.room, actor.walkbox.id, actor.walkdata_destbox.id)
         if not next_box then
             actor.moving = 0
+            PTSpriteSetAnimation(actor.sprite, "stand", actor.facing)
             return
         end
         actor.walkdata_curbox = next_box
