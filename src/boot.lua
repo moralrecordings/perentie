@@ -454,6 +454,20 @@ PTSpriteSetAnimation = function(sprite, name, facing)
     return false
 end
 
+PTSpriteIncrementFrame = function(object)
+    if object and object._type == "PTSprite" then
+        local anim = object.animations[object.anim_index]
+        if anim then
+            if anim.current_frame == 0 then
+                anim.current_frame = 1
+            else
+                anim.current_frame = (anim.current_frame % #anim.frames) + 1
+            end
+            print(string.format("PTSpriteIncrementFrame: %d", anim.current_frame))
+        end
+    end
+end
+
 --- Fetch the image to use when rendering a @{PTActor}/@{PTBackground}/@{PTSprite} object.
 -- @tparam table object The object to query.
 -- @treturn PTImage The image for the current frame.
@@ -1799,6 +1813,7 @@ local _PTUpdateRoom = function()
     for i, actor in ipairs(_PTCurrentRoom.actors) do
         if actor.moving > 0 and PTGetMillis() > actor.walkdata_next_wait then
             PTActorWalk(actor)
+            PTSpriteIncrementFrame(actor.sprite)
             actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
             if actor == _PTCurrentRoom.camera_actor then
                 _PTCurrentRoom.x, _PTCurrentRoom.y = actor.x, actor.y
