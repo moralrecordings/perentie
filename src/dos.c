@@ -719,7 +719,7 @@ void _int_9h_prot_lock()
 
 void keyboard_init()
 {
-    // Disable all interrupts while installing the new timer
+    // Disable all interrupts while installing the new keyboard interrupt
     disable();
 
     // Zero out the key event buffer
@@ -737,7 +737,8 @@ void keyboard_init()
     memset(&keyboard_handler_new, 0, sizeof(_go32_dpmi_seginfo));
     keyboard_handler_new.pm_offset = (uint32_t)_int_9h_prot;
     keyboard_handler_new.pm_selector = (uint32_t)_go32_my_cs();
-    _go32_dpmi_chain_protected_mode_interrupt_vector(9, &keyboard_handler_new);
+    _go32_dpmi_allocate_iret_wrapper(&keyboard_handler_new);
+    _go32_dpmi_set_protected_mode_interrupt_vector(9, &keyboard_handler_new);
     enable();
 
     // Reset the keyboard LEDs
@@ -787,6 +788,7 @@ void keyboard_shutdown()
     disable();
     // Restore protected mode 9h handler
     _go32_dpmi_set_protected_mode_interrupt_vector(9, &keyboard_handler_old);
+    _go32_dpmi_free_iret_wrapper(&keyboard_handler_new);
     enable();
 }
 
