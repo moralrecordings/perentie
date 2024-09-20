@@ -235,13 +235,13 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
         // don't ask me how the below works!
         // it was found by trial and error to sort the planes properly!
         uint8_t pf
-            = (flags & FLIP_H) ? ((x + 3 + (4 - (ir->right % 4)) - pi) % 4) : ((x + (4 - (ir->left % 4)) + pi) % 4);
+            = (flags & FLIP_H) ? ((x + 3 + (((ir->right) % 4)) - pi) % 4) : ((x + (4 - (ir->left % 4)) + pi) % 4);
         // image x start/end positions (corrected for plane)
         int16_t ir_left = (ir->left >> 2) + ((ir->left % 4) > pi ? 1 : 0);
         int16_t ir_right = (ir->right >> 2) + ((ir->right % 4) > pi ? 1 : 0);
         // log_print("plane: %d -> %d, ir_left: %d -> %d, ir_right: %d -> %d\n", pi, pf, ir->left, ir_left, ir->right,
         // ir_right);
-        //  framebuffer x start position (corrected for plane)
+        //   framebuffer x start position (corrected for plane)
         int16_t fx = (x >> 2) + ((x % 4) > pf ? 1 : 0);
 
         // log_print("pi: %d, pf: %d, ir_left: %d, ir_right: %d, fx: %d\n", pi, pf, ir_left, ir_right, fx);
