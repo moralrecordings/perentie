@@ -85,6 +85,8 @@ end
 -- @tfield[opt={ 0xff 0xff 0xff }] table talk_colour Colour to use for rendering talk text.
 -- @tfield[opt=0] integer talk_next_wait The millisecond count at which to remove the talk text.
 -- @tfield[opt=0] integer facing Direction of the actor; angle in degrees clockwise from north.
+-- @tfield[opt="stand"] string anim_stand Name of the sprite animation to use for standing.
+-- @tfield[opt="walk"] string anim_walk Name of the sprite animation to use for walking.
 -- @table PTActor
 
 --- Create a new actor.
@@ -132,6 +134,8 @@ PTActor = function(name, x, y, z)
         speed_x = 8,
         speed_y = 4,
         walk_rate = 12,
+        anim_stand = "stand",
+        anim_walk = "walk",
         walkdata_next_wait = 0,
         moving = 0,
     }
@@ -199,7 +203,7 @@ end
 -- @tfield userdata ptr Pointer to C data.
 -- @table PTImage
 
---- Create a new image.
+--- Load a new image.
 -- @tparam string path Path of the image (must be 8-bit indexed or grayscale PNG).
 -- @tparam[opt=0] integer origin_x Origin x coordinate, relative to top-left corner.
 -- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
@@ -216,6 +220,21 @@ PTImage = function(path, origin_x, origin_y, colourkey)
         colourkey = -1
     end
     return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey) }
+end
+
+--- Load a sequence of images.
+-- @tparam string path_format Path of the image (must be 8-bit indexed or grayscale PNG), with %d placeholder for index.
+-- @tparam integer start Start index.
+-- @tparam integer finish End index (inclusive).
+-- @tparam[opt=0] integer origin_x Origin x coordinate, relative to top-left corner.
+-- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
+-- @treturn table List of new images.
+PTImageSequence = function(path_format, start, finish, origin_x, origin_y)
+    local result = {}
+    for i = start, finish do
+        table.insert(result, PTImage(string.format(path_format, i), origin_x, origin_y))
+    end
+    return result
 end
 
 FLIP_H = 0x01
@@ -1095,7 +1114,7 @@ local _PTCalcMovementFactor = function(actor, next)
     actor.walkdata_next = next
     actor.walkdata_delta_factor = PTPoint(delta_x_factor, delta_y_factor)
     actor.facing = (math.floor(math.atan(delta_x_factor, -delta_y_factor) * 180 / math.pi) + 360) % 360
-    PTSpriteSetAnimation(actor.sprite, "walk", actor.facing)
+    PTSpriteSetAnimation(actor.sprite, actor.anim_walk, actor.facing)
     return _PTActorWalkStep(actor)
 end
 
@@ -1135,7 +1154,7 @@ PTActorWalk = function(actor)
 
     if actor.moving == MF_LAST_LEG and actor.x == actor.walkdata_dest.x and actor.y == actor.walkdata_dest.y then
         actor.moving = 0
-        PTSpriteSetAnimation(actor.sprite, "stand", actor.facing)
+        PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
         return
     end
 
@@ -1145,7 +1164,7 @@ PTActorWalk = function(actor)
         end
         if actor.moving == MF_LAST_LEG then
             actor.moving = 0
-            PTSpriteSetAnimation(actor.sprite, "stand", actor.facing)
+            PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
             PTActorSetWalkBox(actor, actor.walkdata_destbox)
             -- turn anim here
         end
@@ -1173,7 +1192,7 @@ PTActorWalk = function(actor)
         local next_box = PTRoomGetNextBox(actor.room, actor.walkbox.id, actor.walkdata_destbox.id)
         if not next_box then
             actor.moving = 0
-            PTSpriteSetAnimation(actor.sprite, "stand", actor.facing)
+            PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
             return
         end
         actor.walkdata_curbox = next_box
