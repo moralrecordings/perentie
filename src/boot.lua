@@ -296,8 +296,8 @@ end
 
 --- Background structure.
 -- @tfield string _type "PTBackground"
--- @tfield[opt=0] integer x X coordinate in room space.
--- @tfield[opt=0] integer y Y coordinate in room space.
+-- @tfield[opt=0] integer x X coordinate.
+-- @tfield[opt=0] integer y Y coordinate.
 -- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
 -- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
 -- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
@@ -305,8 +305,8 @@ end
 
 --- Create a new background.
 -- @tparam PTImage image Image to use.
--- @tparam[opt=0] integer x X coordinate in room space.
--- @tparam[opt=0] integer y Y coordinate in room space.
+-- @tparam[opt=0] integer x X coordinate.
+-- @tparam[opt=0] integer y Y coordinate.
 -- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
 -- @treturn PTBackground The new background.
 PTBackground = function(image, x, y, z)
@@ -372,9 +372,9 @@ end
 
 --- Sprite structure.
 -- @tfield string _type "PTSprite"
--- @tfield table animations Table of @{PTAnimation} objects indexed by name.
--- @tfield[opt=0] integer x X coordinate in room space.
--- @tfield[opt=0] integer y Y coordinate in room space.
+-- @tfield table animations Table of @{PTAnimation} objects.
+-- @tfield[opt=0] integer x X coordinate.
+-- @tfield[opt=0] integer y Y coordinate.
 -- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
 -- @tfield[opt=nil] integer anim_index Index of the current animation from the animations table.
 -- @tfield[opt=0] integer anim_flags Transformation flags to be applied to the frames.
@@ -383,9 +383,9 @@ end
 -- @table PTSprite
 
 --- Create a new sprite.
--- @tparam table animations Table of @{PTAnimation} objects indexed by name.
--- @tparam[opt=0] integer x X coordinate in room space.
--- @tparam[opt=0] integer y Y coordinate in room space.
+-- @tparam table animations Table of @{PTAnimation} objects.
+-- @tparam[opt=0] integer x X coordinate.
+-- @tparam[opt=0] integer y Y coordinate.
 -- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
 -- @treturn PTSprite The new sprite.
 PTSprite = function(animations, x, y, z)
@@ -487,6 +487,110 @@ PTSpriteIncrementFrame = function(object)
     end
 end
 
+--- Group structure.
+-- @tfield string _type "PTGroup"
+-- @tfield table objects List of member objects.
+-- @tfield integer x X coordinate.
+-- @tfield integer y Y coordinate.
+-- @tfield integer z Depth coordinate; a higher number renders to the front.
+-- @tfield integer origin_x Origin x coordinate, relative to top-left corner..
+-- @tfield integer origin_y Origin y coordinate, relative to top-left corner.
+-- @table PTGroup
+
+--- Create a new group.
+-- @tparam table objects List of member objects.
+-- @tparam integer x X coordinate.
+-- @tparam integer y Y coordinate.
+-- @tparam integer z Depth coordinate; a higher number renders to the front.
+-- @tparam integer origin_x Origin x coordinate, relative to top-left corner..
+-- @tparam integer origin_y Origin y coordinate, relative to top-left corner.
+PTGroup = function(objects, x, y, z, origin_x, origin_y)
+    if not objects then
+        objects = {}
+    end
+    table.sort(objects, function(a, b)
+        return a.z < b.z
+    end)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
+    if not origin_x then
+        origin_x = 0
+    end
+    if not origin_y then
+        origin_y = 0
+    end
+
+    return {
+        _type = "PTGroup",
+        objects = objects,
+        x = x,
+        y = y,
+        z = z,
+        origin_x = origin_x,
+        origin_y = origin_y,
+    }
+end
+
+--- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object to a group rendering list.
+-- @tparam PTGroup group Group to add object to.
+-- @tparam table object Object to add.
+PTGroupAddObject = function(group, object)
+    if object then
+        _PTAddToList(group.objects, object)
+    end
+    table.sort(group.objects, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+PTGroupRemoveObject = function(group, object)
+    if object then
+        _PTRemoveFromList(group.objects, object)
+    end
+    table.sort(group.objects, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+PTIterObjects = function(objects)
+    local i = 1
+    local group_iter = nil
+    return function()
+        if group_iter then
+            local obj = objects[i]
+            local inner, inner_x, inner_y = group_iter()
+            if inner then
+                return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
+            end
+            group_iter = nil
+            i = i + 1
+        end
+
+        while i <= #objects do
+            local obj = objects[i]
+            if obj._type == "PTGroup" and #obj.objects > 0 then
+                group_iter = PTIterObjects(obj.objects)
+                local inner, inner_x, inner_y = group_iter()
+                if inner then
+                    return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
+                end
+                group_iter = nil
+            elseif obj._type == "PTActor" or obj._type == "PTBackground" or obj._type == "PTSprite" then
+                i = i + 1
+                return obj, obj.x, obj.y
+            end
+            i = i + 1
+        end
+    end
+end
+
 --- Fetch the image to use when rendering a @{PTActor}/@{PTBackground}/@{PTSprite} object.
 -- @tparam table object The object to query.
 -- @treturn PTImage The image for the current frame.
@@ -518,7 +622,7 @@ PTGetAnimationFrame = function(object)
 end
 
 _PTGlobalRenderList = {}
---- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) object to the global rendering list.
+--- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object to the global rendering list.
 -- @tparam table object Object to add.
 PTGlobalAddObject = function(object)
     if object then
@@ -529,7 +633,7 @@ PTGlobalAddObject = function(object)
     end)
 end
 
---- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) object from the global rendering list.
+--- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object from the global rendering list.
 -- @tparam table object Object to remove.
 PTGlobalRemoveObject = function(object)
     if object then
@@ -1434,7 +1538,7 @@ end
 -- @tfield integer y Y coordinate of camera in room space.
 -- @tfield integer origin_x X coordinate of the camera offset in screen space.
 -- @tfield integer origin_y Y coordinate of the camera offset in screen space.
--- @tfield table render_list List of renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) objects in the room.
+-- @tfield table render_list List of renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) objects in the room.
 -- @tfield table boxes List of @{PTWalkBox} objects which make up the room's walkable area.
 -- @tfield table box_links List of box ID pairs, each describing two directly connected walk boxes.
 -- @tfield table box_matrix N x N matrix describing the shortest route between walk boxes; e.g. when starting from box ID i and trying to reach box ID j, box_matrix[i][j] is the ID of the next box you need to travel through in order to take the shortest path, or 0 if there is no path.
@@ -1463,7 +1567,7 @@ PTRoom = function(name, width, height)
     }
 end
 
---- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) object to the room rendering list.
+--- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object to the room rendering list.
 -- @tparam PTRoom room Room to modify.
 -- @tparam table object Object to add.
 PTRoomAddObject = function(room, object)
@@ -1479,7 +1583,7 @@ PTRoomAddObject = function(room, object)
     end)
 end
 
---- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}) object from the room rendering list.
+--- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object from the room rendering list.
 -- @tparam PTRoom room Room to modify.
 -- @tparam table object Object to remove.
 PTRoomRemoveObject = function(room, object)
@@ -1849,6 +1953,13 @@ local _PTUpdateRoom = function()
     _PTCurrentRoom.y = math.max(math.min(_PTCurrentRoom.y, y_max), y_min)
 end
 
+KEY_FLAG_CTRL = 1
+KEY_FLAG_ALT = 2
+KEY_FLAG_SHIFT = 4
+KEY_FLAG_NUM = 8
+KEY_FLAG_CAPS = 16
+KEY_FLAG_SCRL = 32
+
 --- Process all input and room events.
 -- @local
 _PTEvents = function()
@@ -1882,11 +1993,11 @@ _PTRender = function()
     if _PTAutoClearScreen then
         _PTClearScreen()
     end
-    for i, obj in pairs(_PTCurrentRoom.render_list) do
+    for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list) do
         if obj.visible then
             local frame, flags = PTGetAnimationFrame(obj)
             if frame then
-                local tmp_x, tmp_y = PTRoomToScreen(obj.x, obj.y)
+                local tmp_x, tmp_y = PTRoomToScreen(x, y)
                 _PTDrawImage(frame.ptr, tmp_x, tmp_y, flags)
             end
         end
@@ -1903,20 +2014,24 @@ _PTRender = function()
             _PTDrawLine(ll_x, ll_y, ul_x, ul_y, 0xff, 0x55, 0x55)
         end
     end
-    for i, obj in pairs(_PTGlobalRenderList) do
+    for obj, x, y in PTIterObjects(_PTGlobalRenderList) do
         if obj.visible then
             local frame, flags = PTGetAnimationFrame(obj)
             if frame then
-                _PTDrawImage(frame.ptr, obj.x, obj.y, flags)
+                _PTDrawImage(frame.ptr, x, y, flags)
             end
         end
     end
 
-    if _PTMouseSprite and not _PTInputGrabbed and _PTMouseSprite.visible then
+    if _PTMouseSprite and not _PTInputGrabbed then
         local mouse_x, mouse_y = _PTGetMousePos()
-        local frame, flags = PTGetAnimationFrame(_PTMouseSprite)
-        if frame then
-            _PTDrawImage(frame.ptr, mouse_x, mouse_y, flags)
+        for obj, x, y in PTIterObjects({ _PTMouseSprite }) do
+            if obj.visible then
+                local frame, flags = PTGetAnimationFrame(obj)
+                if frame then
+                    _PTDrawImage(frame.ptr, mouse_x, mouse_y, flags)
+                end
+            end
         end
     end
 end

@@ -86,5 +86,6 @@ Perentie wouldn't be possible without the following third-party components:
 In addition, Perentie incorporates code and algorithms from the following projects:
 
 - `PCTIMER <http://technology.chtsai.org/pctimer/>`_ - high-frequency timer interrupt replacement
-- `LoveDOS <https://github.com/SuperIlu/lovedos/>`_ - Framework for making 2D DOS games with Lua
-- `ScummVM <https://www.scummvm.org>`_ - Engine for playing narrative-based games
+- `LoveDOS <https://github.com/SuperIlu/lovedos/>`_ - framework for making 2D DOS games with Lua
+- `ScummVM <https://www.scummvm.org>`_ - engine for playing narrative-based games
+- `Reality Adlib Tracker <https://www.3eality.com/productions/reality-adlib-tracker>`_ - OPL3 music tracker/player
