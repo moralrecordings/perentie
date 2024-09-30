@@ -504,6 +504,7 @@ end
 -- @tparam integer z Depth coordinate; a higher number renders to the front.
 -- @tparam integer origin_x Origin x coordinate, relative to top-left corner..
 -- @tparam integer origin_y Origin y coordinate, relative to top-left corner.
+-- @treturn PTGroup The new group.
 PTGroup = function(objects, x, y, z, origin_x, origin_y)
     if not objects then
         objects = {}
@@ -559,12 +560,24 @@ PTGroupRemoveObject = function(group, object)
     end)
 end
 
-PTIterObjects = function(objects)
+--- Iterate through a list of renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) objects. PTGroups will be flattened, leaving only PTActor/PTBackground/PTSprite objects with adjusted positions.
+-- @tparam table List of objects.
+-- @tparam[opt=false] boolean reverse Whether to iterate in reverse.
+-- @treturn function An iterator function that returns an object, a x coordinate and a y coordinate.
+PTIterObjects = function(objects, reverse)
+    if not reverse then
+        reverse = false
+    end
     local i = 1
     local group_iter = nil
     return function()
+        local obj
         if group_iter then
-            local obj = objects[i]
+            if reverse then
+                obj = objects[#objects + 1 - i]
+            else
+                obj = objects[i]
+            end
             local inner, inner_x, inner_y = group_iter()
             if inner then
                 return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
@@ -574,9 +587,13 @@ PTIterObjects = function(objects)
         end
 
         while i <= #objects do
-            local obj = objects[i]
+            if reverse then
+                obj = objects[#objects + 1 - i]
+            else
+                obj = objects[i]
+            end
             if obj._type == "PTGroup" and #obj.objects > 0 then
-                group_iter = PTIterObjects(obj.objects)
+                group_iter = PTIterObjects(obj.objects, reverse)
                 local inner, inner_x, inner_y = group_iter()
                 if inner then
                     return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
@@ -1870,6 +1887,13 @@ PTSetWalkBoxDebug = function(val)
     _PTWalkBoxDebug = val
 end
 
+--- Set a callback for before rendering the current frame to the screen. Useful for animating object positions.
+-- @tparam function callback Function body to call.
+local _PTRenderFrameConsumer = nil
+PTOnRenderFrame = function(callback)
+    _PTRenderFrameConsumer = callback
+end
+
 local _PTMouseOver = nil
 --- Get the current object which the mouse is hovering over
 -- @treturn table The object (@{PTActor}/@{PTBackground}/@{PTSprite}), or nil.
@@ -1891,11 +1915,10 @@ local _PTUpdateMouseOver = function()
         return
     end
     -- Need to iterate through objects in reverse draw order
-    for i = #_PTGlobalRenderList, 1, -1 do
-        local obj = _PTGlobalRenderList[i]
+    for obj, x, y in PTIterObjects(_PTGlobalRenderList, true) do
         if obj.collision then
             local frame, flags = PTGetAnimationFrame(obj)
-            if frame and _PTImageTestCollision(frame.ptr, mouse_x - obj.x, mouse_y - obj.y, flags) then
+            if frame and _PTImageTestCollision(frame.ptr, mouse_x - x, mouse_y - y, flags) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
@@ -1906,11 +1929,10 @@ local _PTUpdateMouseOver = function()
             end
         end
     end
-    for i = #_PTCurrentRoom.render_list, 1, -1 do
-        local obj = _PTCurrentRoom.render_list[i]
+    for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list, true) do
         if obj.collision then
             frame, flags = PTGetAnimationFrame(obj)
-            if frame and _PTImageTestCollision(frame.ptr, room_x - obj.x, room_y - obj.y, flags) then
+            if frame and _PTImageTestCollision(frame.ptr, room_x - x, room_y - y, flags) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
@@ -1992,6 +2014,9 @@ _PTRender = function()
     end
     if _PTAutoClearScreen then
         _PTClearScreen()
+    end
+    if _PTRenderFrameConsumer then
+        _PTRenderFrameConsumer()
     end
     for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list) do
         if obj.visible then
