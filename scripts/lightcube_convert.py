@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import re
 import pathlib
 import subprocess
@@ -27,8 +28,10 @@ def transform(src_file: pathlib.Path, output_dir: pathlib.Path) -> None:
     print(f"{src_file.stem}_bg = PTBackground(PTImage(\"{str(dest_file)}\", {img_x}, {img_y}), {x_off + img_x}, {y_off + img_y})")
 
 if __name__ == "__main__":
-    src_dir = pathlib.Path(sys.argv[1])
-    dest_dir = pathlib.Path(sys.argv[2])
-    for f in src_dir.iterdir():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("SOURCE", type=pathlib.Path, nargs="+", help="Source images")
+    parser.add_argument("DEST", type=pathlib.Path, help="Destination path")
+    args = parser.parse_args()
+    for f in args.SOURCE:
         if f.is_file():
-            transform(f, dest_dir)
+            transform(f, args.DEST)
