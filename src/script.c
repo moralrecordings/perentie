@@ -272,7 +272,8 @@ static int lua_pt_image_test_collision(lua_State* L)
     int16_t x = luaL_checkinteger(L, 2);
     int16_t y = luaL_checkinteger(L, 3);
     uint8_t flags = luaL_checkinteger(L, 4);
-    lua_pushboolean(L, image_test_collision(*imageptr, x, y, true, flags));
+    bool mask = lua_toboolean(L, 5);
+    lua_pushboolean(L, image_test_collision(*imageptr, x, y, mask, flags));
     return 1;
 }
 

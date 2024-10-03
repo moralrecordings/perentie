@@ -201,6 +201,7 @@ end
 --- Image structure.
 -- @tfield string _type "PTImage"
 -- @tfield userdata ptr Pointer to C data.
+-- @tfield[opt=true] collision_mask boolean Whether to use the transparency mask for collision detection.
 -- @table PTImage
 
 --- Load a new image.
@@ -208,8 +209,9 @@ end
 -- @tparam[opt=0] integer origin_x Origin x coordinate, relative to top-left corner.
 -- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
 -- @tparam[opt=-1] integer colourkey Palette index to use as colourkey.
+-- @tparam[opt=true] collision_mask boolean Whether to use the transparency mask for collision detection.
 -- @treturn PTImage The new image.
-PTImage = function(path, origin_x, origin_y, colourkey)
+PTImage = function(path, origin_x, origin_y, colourkey, collision_mask)
     if not origin_x then
         origin_x = 0
     end
@@ -219,7 +221,10 @@ PTImage = function(path, origin_x, origin_y, colourkey)
     if not colourkey then
         colourkey = -1
     end
-    return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey) }
+    if collision_mask == nil then
+        collision_mask = true
+    end
+    return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey), collision_mask = collision_mask }
 end
 
 --- Load a sequence of images.
@@ -1918,7 +1923,7 @@ local _PTUpdateMouseOver = function()
     for obj, x, y in PTIterObjects(_PTGlobalRenderList, true) do
         if obj.collision then
             local frame, flags = PTGetAnimationFrame(obj)
-            if frame and _PTImageTestCollision(frame.ptr, mouse_x - x, mouse_y - y, flags) then
+            if frame and _PTImageTestCollision(frame.ptr, mouse_x - x, mouse_y - y, flags, frame.collision_mask) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
@@ -1932,7 +1937,7 @@ local _PTUpdateMouseOver = function()
     for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list, true) do
         if obj.collision then
             frame, flags = PTGetAnimationFrame(obj)
-            if frame and _PTImageTestCollision(frame.ptr, room_x - x, room_y - y, flags) then
+            if frame and _PTImageTestCollision(frame.ptr, room_x - x, room_y - y, flags, frame.collision_mask) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
