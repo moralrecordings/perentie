@@ -95,11 +95,47 @@ bool image_load(pt_image* image)
             }
         }
     } else if (ihdr.color_type == SPNG_COLOR_TYPE_GRAYSCALE) {
-        for (size_t i = 0; i < 256; i++) {
-            image->palette[3 * i] = i;
-            image->palette[3 * i + 1] = i;
-            image->palette[3 * i + 2] = i;
+        switch (ihdr.bit_depth) {
+        case 8:
+            for (size_t i = 0; i < 256; i++) {
+                image->palette[3 * i] = i;
+                image->palette[3 * i + 1] = i;
+                image->palette[3 * i + 2] = i;
+            }
+            break;
+        case 4:
+            for (size_t i = 0; i < 16; i++) {
+                image->palette[3 * i] = i + (i << 4);
+                image->palette[3 * i + 1] = i + (i << 4);
+                image->palette[3 * i + 2] = i + (i << 4);
+            }
+            break;
+        case 2:
+            image->palette[0] = 0x00;
+            image->palette[1] = 0x00;
+            image->palette[2] = 0x00;
+            image->palette[3] = 0x55;
+            image->palette[4] = 0x55;
+            image->palette[5] = 0x55;
+            image->palette[6] = 0xaa;
+            image->palette[7] = 0xaa;
+            image->palette[8] = 0xaa;
+            image->palette[9] = 0xff;
+            image->palette[10] = 0xff;
+            image->palette[11] = 0xff;
+            break;
+        case 1:
+            image->palette[0] = 0x00;
+            image->palette[1] = 0x00;
+            image->palette[2] = 0x00;
+            image->palette[3] = 0xff;
+            image->palette[4] = 0xff;
+            image->palette[5] = 0xff;
+            break;
+        default:
+            break;
         }
+
         struct spng_trns trns;
         int result = spng_get_trns(ctx, &trns);
         if (result == 0) {
