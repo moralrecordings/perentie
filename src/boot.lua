@@ -313,8 +313,9 @@ end
 -- @tparam[opt=0] integer x X coordinate.
 -- @tparam[opt=0] integer y Y coordinate.
 -- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
 -- @treturn PTBackground The new background.
-PTBackground = function(image, x, y, z)
+PTBackground = function(image, x, y, z, collision)
     if not x then
         x = 0
     end
@@ -324,7 +325,10 @@ PTBackground = function(image, x, y, z)
     if not z then
         z = 0
     end
-    return { _type = "PTBackground", image = image, x = x, y = y, z = z, collision = false, visible = true }
+    if collision == nil then
+        collision = false
+    end
+    return { _type = "PTBackground", image = image, x = x, y = y, z = z, collision = collision, visible = true }
 end
 
 --- Animation structure.
@@ -487,7 +491,7 @@ PTSpriteIncrementFrame = function(object)
             else
                 anim.current_frame = (anim.current_frame % #anim.frames) + 1
             end
-            print(string.format("PTSpriteIncrementFrame: %d", anim.current_frame))
+            --print(string.format("PTSpriteIncrementFrame: %d", anim.current_frame))
         end
     end
 end
@@ -1742,7 +1746,8 @@ end
 --- Verbs
 -- @section verb
 
-local _PTVerbCallbacks = {}
+_PTVerbCallbacks = {}
+_PTVerb2Callbacks = {}
 
 PTOnVerb = function(verb_name, hotspot_id, callback)
     if not _PTVerbCallbacks[verb_name] then
@@ -1751,12 +1756,14 @@ PTOnVerb = function(verb_name, hotspot_id, callback)
     _PTVerbCallbacks[verb_name][hotspot_id] = callback
 end
 
-local _PTCurrentVerb = nil
-local _PTCurrentHotspot = nil
+_PTCurrentVerb = nil
+_PTCurrentHotspotA = nil
+_PTCurrentHotspotB = nil
 PTDoVerb = function(verb_name, hotspot_id)
     PTLog("PTDoVerb: %s %s\n", tostring(verb_name), tostring(hotspot_id))
     _PTCurrentVerb = verb_name
-    _PTCurrentHotspot = hotspot_id
+    _PTCurrentHotspotA = hotspot_id
+    _PTCurrentHotspotB = nil
 end
 
 local _PTVerbReadyCallback = nil
@@ -1764,14 +1771,53 @@ PTSetVerbReadyCheck = function(callback)
     _PTVerbReadyCallback = callback
 end
 
+PTOnVerb2 = function(verb_name, hotspot_a, hotspot_b, callback, directional)
+    if directional == nil then
+        directional = false
+    end
+    if not _PTVerb2Callbacks[verb_name] then
+        _PTVerb2Callbacks[verb_name] = {}
+    end
+    -- forwards case
+    if not _PTVerb2Callbacks[verb_name][hotspot_a] then
+        _PTVerb2Callbacks[verb_name][hotspot_a] = {}
+    end
+    _PTVerb2Callbacks[verb_name][hotspot_a][hotspot_b] = callback
+    -- reverse case
+    if not directional then
+        if not _PTVerb2Callbacks[verb_name][hotspot_b] then
+            _PTVerb2Callbacks[verb_name][hotspot_b] = {}
+        end
+        _PTVerb2Callbacks[verb_name][hotspot_b][hotspot_a] = callback
+    end
+end
+
+PTDoVerb2 = function(verb_name, hotspot_a, hotspot_b)
+    PTLog("PTDoVerb2: %s %s %s\n", tostring(verb_name), tostring(hotspot_a), tostring(hotspot_b))
+    _PTCurrentVerb = verb_name
+    _PTCurrentHotspotA = hotspot_a
+    _PTCurrentHotspotB = hotspot_b
+end
+
 --- Return whether the current queued verb action is ready.
 -- @treturn bool Whether the
 PTVerbReady = function()
     if
         _PTCurrentVerb ~= nil
-        and _PTCurrentHotspot ~= nil
-        and _PTVerbCallbacks[_PTCurrentVerb]
-        and _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentHotspot]
+        and _PTCurrentHotspotA ~= nil
+        and (
+            (
+                _PTCurrentHotspotB ~= nil
+                and _PTVerb2Callbacks[_PTCurrentVerb]
+                and _PTVerb2Callbacks[_PTCurrentVerb][_PTCurrentHotspotA]
+                and _PTVerb2Callbacks[_PTCurrentVerb][_PTCurrentHotspotA][_PTCurrentHotspotB]
+            )
+            or (
+                _PTCurrentHotspotB == nil
+                and _PTVerbCallbacks[_PTCurrentVerb]
+                and _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentHotspotA]
+            )
+        )
     then
         if _PTVerbReadyCallback then
             return _PTVerbReadyCallback()
@@ -1788,20 +1834,32 @@ _PTRunVerb = function()
         if PTThreadExists("__verb") then
             -- interrupting another verb, stop the existing one
             PTLog(
-                "PTRunVerb(): attempted to replace running verb thread with %s %s!",
+                "PTRunVerb(): attempted to replace running verb thread with %s %s %s!",
                 _PTCurrentVerb,
-                _PTCurrentHotspot
+                tostring(_PTCurrentHotspotA),
+                tostring(_PTCurrentHotspotB)
             )
         else
-            PTStartThread(
-                "__verb",
-                _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentHotspot],
-                _PTCurrentVerb,
-                _PTCurrentHotspot
-            )
+            if _PTCurrentHotspotB ~= nil then
+                PTStartThread(
+                    "__verb",
+                    _PTVerb2Callbacks[_PTCurrentVerb][_PTCurrentHotspotA][_PTCurrentHotspotB],
+                    _PTCurrentVerb,
+                    _PTCurrentHotspotA,
+                    _PTCurrentHotspotB
+                )
+            else
+                PTStartThread(
+                    "__verb",
+                    _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentHotspotA],
+                    _PTCurrentVerb,
+                    _PTCurrentHotspotA
+                )
+            end
         end
         _PTCurrentVerb = nil
-        _PTCurrentHotspot = nil
+        _PTCurrentHotspotA = nil
+        _PTCurrentHotspotB = nil
     end
 end
 
