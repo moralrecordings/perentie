@@ -171,6 +171,16 @@ PTActorUpdate = function(actor, fast_forward)
     return true
 end
 
+local _PTActorWaitAfterTalk = true
+PTSetActorWaitAfterTalk = function(enable)
+    _PTActorWaitAfterTalk = enable
+end
+
+local _PTGrabInputOnVerb = true
+PTSetGrabInputOnVerb = function(enable)
+    _PTGrabInputOnVerb = enable
+end
+
 TALK_BASE_DELAY = 1000
 TALK_CHAR_DELAY = 85
 
@@ -193,6 +203,9 @@ PTActorTalk = function(actor, message)
     actor.talk_next_wait = _PTGetMillis() + TALK_BASE_DELAY + #message * TALK_CHAR_DELAY
     -- TODO: Make room reference on actor?
     PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
+    if _PTActorWaitAfterTalk then
+        PTWaitForActor(actor)
+    end
 end
 
 --- Rendering
@@ -1856,6 +1869,9 @@ _PTRunVerb = function()
                     _PTCurrentHotspotA
                 )
             end
+            if _PTGrabInputOnVerb then
+                PTGrabInput()
+            end
         end
         _PTCurrentVerb = nil
         _PTCurrentHotspotA = nil
@@ -1916,6 +1932,9 @@ _PTRunThreads = function()
                 coroutine.close(_PTThreads[name])
                 _PTThreads[name] = nil
                 _PTThreadsFastForward[name] = nil
+                if name == "__verb" and _PTGrabInputOnVerb then
+                    PTReleaseInput()
+                end
             else
                 count = count + 1
             end
