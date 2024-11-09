@@ -8,7 +8,9 @@
 
 #include "image.h"
 #include "log.h"
+#include "rect.h"
 #include "system.h"
+#include "utils.h"
 
 pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey)
 {
@@ -221,6 +223,64 @@ bool image_test_collision(pt_image* image, int16_t x, int16_t y, bool mask, uint
             return false;
     }
     return true;
+}
+
+void image_blit(pt_image* image, int16_t x, int16_t y, uint8_t flags)
+{
+    if (!image)
+        return;
+
+    x -= (flags & FLIP_H) ? (image->width - image->origin_x - 1) : image->origin_x;
+    y -= (flags & FLIP_V) ? (image->height - image->origin_y - 1) : image->origin_y;
+
+    pt_sys.video->blit_image(image, x, y, flags, 0, 0, image->width, image->height);
+}
+
+void image_blit_9slice(pt_image* image, int16_t x, int16_t y, uint8_t flags, uint16_t width, uint16_t height,
+    int16_t x1, int16_t y1, int16_t x2, int16_t y2)
+{
+    if (!image)
+        return;
+
+    int16_t x2_blit = width - (image->width - x2);
+    int16_t y2_blit = height - (image->height - y2);
+
+    // Top-left
+    pt_sys.video->blit_image(image, x, y, flags, 0, 0, x1, y1);
+
+    // Top center
+    for (int16_t i = x1; i < x2_blit; i += (x2 - x1)) {
+        pt_sys.video->blit_image(image, x + i, y, flags, x1, 0, x1 + MIN(x2 - x1, x2_blit - i), y1);
+    }
+
+    // Top-right
+    pt_sys.video->blit_image(image, x + x2_blit, y, flags, x2, 0, image->width, y1);
+
+    for (int16_t j = y1; j < y2_blit; j += (y2 - y1)) {
+        int16_t mid_height = MIN(y2 - y1, y2_blit - j);
+        // Mid left
+        pt_sys.video->blit_image(image, x, y + j, flags, 0, y1, x1, y2);
+
+        // Mid center
+        for (int16_t i = x1; i < x2_blit; i += (x2 - x1)) {
+            pt_sys.video->blit_image(image, x + i, y + j, flags, x1, y1, x1 + MIN(x2 - x1, x2_blit - i), y2);
+        }
+
+        // Mid-right
+        pt_sys.video->blit_image(image, x + x2_blit, y + j, flags, x2, y1, image->width, y2);
+    }
+
+    // Bottom-left
+    pt_sys.video->blit_image(image, x, y + y2_blit, flags, 0, y2, x1, image->height);
+
+    // Bottom center
+    for (int16_t i = x1; i < x2_blit; i += (x2 - x1)) {
+        pt_sys.video->blit_image(
+            image, x + i, y + y2_blit, flags, x1, y2, x1 + MIN(x2 - x1, x2_blit - i), image->height);
+    }
+
+    // Bottom-right
+    pt_sys.video->blit_image(image, x + x2_blit, y + y2_blit, flags, x2, y2, image->width, image->height);
 }
 
 void destroy_image(pt_image* image)

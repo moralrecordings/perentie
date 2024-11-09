@@ -243,7 +243,29 @@ static int lua_pt_draw_image(lua_State* L)
     int16_t y = luaL_checkinteger(L, 3);
     uint8_t flags = luaL_checkinteger(L, 4);
     // log_print("lua_pt_draw_image: %p %d %d\n", *imageptr, x, y);
-    pt_sys.video->blit_image(*imageptr, x, y, flags);
+    image_blit(*imageptr, x, y, flags);
+    return 0;
+}
+
+static int lua_pt_draw_9slice(lua_State* L)
+{
+    // pt_image **imageptr = (pt_image **)luaL_checkudata(L, 1, "PTImage");
+    pt_image** imageptr = (pt_image**)lua_touserdata(L, 1);
+    if (!imageptr) {
+        log_print("lua_pt_draw_9slice: invalid or missing image pointer\n");
+        return 0;
+    }
+    int16_t x = luaL_checkinteger(L, 2);
+    int16_t y = luaL_checkinteger(L, 3);
+    uint8_t flags = luaL_checkinteger(L, 4);
+    uint16_t width = luaL_checkinteger(L, 5);
+    uint16_t height = luaL_checkinteger(L, 6);
+    int16_t x1 = luaL_checkinteger(L, 7);
+    int16_t y1 = luaL_checkinteger(L, 8);
+    int16_t x2 = luaL_checkinteger(L, 9);
+    int16_t y2 = luaL_checkinteger(L, 10);
+    // log_print("lua_pt_draw_image: %p %d %d\n", *imageptr, x, y);
+    image_blit_9slice(*imageptr, x, y, flags, width, height, x1, y1, x2, y2);
     return 0;
 }
 
@@ -454,6 +476,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTText", lua_pt_text },
     { "_PTClearScreen", lua_pt_clear_screen },
     { "_PTDrawImage", lua_pt_draw_image },
+    { "_PTDraw9Slice", lua_pt_draw_9slice },
     { "_PTDrawLine", lua_pt_draw_line },
     { "_PTImageTestCollision", lua_pt_image_test_collision },
     { "_PTLog", lua_pt_log },

@@ -2,6 +2,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define MIN(a, b)                                                                                                      \
+    ({                                                                                                                 \
+        __typeof__(a) _a = (a);                                                                                        \
+        __typeof__(b) _b = (b);                                                                                        \
+        _a < _b ? _a : _b;                                                                                             \
+    })
+
+#define MAX(a, b)                                                                                                      \
+    ({                                                                                                                 \
+        __typeof__(a) _a = (a);                                                                                        \
+        __typeof__(b) _b = (b);                                                                                        \
+        _a > _b ? _a : _b;                                                                                             \
+    })
+
 #define FREAD_TYPE_LE(T, S)                                                                                            \
     inline T fread_##S(FILE* fp)                                                                                       \
     {                                                                                                                  \

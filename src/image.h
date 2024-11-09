@@ -58,6 +58,9 @@ inline int16_t image_bottom(pt_image* image)
 pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey);
 bool image_load(pt_image* image);
 bool image_test_collision(pt_image* image, int16_t x, int16_t y, bool mask, uint8_t flags);
+void image_blit(pt_image* image, int16_t x, int16_t y, uint8_t flags);
 void destroy_image(pt_image* image);
+void image_blit_9slice(pt_image* image, int16_t x, int16_t y, uint8_t flags, uint16_t width, uint16_t height,
+    int16_t x1, int16_t y1, int16_t x2, int16_t y2);
 
 #endif

@@ -7,8 +7,8 @@
 #include <stdlib.h>
 
 struct rect {
-    int16_t top, left;
-    int16_t bottom, right;
+    int16_t left, top;
+    int16_t right, bottom;
 };
 
 inline struct rect* create_rect()
@@ -27,8 +27,8 @@ inline struct rect* create_rect_dims(int16_t w, int16_t h)
 inline struct rect* create_rect_bounds(int16_t t, int16_t l, int16_t b, int16_t r)
 {
     struct rect* result = (struct rect*)calloc(1, sizeof(struct rect));
-    result->top = t;
     result->left = l;
+    result->top = t;
     result->right = r;
     result->bottom = b;
     return result;

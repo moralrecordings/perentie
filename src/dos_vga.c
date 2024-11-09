@@ -12,6 +12,7 @@
 #include "image.h"
 #include "log.h"
 #include "rect.h"
+#include "utils.h"
 
 // VGA blitter
 
@@ -169,7 +170,8 @@ void vga_clear()
 pt_image_vga* vga_convert_image(pt_image* image);
 void vga_destroy_hw_image(void* hw_image);
 
-void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
+void vga_blit_image(
+    pt_image* image, int16_t x, int16_t y, uint8_t flags, int16_t left, int16_t top, int16_t right, int16_t bottom)
 {
     if (!vga_framebuffer) {
         log_print("vga_blit_image: driver not inited!\n");
@@ -191,39 +193,34 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
 
     pt_image_vga* hw_image = (pt_image_vga*)image->hw_image;
 
-    struct rect* ir = create_rect_dims(hw_image->width, hw_image->height);
+    struct rect ir = { MIN(image->width, MAX(0, left)), MIN(image->height, MAX(0, top)),
+        MIN(image->width, MAX(0, right)), MIN(image->height, MAX(0, bottom)) };
 
-    struct rect* crop = create_rect_dims(SCREEN_WIDTH, SCREEN_HEIGHT);
-    // top left corner of the render area
-    x -= (flags & FLIP_H) ? (hw_image->width - image->origin_x - 1) : image->origin_x;
-    y -= (flags & FLIP_V) ? (hw_image->height - image->origin_y - 1) : image->origin_y;
-
+    struct rect crop = { 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT };
     // log_print("Blitting %s to (%d,%d) %dx%d ->", image->path, x, y, image->width, image->height);
 
     // Constrain x and y to be an absolute start offset in screen space.
     // Crop the image rectangle, based on its location in screen space.
-    if (!rect_blit_clip(&x, &y, ir, crop)) {
+    if (!rect_blit_clip(&x, &y, &ir, &crop)) {
         // log_print("Rectangle off screen\n");
-        destroy_rect(ir);
-        destroy_rect(crop);
         return;
     }
 
     // after the image rect has been clipped, flip it if required
     if (flags & FLIP_H) {
-        int16_t tmp = ir->right;
-        ir->right = hw_image->width - ir->left;
-        ir->left = hw_image->width - tmp;
+        int16_t tmp = ir.right;
+        ir.right = hw_image->width - ir.left;
+        ir.left = hw_image->width - tmp;
     }
 
     if (flags & FLIP_V) {
-        int16_t tmp = ir->bottom;
-        ir->bottom = hw_image->height - ir->top;
-        ir->top = hw_image->height - tmp;
+        int16_t tmp = ir.bottom;
+        ir.bottom = hw_image->height - ir.top;
+        ir.top = hw_image->height - tmp;
     }
 
-    // log_print("image coords for %s: (%d, %d, %d, %d) %dx%d -> (%d, %d)\n", image->path, ir->left, ir->top, ir->right,
-    // ir->bottom, rect_width(ir), rect_height(ir), x, y);
+    // log_print("image coords for %s: (%d, %d, %d, %d) %dx%d -> (%d, %d)\n", image->path, ir.left, ir.top, ir.right,
+    // ir.bottom, rect_width(&ir), rect_height(&ir), x, y);
 
     // The source data is then drawn from the image rectangle.
 
@@ -234,12 +231,11 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
         // destination plane ID in the framebuffer
         // don't ask me how the below works!
         // it was found by trial and error to sort the planes properly!
-        uint8_t pf
-            = (flags & FLIP_H) ? ((x + 3 + (((ir->right) % 4)) - pi) % 4) : ((x + (4 - (ir->left % 4)) + pi) % 4);
+        uint8_t pf = (flags & FLIP_H) ? ((x + 3 + (((ir.right) % 4)) - pi) % 4) : ((x + (4 - (ir.left % 4)) + pi) % 4);
         // image x start/end positions (corrected for plane)
-        int16_t ir_left = (ir->left >> 2) + ((ir->left % 4) > pi ? 1 : 0);
-        int16_t ir_right = (ir->right >> 2) + ((ir->right % 4) > pi ? 1 : 0);
-        // log_print("plane: %d -> %d, ir_left: %d -> %d, ir_right: %d -> %d\n", pi, pf, ir->left, ir_left, ir->right,
+        int16_t ir_left = (ir.left >> 2) + ((ir.left % 4) > pi ? 1 : 0);
+        int16_t ir_right = (ir.right >> 2) + ((ir.right % 4) > pi ? 1 : 0);
+        // log_print("plane: %d -> %d, ir_left: %d -> %d, ir_right: %d -> %d\n", pi, pf, ir.left, ir_left, ir.right,
         // ir_right);
         //   framebuffer x start position (corrected for plane)
         int16_t fx = (x >> 2) + ((x % 4) > pf ? 1 : 0);
@@ -253,13 +249,13 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
         uint8_t* fb_base = vga_framebuffer + pf * SCREEN_PLANE;
         // log_print("hw_base: %d, fb_base: %d\n", pi * hw_image->plane, pf * SCREEN_PLANE);
 
-        for (int yi = ir->top; yi < ir->bottom; yi++) {
+        for (int yi = ir.top; yi < ir.bottom; yi++) {
             // start address of the current horizontal run of pixels in the source image
             uint8_t* hw_bitmap = hw_bitmap_base + yi * hw_image->plane_pitch + ir_left;
             // start address of the current horizontal run of pixels in the source image mask
             uint8_t* hw_mask = hw_mask_base + yi * hw_image->plane_pitch + ir_left;
             // invert framebuffer y coordinate if vertical flipped
-            int16_t yf = (flags & FLIP_V) ? ((ir->bottom - ir->top - 1) - (y - y_start) + y_start) : y;
+            int16_t yf = (flags & FLIP_V) ? ((ir.bottom - ir.top - 1) - (y - y_start) + y_start) : y;
             // start address of the current horizontal run of pixels in the framebuffer
             uint8_t* fb_ptr = fb_base + (yf * (SCREEN_WIDTH >> 2)) + fx;
             if (flags & FLIP_H) {
@@ -289,8 +285,6 @@ void vga_blit_image(pt_image* image, int16_t x, int16_t y, uint8_t flags)
         }
         y = y_start;
     }
-    destroy_rect(ir);
-    destroy_rect(crop);
 }
 
 void vga_load_palette_colour(int idx)
