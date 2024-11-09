@@ -1969,6 +1969,13 @@ PTSetWalkBoxDebug = function(val)
     _PTWalkBoxDebug = val
 end
 
+local _PTImageDebug = false
+--- Set whether to draw the bounding boxes of images
+-- @tparam bool val true if the image bounding boxes are to be drawn, false otherwise.
+PTSetImageDebug = function(val)
+    _PTImageDebug = val
+end
+
 --- Set a callback for before rendering the current frame to the screen. Useful for animating object positions.
 -- @tparam function callback Function body to call.
 local _PTRenderFrameConsumer = nil
@@ -2100,12 +2107,21 @@ _PTRender = function()
     if _PTRenderFrameConsumer then
         _PTRenderFrameConsumer()
     end
+    local debugBuffer = {}
     for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list) do
         if obj.visible then
             local frame, flags = PTGetAnimationFrame(obj)
             if frame then
                 local tmp_x, tmp_y = PTRoomToScreen(x, y)
                 _PTDrawImage(frame.ptr, tmp_x, tmp_y, flags)
+                if _PTImageDebug then
+                    local w, h = PTGetImageDims(frame)
+                    local ox, oy = PTGetImageOrigin(frame)
+                    table.insert(
+                        debugBuffer,
+                        { tmp_x - ox, tmp_y - oy, tmp_x - ox + w - 1, tmp_y - oy + h - 1, tmp_x, tmp_y }
+                    )
+                end
             end
         end
     end
@@ -2126,7 +2142,23 @@ _PTRender = function()
             local frame, flags = PTGetAnimationFrame(obj)
             if frame then
                 _PTDrawImage(frame.ptr, x, y, flags)
+                if _PTImageDebug then
+                    local w, h = PTGetImageDims(frame)
+                    local ox, oy = PTGetImageOrigin(frame)
+                    table.insert(debugBuffer, { x - ox, y - oy, x - ox + w - 1, y - oy + h - 1, x, y })
+                end
             end
+        end
+    end
+    if _PTImageDebug then
+        for _, t in pairs(debugBuffer) do
+            _PTDrawLine(t[1], t[2], t[3], t[2], 0x55, 0x55, 0xff)
+            _PTDrawLine(t[3], t[2], t[3], t[4], 0x55, 0x55, 0xff)
+            _PTDrawLine(t[3], t[4], t[1], t[4], 0x55, 0x55, 0xff)
+            _PTDrawLine(t[1], t[4], t[1], t[2], 0x55, 0x55, 0xff)
+        end
+        for _, t in pairs(debugBuffer) do
+            _PTDrawLine(t[5], t[6], t[5], t[6], 0x55, 0xff, 0xff)
         end
     end
 
