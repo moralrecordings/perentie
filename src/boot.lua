@@ -258,15 +258,20 @@ end
 FLIP_H = 0x01
 FLIP_V = 0x02
 
---- Get the dimensions of an image
--- @tparam PTImage image Image to query.
+--- Get the dimensions of an image.
+-- @tparam table image @{PTImage}/@{PT9Slice} to query.
 -- @treturn integer Width of the image.
 -- @treturn integer Height of the image.
 PTGetImageDims = function(image)
-    if not image or image._type ~= "PTImage" then
+    if not image then
         return 0, 0
     end
-    return _PTGetImageDims(image.ptr)
+    if image._type == "PTImage" then
+        return _PTGetImageDims(image.ptr)
+    elseif image._type == "PT9Slice" then
+        return image.width, image.height
+    end
+    return 0, 0
 end
 
 --- Get the origin position of an image.
@@ -293,6 +298,47 @@ PTSetImageOrigin = function(image, x, y)
         return
     end
     return _PTSetImageOrigin(image.ptr, x, y)
+end
+
+--- Create a new 9-slice image reference.
+-- @tparam PTImage image Image to use as an atlas.
+-- @tparam integer x1 X coordinate in image space of left slice plane.
+-- @tparam integer y1 Y coordinate in image space of top slice plane.
+-- @tparam integer x2 X coordinate in image space of right slice plane.
+-- @tparam integer y2 Y coordinate in image space of bottom slice plane.
+-- @tparam integer width Width of resulting 9-slice image.
+-- @tparam integer height Height of resulting 9-slice image.
+PT9Slice = function(image, x1, y1, x2, y2, width, height)
+    return { _type = "PT9Slice", image = image, x1 = x1, y1 = y1, x2 = x2, y2 = y2, width = width, height = height }
+end
+
+--- Blit a @{PTImage}/@{PT9Slice} to the screen.
+-- Normally not called directly; Perentie will render
+-- everything in the display lists managed by @{PTRoomAddObject} and
+-- @{PTGlobalAddObject}.
+-- @tparam table image Image to blit to the screen.
+-- @tparam integer x X coordinate in screen space.
+-- @tparam integer y Y coordinate in screen space.
+-- @tparam integer flags Flags for rendering the image.
+PTDrawImage = function(image, x, y, flags)
+    if image then
+        if image._type == "PTImage" then
+            _PTDrawImage(image.ptr, x, y, flags)
+        elseif image._type == "PT9Slice" then
+            _PTDraw9Slice(
+                image.image.ptr,
+                x,
+                y,
+                flags,
+                image.width,
+                image.height,
+                image.x1,
+                image.y1,
+                image.x2,
+                image.y2
+            )
+        end
+    end
 end
 
 --- Calculate the delta angle between two directions.
@@ -632,9 +678,9 @@ end
 
 --- Fetch the image to use when rendering a @{PTActor}/@{PTBackground}/@{PTSprite} object.
 -- @tparam table object The object to query.
--- @treturn PTImage The image for the current frame.
+-- @treturn table The PTImage or PT9Slice for the current frame.
 -- @treturn integer Flags to render the image with.
-PTGetAnimationFrame = function(object)
+PTGetImageFromObject = function(object)
     if object and object._type == "PTSprite" then
         local anim = object.animations[object.anim_index]
         if anim then
@@ -655,7 +701,7 @@ PTGetAnimationFrame = function(object)
     elseif object and object._type == "PTBackground" then
         return object.image, 0
     elseif object and object._type == "PTActor" then
-        return PTGetAnimationFrame(object.sprite)
+        return PTGetImageFromObject(object.sprite)
     end
     return nil, 0
 end
@@ -2006,7 +2052,7 @@ local _PTUpdateMouseOver = function()
     -- Need to iterate through objects in reverse draw order
     for obj, x, y in PTIterObjects(_PTGlobalRenderList, true) do
         if obj.collision then
-            local frame, flags = PTGetAnimationFrame(obj)
+            local frame, flags = PTGetImageFromObject(obj)
             if frame and _PTImageTestCollision(frame.ptr, mouse_x - x, mouse_y - y, flags, frame.collision_mask) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
@@ -2020,7 +2066,7 @@ local _PTUpdateMouseOver = function()
     end
     for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list, true) do
         if obj.collision then
-            frame, flags = PTGetAnimationFrame(obj)
+            frame, flags = PTGetImageFromObject(obj)
             if frame and _PTImageTestCollision(frame.ptr, room_x - x, room_y - y, flags, frame.collision_mask) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
@@ -2108,20 +2154,24 @@ _PTRender = function()
         _PTRenderFrameConsumer()
     end
     local debugBuffer = {}
+
+    local blit = function(img, x, y, flags)
+        if img then
+            PTDrawImage(img, x, y, flags)
+            if _PTImageDebug then
+                local w, h = PTGetImageDims(img)
+                local ox, oy = PTGetImageOrigin(img)
+                table.insert(debugBuffer, { x - ox, y - oy, x - ox + w - 1, y - oy + h - 1, x, y })
+            end
+        end
+    end
+
     for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list) do
         if obj.visible then
-            local frame, flags = PTGetAnimationFrame(obj)
+            local frame, flags = PTGetImageFromObject(obj)
             if frame then
                 local tmp_x, tmp_y = PTRoomToScreen(x, y)
-                _PTDrawImage(frame.ptr, tmp_x, tmp_y, flags)
-                if _PTImageDebug then
-                    local w, h = PTGetImageDims(frame)
-                    local ox, oy = PTGetImageOrigin(frame)
-                    table.insert(
-                        debugBuffer,
-                        { tmp_x - ox, tmp_y - oy, tmp_x - ox + w - 1, tmp_y - oy + h - 1, tmp_x, tmp_y }
-                    )
-                end
+                blit(frame, tmp_x, tmp_y, flags)
             end
         end
     end
@@ -2139,14 +2189,9 @@ _PTRender = function()
     end
     for obj, x, y in PTIterObjects(_PTGlobalRenderList) do
         if obj.visible then
-            local frame, flags = PTGetAnimationFrame(obj)
+            local frame, flags = PTGetImageFromObject(obj)
             if frame then
-                _PTDrawImage(frame.ptr, x, y, flags)
-                if _PTImageDebug then
-                    local w, h = PTGetImageDims(frame)
-                    local ox, oy = PTGetImageOrigin(frame)
-                    table.insert(debugBuffer, { x - ox, y - oy, x - ox + w - 1, y - oy + h - 1, x, y })
-                end
+                blit(frame, x, y, flags)
             end
         end
     end
@@ -2166,7 +2211,7 @@ _PTRender = function()
         local mouse_x, mouse_y = _PTGetMousePos()
         for obj, x, y in PTIterObjects({ _PTMouseSprite }) do
             if obj.visible then
-                local frame, flags = PTGetAnimationFrame(obj)
+                local frame, flags = PTGetImageFromObject(obj)
                 if frame then
                     _PTDrawImage(frame.ptr, mouse_x, mouse_y, flags)
                 end
