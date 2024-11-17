@@ -259,15 +259,16 @@ void image_blit_9slice(pt_image* image, int16_t x, int16_t y, uint8_t flags, uin
     for (int16_t j = y1; j < y2_blit; j += (y2 - y1)) {
         int16_t mid_height = MIN(y2 - y1, y2_blit - j);
         // Mid left
-        pt_sys.video->blit_image(image, x, y + j, flags, 0, y1, x1, y2);
+        pt_sys.video->blit_image(image, x, y + j, flags, 0, y1, x1, y1 + mid_height);
 
         // Mid center
         for (int16_t i = x1; i < x2_blit; i += (x2 - x1)) {
-            pt_sys.video->blit_image(image, x + i, y + j, flags, x1, y1, x1 + MIN(x2 - x1, x2_blit - i), y2);
+            pt_sys.video->blit_image(
+                image, x + i, y + j, flags, x1, y1, x1 + MIN(x2 - x1, x2_blit - i), y1 + mid_height);
         }
 
         // Mid-right
-        pt_sys.video->blit_image(image, x + x2_blit, y + j, flags, x2, y1, image->width, y2);
+        pt_sys.video->blit_image(image, x + x2_blit, y + j, flags, x2, y1, image->width, y1 + mid_height);
     }
 
     // Bottom-left
