@@ -299,6 +299,28 @@ static int lua_pt_image_test_collision(lua_State* L)
     return 1;
 }
 
+static int lua_pt_9slice_test_collision(lua_State* L)
+{
+    pt_image** imageptr = (pt_image**)lua_touserdata(L, 1);
+    if (!imageptr) {
+        log_print("lua_pt_image_test_collision: invalid or missing image pointer\n");
+        lua_pushboolean(L, false);
+        return 1;
+    }
+    int16_t x = luaL_checkinteger(L, 2);
+    int16_t y = luaL_checkinteger(L, 3);
+    uint8_t flags = luaL_checkinteger(L, 4);
+    bool mask = lua_toboolean(L, 5);
+    uint16_t width = luaL_checkinteger(L, 6);
+    uint16_t height = luaL_checkinteger(L, 7);
+    int16_t x1 = luaL_checkinteger(L, 8);
+    int16_t y1 = luaL_checkinteger(L, 9);
+    int16_t x2 = luaL_checkinteger(L, 10);
+    int16_t y2 = luaL_checkinteger(L, 11);
+    lua_pushboolean(L, image_test_collision_9slice(*imageptr, x, y, mask, flags, width, height, x1, y1, x2, y2));
+    return 1;
+}
+
 static int lua_pt_log(lua_State* L)
 {
     const char* line = luaL_checkstring(L, 1);
@@ -479,6 +501,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTDraw9Slice", lua_pt_draw_9slice },
     { "_PTDrawLine", lua_pt_draw_line },
     { "_PTImageTestCollision", lua_pt_image_test_collision },
+    { "_PT9SliceTestCollision", lua_pt_9slice_test_collision },
     { "_PTLog", lua_pt_log },
     { "_PTPumpEvent", lua_pt_pump_event },
     { "_PTGetMousePos", lua_pt_get_mouse_pos },

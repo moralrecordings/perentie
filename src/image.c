@@ -225,6 +225,33 @@ bool image_test_collision(pt_image* image, int16_t x, int16_t y, bool mask, uint
     return true;
 }
 
+bool image_test_collision_9slice(pt_image* image, int16_t x, int16_t y, bool mask, uint8_t flags, uint16_t width,
+    uint16_t height, int16_t x1, int16_t y1, int16_t x2, int16_t y2)
+{
+    if (!image)
+        return false;
+    // bounding box check
+    if (x < 0 || x >= width || y < 0 || y >= height)
+        return false;
+    // pixel check
+    if (mask) {
+        int16_t x2_target = width - (image->width - x2);
+        int16_t y2_target = height - (image->height - y2);
+        if (x >= x1 && x < x2_target) {
+            x = x1 + ((x - x1) % (x2 - x1));
+        } else if (x >= x2_target) {
+            x = x2 + (x - x2_target);
+        }
+        if (y >= y1 && y < y2_target) {
+            y = y1 + ((y - y1) % (y2 - y1));
+        } else if (y >= y2_target) {
+            y = y2 + (y - y2_target);
+        }
+        return image_test_collision(image, x, y, mask, flags);
+    }
+    return true;
+}
+
 void image_blit(pt_image* image, int16_t x, int16_t y, uint8_t flags)
 {
     if (!image)

@@ -222,7 +222,7 @@ end
 -- @tparam[opt=0] integer origin_x Origin x coordinate, relative to top-left corner.
 -- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
 -- @tparam[opt=-1] integer colourkey Palette index to use as colourkey.
--- @tparam[opt=true] collision_mask boolean Whether to use the transparency mask for collision detection.
+-- @tparam[opt=true] boolean collision_mask Whether to use the transparency mask for collision detection.
 -- @treturn PTImage The new image.
 PTImage = function(path, origin_x, origin_y, colourkey, collision_mask)
     if not origin_x then
@@ -253,6 +253,51 @@ PTImageSequence = function(path_format, start, finish, origin_x, origin_y)
         table.insert(result, PTImage(string.format(path_format, i), origin_x, origin_y))
     end
     return result
+end
+
+--- 9-slice image reference structure.
+-- @tfield string _type "PT9Slice"
+-- @tfield PTImage image Image to use as an atlas.
+-- @tfield integer x1 X coordinate in image space of left slice plane.
+-- @tfield integer y1 Y coordinate in image space of top slice plane.
+-- @tfield integer x2 X coordinate in image space of right slice plane.
+-- @tfield integer y2 Y coordinate in image space of bottom slice plane.
+-- @tfield integer width Width of resulting 9-slice image.
+-- @tfield integer height Height of resulting 9-slice image.
+-- @table PT9Slice
+
+--- Create a new 9-slice image reference.
+-- @tparam PTImage image Image to use as an atlas.
+-- @tparam integer x1 X coordinate in image space of left slice plane.
+-- @tparam integer y1 Y coordinate in image space of top slice plane.
+-- @tparam integer x2 X coordinate in image space of right slice plane.
+-- @tparam integer y2 Y coordinate in image space of bottom slice plane.
+-- @tparam[opt=0] integer width Width of resulting 9-slice image.
+-- @tparam[opt=0] integer height Height of resulting 9-slice image.
+-- @treturn PT9Slice The new image reference.
+PT9Slice = function(image, x1, y1, x2, y2, width, height)
+    if not width then
+        width = 0
+    end
+    if not height then
+        height = 0
+    end
+    return { _type = "PT9Slice", image = image, x1 = x1, y1 = y1, x2 = x2, y2 = y2, width = width, height = height }
+end
+
+--- Create a copy of a 9-slice image reference with different dimensions.
+-- @tparam PTSlice slice 9-slice image reference to use as a reference.
+-- @tparam integer width Width of resulting 9-slice image.
+-- @tparam integer height Height of resulting 9-slice image.
+-- @treturn PT9Slice The new image reference.
+PT9SliceCopy = function(slice, width, height)
+    if not slice then
+        return nil
+    end
+    if slice._type ~= "PT9Slice" then
+        return nil
+    end
+    return PT9Slice(slice.image, slice.x1, slice.y1, slice.x2, slice.y2, width, height)
 end
 
 FLIP_H = 0x01
@@ -300,18 +345,6 @@ PTSetImageOrigin = function(image, x, y)
     return _PTSetImageOrigin(image.ptr, x, y)
 end
 
---- Create a new 9-slice image reference.
--- @tparam PTImage image Image to use as an atlas.
--- @tparam integer x1 X coordinate in image space of left slice plane.
--- @tparam integer y1 Y coordinate in image space of top slice plane.
--- @tparam integer x2 X coordinate in image space of right slice plane.
--- @tparam integer y2 Y coordinate in image space of bottom slice plane.
--- @tparam integer width Width of resulting 9-slice image.
--- @tparam integer height Height of resulting 9-slice image.
-PT9Slice = function(image, x1, y1, x2, y2, width, height)
-    return { _type = "PT9Slice", image = image, x1 = x1, y1 = y1, x2 = x2, y2 = y2, width = width, height = height }
-end
-
 --- Blit a @{PTImage}/@{PT9Slice} to the screen.
 -- Normally not called directly; Perentie will render
 -- everything in the display lists managed by @{PTRoomAddObject} and
@@ -341,10 +374,35 @@ PTDrawImage = function(image, x, y, flags)
     end
 end
 
+PTTestImageCollision = function(image, x, y, flags, collision_mask)
+    if not image then
+        return false
+    end
+    if image._type == "PTImage" then
+        return _PTImageTestCollision(image.ptr, x, y, flags, collision_mask)
+    end
+    if image._type == "PT9Slice" and image.image then
+        return _PT9SliceTestCollision(
+            image.image.ptr,
+            x,
+            y,
+            flags,
+            collision_mask,
+            image.width,
+            image.height,
+            image.x1,
+            image.y1,
+            image.x2,
+            image.y2
+        )
+    end
+    return false
+end
+
 --- Calculate the delta angle between two directions.
 -- @tparam integer src Start direction, in degrees clockwise from north.
 -- @tparam integer dest End direction, in degrees clockwise from north.
--- @tresult integer Angle between the two directions, in degrees clockwise.
+-- @treturn integer Angle between the two directions, in degrees clockwise.
 PTAngleDelta = function(src, dest)
     return ((dest - src + 180) % 360) - 180
 end
@@ -352,7 +410,7 @@ end
 --- Calculate a direction angle mirrored by a plane.
 -- @tparam integer src Start direction, in degrees clockwise from north.
 -- @tparam integer plane Plane direction, in degrees clockwise from north.
--- @tresult integer Reflected direction, in degrees clockwise from north.
+-- @treturn integer Reflected direction, in degrees clockwise from north.
 PTAngleMirror = function(src, plane)
     local delta = PTAngleDelta(plane, src)
     return (plane - delta + 360) % 360
@@ -372,7 +430,7 @@ end
 -- @tparam[opt=0] integer x X coordinate.
 -- @tparam[opt=0] integer y Y coordinate.
 -- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
--- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
+-- @tparam[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
 -- @treturn PTBackground The new background.
 PTBackground = function(image, x, y, z, collision)
     if not x then
@@ -629,7 +687,7 @@ PTGroupRemoveObject = function(group, object)
 end
 
 --- Iterate through a list of renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) objects. PTGroups will be flattened, leaving only PTActor/PTBackground/PTSprite objects with adjusted positions.
--- @tparam table List of objects.
+-- @tparam table objects List of objects.
 -- @tparam[opt=false] boolean reverse Whether to iterate in reverse.
 -- @treturn function An iterator function that returns an object, a x coordinate and a y coordinate.
 PTIterObjects = function(objects, reverse)
@@ -728,6 +786,22 @@ PTGlobalRemoveObject = function(object)
         return a.z < b.z
     end)
 end
+
+--- GUI controls
+-- @section controls
+
+--- Button structure.
+-- @tfield string _type "PTButton"
+-- @table PTButton
+
+-- How do we want to deal with the GUI?
+-- We don't need a layout engine. Assume fixed positioning.
+-- Assume we give it an x, y, width and height
+-- Assume we have three images for button state (default, hover, active)
+-- Assume whatever thing is the focus sits in the middle.
+-- We can't use the image collision detection routine.
+
+PTButton = function() end
 
 --- Text
 -- @section text
@@ -1474,7 +1548,7 @@ end
 
 --- Load a music file in Reality Adlib Tracker format
 -- @tparam string path The path to the file.
--- @tresult boolean Whether the file was successfully loaded.
+-- @treturn boolean Whether the file was successfully loaded.
 PTRadLoad = function(path)
     return _PTRadLoad(path)
 end
@@ -2053,7 +2127,7 @@ local _PTUpdateMouseOver = function()
     for obj, x, y in PTIterObjects(_PTGlobalRenderList, true) do
         if obj.collision then
             local frame, flags = PTGetImageFromObject(obj)
-            if frame and _PTImageTestCollision(frame.ptr, mouse_x - x, mouse_y - y, flags, frame.collision_mask) then
+            if frame and PTTestImageCollision(frame, mouse_x - x, mouse_y - y, flags, frame.collision_mask) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
@@ -2067,7 +2141,7 @@ local _PTUpdateMouseOver = function()
     for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list, true) do
         if obj.collision then
             frame, flags = PTGetImageFromObject(obj)
-            if frame and _PTImageTestCollision(frame.ptr, room_x - x, room_y - y, flags, frame.collision_mask) then
+            if frame and PTTestImageCollision(frame, room_x - x, room_y - y, flags, frame.collision_mask) then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
