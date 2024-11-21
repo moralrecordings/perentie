@@ -725,7 +725,17 @@ PTIterObjects = function(objects, reverse)
                     return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
                 end
                 group_iter = nil
-            elseif obj._type == "PTActor" or obj._type == "PTBackground" or obj._type == "PTSprite" then
+            elseif obj._type == "PTPanel" then
+                if #obj.objects > 0 then
+                    group_iter = PTIterObjects(obj.objects, reverse)
+                end
+                return obj, obj.x, obj.y
+            elseif
+                obj._type == "PTActor"
+                or obj._type == "PTBackground"
+                or obj._type == "PTSprite"
+                or obj._type == "PTButton"
+            then
                 i = i + 1
                 return obj, obj.x, obj.y
             end
@@ -739,27 +749,41 @@ end
 -- @treturn table The PTImage or PT9Slice for the current frame.
 -- @treturn integer Flags to render the image with.
 PTGetImageFromObject = function(object)
-    if object and object._type == "PTSprite" then
-        local anim = object.animations[object.anim_index]
-        if anim then
-            if anim.rate == 0 then
-                -- Rate is 0, don't automatically change frames
-                if anim.current_frame == 0 then
+    if object then
+        if object._type == "PTSprite" then
+            local anim = object.animations[object.anim_index]
+            if anim then
+                if anim.rate == 0 then
+                    -- Rate is 0, don't automatically change frames
+                    if anim.current_frame == 0 then
+                        anim.current_frame = 1
+                    end
+                elseif anim.current_frame == 0 then
                     anim.current_frame = 1
+                    anim.next_wait = PTGetMillis() + (1000 // anim.rate)
+                elseif PTGetMillis() > anim.next_wait then
+                    anim.current_frame = (anim.current_frame % #anim.frames) + 1
+                    anim.next_wait = PTGetMillis() + (1000 // anim.rate)
                 end
-            elseif anim.current_frame == 0 then
-                anim.current_frame = 1
-                anim.next_wait = PTGetMillis() + (1000 // anim.rate)
-            elseif PTGetMillis() > anim.next_wait then
-                anim.current_frame = (anim.current_frame % #anim.frames) + 1
-                anim.next_wait = PTGetMillis() + (1000 // anim.rate)
+                return anim.frames[anim.current_frame], object.anim_flags
             end
-            return anim.frames[anim.current_frame], object.anim_flags
+        elseif object._type == "PTBackground" then
+            return object.image, 0
+        elseif object._type == "PTActor" then
+            return PTGetImageFromObject(object.sprite)
+        elseif object._type == "PTPanel" then
+            return object.image, 0
+        elseif object._type == "PTButton" then
+            if object.disabled and object.images.disabled then
+                return object.images.disabled, 0
+            elseif object.active and object.images.active then
+                return object.images.active, 0
+            elseif object.hover and object.images.hover then
+                return object.images.hover, 0
+            elseif object.images.default then
+                return object.images.default, 0
+            end
         end
-    elseif object and object._type == "PTBackground" then
-        return object.image, 0
-    elseif object and object._type == "PTActor" then
-        return PTGetImageFromObject(object.sprite)
     end
     return nil, 0
 end
@@ -816,23 +840,117 @@ end
 -- PTTextBox
 --- Has a callback for edit and a callback for submit
 
-PTPanel = function(image, x, y, width, height)
-    return { _type = "PTPanel", image = image, x = x, y = y, width = width, height = height }
+--- Panel structure
+-- @tfield string _type "PTPanel"
+-- @tfield table image ${PTImage}/${PT9Slice} to use as a background.
+-- @tfield integer x X coordinate in screen space.
+-- @tfield integer y Y coordinate in screen space.
+-- @tfield integer width Width of panel.
+-- @tfield integer height Height of panel.
+-- @tfield boolean visible Whether panel is visible.
+-- @tfield table objects Child widgets held by panel.
+-- @table PTPanel
+
+--- Create a new panel.
+-- @tparam table image ${PTImage}/${PT9Slice} to use as a background.
+-- @tparam integer x X coordinate in screen space.
+-- @tparam integer y Y coordinate in screen space.
+-- @tparam integer width Width of panel.
+-- @tparam integer height Height of panel.
+-- @tparam[opt=true] boolean visible Whether panel is visible.
+-- @treturn PTPanel The new panel.
+PTPanel = function(image, x, y, width, height, visible)
+    if image and image._type == "PT9Slice" then
+        image = PT9SliceCopy(image, width, height)
+    end
+    if visible == nil then
+        visible = true
+    end
+    return {
+        _type = "PTPanel",
+        image = image,
+        x = x,
+        y = y,
+        width = width,
+        height = height,
+        objects = {},
+        visible = visible,
+        origin_x = 0,
+        origin_y = 0,
+    }
 end
 
 PTButton = function(images, x, y, width, height, inner)
+    local target_images = {}
+    if images then
+        for _, key in ipairs({ "default", "hover", "active", "disabled" }) do
+            if images[key] and images[key]._type == "PT9Slice" then
+                target_images[key] = PT9SliceCopy(images[key], width, height)
+            else
+                target_images[key] = images[key]
+            end
+        end
+    end
     return {
         _type = "PTButton",
-        images = images,
+        images = target_images,
         x = x,
         y = y,
+        z = 0,
         width = width,
         height = height,
         inner = inner,
         hover = false,
         active = false,
         disabled = false,
+        visible = true,
+        origin_x = 0,
+        origin_y = 0,
     }
+end
+
+_PTPanelList = {}
+PTAddPanel = function(panel)
+    if panel and panel._type == "PTPanel" then
+        _PTAddToList(_PTPanelList, panel)
+    end
+end
+
+PTRemovePanel = function(panel)
+    if panel and panel._type == "PTPanel" then
+        _PTRemoveFromList(_PTPanelList, panel)
+    end
+end
+
+PTPanelAddObject = function(panel, object)
+    if panel and panel._type == "PTPanel" then
+        _PTAddToList(panel.objects, object)
+    end
+    table.sort(panel.objects, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+PTPanelRemoveObject = function(panel, object)
+    if panel and panel._type == "PTPanel" then
+        _PTRemoveFromList(panel.objects, object)
+    end
+    table.sort(panel.objects, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+_PTTestRect = function(x, y, width, height, test_x, test_y)
+    return (test_x >= x) and (test_x < (x + width)) and (test_y >= y) and (test_y < (y + height))
+end
+
+_PTUpdateGUI = function()
+    local mouse_x, mouse_y = PTGetMousePos()
+    for obj, x, y in PTIterObjects(_PTPanelList) do
+        if obj._type == "PTButton" then
+            obj.hover = _PTTestRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
+        end
+    end
 end
 
 --- Text
@@ -2040,10 +2158,23 @@ PTReleaseInput = function()
     _PTInputGrabbed = false
 end
 
+local _PTGamePaused = false
+PTPauseGame = function()
+    _PTGamePaused = true
+end
+
+PTUnpauseGame = function()
+    _PTGamePaused = false
+end
+
 --- Run and handle execution for all of the threads.
 -- @local
 -- @treturn integer Number of threads still alive.
 _PTRunThreads = function()
+    -- If the game is paused, don't run coroutines.
+    if _PTGamePaused then
+        return
+    end
     _PTRunVerb()
     local count = 0
     for name, thread in pairs(_PTThreads) do
@@ -2184,6 +2315,7 @@ local _PTUpdateMouseOver = function()
             end
         end
     end
+
     if _PTMouseOver ~= nil then
         _PTMouseOver = nil
         if _PTMouseOverConsumer then
@@ -2194,6 +2326,9 @@ end
 
 local _PTUpdateRoom = function()
     if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+        return
+    end
+    if _PTGamePaused then
         return
     end
     for i, actor in ipairs(_PTCurrentRoom.actors) do
@@ -2229,24 +2364,27 @@ _PTEvents = function()
     local ev = _PTPumpEvent()
     while ev do
         local result = 0
-        if not _PTInputGrabbed then
-            if _PTGlobalEventConsumers[ev.type] then
-                result = _PTGlobalEventConsumers[ev.type](ev)
-            end
-        else
+        if _PTInputGrabbed then
             -- Grabbed input mode, intercept events
             if ev.type == "keyDown" and ev.key == "escape" then
                 _PTThreadsFastForward["__verb"] = true
             elseif ev.type == "mouseDown" and _PTThreadsActorWait["__verb"] then
                 _PTThreadsActorWait["__verb"].talk_next_wait = _PTGetMillis()
             end
+        elseif _PTGamePaused then
+            -- Don't run event consumers while paused
+        else
+            if _PTGlobalEventConsumers[ev.type] then
+                result = _PTGlobalEventConsumers[ev.type](ev)
+            end
         end
         ev = _PTPumpEvent()
     end
-    if not _PTInputGrabbed then
+    if not _PTInputGrabbed and not _PTGamePaused then
         _PTUpdateMouseOver()
     end
     _PTUpdateRoom()
+    _PTUpdateGUI()
 end
 
 _PTRender = function()
@@ -2301,6 +2439,19 @@ _PTRender = function()
             end
         end
     end
+    for _, panel in ipairs(_PTPanelList) do
+        if panel.visible then
+            for obj, x, y in PTIterObjects({ panel }) do
+                if obj.visible then
+                    local frame, flags = PTGetImageFromObject(obj)
+                    if frame then
+                        blit(frame, x, y, flags)
+                    end
+                end
+            end
+        end
+    end
+
     if _PTImageDebug then
         for _, t in pairs(debugBuffer) do
             _PTDrawLine(t[1], t[2], t[3], t[2], 0x55, 0x55, 0xff)
