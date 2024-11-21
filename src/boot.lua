@@ -730,12 +730,12 @@ PTIterObjects = function(objects, reverse)
                     group_iter = PTIterObjects(obj.objects, reverse)
                 end
                 return obj, obj.x, obj.y
-            elseif
-                obj._type == "PTActor"
-                or obj._type == "PTBackground"
-                or obj._type == "PTSprite"
-                or obj._type == "PTButton"
-            then
+            elseif obj._type == "PTButton" then
+                if #obj.objects > 0 then
+                    group_iter = PTIterObjects(obj.objects, reverse)
+                end
+                return obj, obj.x, obj.y
+            elseif obj._type == "PTActor" or obj._type == "PTBackground" or obj._type == "PTSprite" then
                 i = i + 1
                 return obj, obj.x, obj.y
             end
@@ -880,7 +880,7 @@ PTPanel = function(image, x, y, width, height, visible)
     }
 end
 
-PTButton = function(images, x, y, width, height, inner)
+PTButton = function(images, x, y, width, height, objects)
     local target_images = {}
     if images then
         for _, key in ipairs({ "default", "hover", "active", "disabled" }) do
@@ -899,7 +899,7 @@ PTButton = function(images, x, y, width, height, inner)
         z = 0,
         width = width,
         height = height,
-        inner = inner,
+        objects = objects,
         hover = false,
         active = false,
         disabled = false,
@@ -944,12 +944,41 @@ _PTTestRect = function(x, y, width, height, test_x, test_y)
     return (test_x >= x) and (test_x < (x + width)) and (test_y >= y) and (test_y < (y + height))
 end
 
+local _PTGUIActiveObject = nil
+local _PTGUIMouseOver = nil
 _PTUpdateGUI = function()
+    local has_changed = false
     local mouse_x, mouse_y = PTGetMousePos()
-    for obj, x, y in PTIterObjects(_PTPanelList) do
-        if obj._type == "PTButton" then
-            obj.hover = _PTTestRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
+    for _, panel in ipairs(_PTPanelList) do
+        if panel.visible then
+            for obj, x, y in PTIterObjects({ panel }) do
+                if obj._type == "PTButton" then
+                    local test = _PTTestRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
+                    obj.hover = test
+                    if test then
+                        _PTGUIMouseOver = obj
+                        has_changed = true
+                    end
+                    obj.active = test and (obj == _PTGUIActiveObject)
+                end
+            end
         end
+    end
+    if not has_changed then
+        _PTGUIMouseOver = nil
+    end
+end
+
+_PTGUIEvent = function(ev)
+    if ev.type == "mouseDown" and _PTGUIMouseOver then
+        if _PTGUIMouseOver._type == "PTButton" then
+            _PTGUIActiveObject = _PTGUIMouseOver
+        end
+    elseif ev.type == "mouseUp" and _PTGUIActiveObject then
+        if _PTGUIActiveObject == _PTGUIMouseOver then
+            print(_PTGUIActiveObject)
+        end
+        _PTGUIActiveObject = nil
     end
 end
 
@@ -2378,6 +2407,7 @@ _PTEvents = function()
                 result = _PTGlobalEventConsumers[ev.type](ev)
             end
         end
+        _PTGUIEvent(ev)
         ev = _PTPumpEvent()
     end
     if not _PTInputGrabbed and not _PTGamePaused then
