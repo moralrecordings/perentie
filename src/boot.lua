@@ -797,11 +797,43 @@ end
 -- How do we want to deal with the GUI?
 -- We don't need a layout engine. Assume fixed positioning.
 -- Assume we give it an x, y, width and height
--- Assume we have three images for button state (default, hover, active)
+-- Assume we have three images for button state (default, hover, active, disabled)
 -- Assume whatever thing is the focus sits in the middle.
--- We can't use the image collision detection routine.
+-- We can't use the image collision detection routine?
+-- Have GetImageFromObject return the correct image.
+-- Main thing is we don't want to have to do boilerplate
+-- for rendering or clicking.
 
-PTButton = function() end
+-- PTPanel
+-- PTButton
+--- Has one callback for activation
+-- PTSlider
+--- Has one callback for value change
+-- PTRadio
+--- Has one callback for activation
+-- PTCheckBox
+--- Has one callback for activation
+-- PTTextBox
+--- Has a callback for edit and a callback for submit
+
+PTPanel = function(image, x, y, width, height)
+    return { _type = "PTPanel", image = image, x = x, y = y, width = width, height = height }
+end
+
+PTButton = function(images, x, y, width, height, inner)
+    return {
+        _type = "PTButton",
+        images = images,
+        x = x,
+        y = y,
+        width = width,
+        height = height,
+        inner = inner,
+        hover = false,
+        active = false,
+        disabled = false,
+    }
+end
 
 --- Text
 -- @section text
