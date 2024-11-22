@@ -735,6 +735,13 @@ PTIterObjects = function(objects, reverse)
                     group_iter = PTIterObjects(obj.objects, reverse)
                 end
                 return obj, obj.x, obj.y
+            elseif obj._type == "PTHorizSlider" and #obj.objects > 0 then
+                group_iter = PTIterObjects(obj.objects, reverse)
+                local inner, inner_x, inner_y = group_iter()
+                if inner then
+                    return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
+                end
+                group_iter = nil
             elseif obj._type == "PTActor" or obj._type == "PTBackground" or obj._type == "PTSprite" then
                 i = i + 1
                 return obj, obj.x, obj.y
@@ -880,7 +887,45 @@ PTPanel = function(image, x, y, width, height, visible)
     }
 end
 
-PTButton = function(images, x, y, width, height, objects)
+PTHorizSlider = function(images, x, y, width, height, track_size, handle_size, move_callback, set_callback)
+    local target_images = {}
+    if images then
+        for _, key in ipairs({ "default", "hover", "active", "disabled" }) do
+            if images[key] and images[key]._type == "PT9Slice" then
+                target_images[key] = PT9SliceCopy(images[key], handle_size, height)
+            else
+                target_images[key] = images[key]
+            end
+        end
+        if images["track"] and images["track"]._type == "PT9Slice" then
+            target_images["track"] = PT9SliceCopy(images["track"], width, track_size)
+        else
+            target_images["track"] = images["track"]
+        end
+    end
+
+    return {
+        _type = "PTHorizSlider",
+        images = target_images,
+        x = x,
+        y = y,
+        z = 0,
+        hover = false,
+        active = false,
+        disabled = false,
+        visible = true,
+        origin_x = 0,
+        origin_y = 0,
+        move_callback = move_callback,
+        set_callback = set_callback,
+        objects = {
+            PTBackground(target_images["track"], 0, (height - track_size) // 2),
+            PTBackground(target_images["default"]),
+        },
+    }
+end
+
+PTButton = function(images, x, y, width, height, objects, callback)
     local target_images = {}
     if images then
         for _, key in ipairs({ "default", "hover", "active", "disabled" }) do
@@ -906,6 +951,7 @@ PTButton = function(images, x, y, width, height, objects)
         visible = true,
         origin_x = 0,
         origin_y = 0,
+        callback = callback,
     }
 end
 
@@ -960,6 +1006,14 @@ _PTUpdateGUI = function()
                         has_changed = true
                     end
                     obj.active = test and (obj == _PTGUIActiveObject)
+                elseif obj._type == "PTHorizSlider" then
+                    local test = _PTTestRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
+                    obj.hover = test
+                    if test then
+                        _PTGUIMouseOver = obj
+                        has_changed = true
+                    end
+                    obj.active = test and (obj == _PTGUIActiveObject)
                 end
             end
         end
@@ -976,7 +1030,7 @@ _PTGUIEvent = function(ev)
         end
     elseif ev.type == "mouseUp" and _PTGUIActiveObject then
         if _PTGUIActiveObject == _PTGUIMouseOver then
-            print(_PTGUIActiveObject)
+            PTStartThread("__gui", _PTGUIActiveObject.callback)
         end
         _PTGUIActiveObject = nil
     end
@@ -2201,57 +2255,58 @@ end
 -- @treturn integer Number of threads still alive.
 _PTRunThreads = function()
     -- If the game is paused, don't run coroutines.
-    if _PTGamePaused then
-        return
+    if not _PTGamePaused then
+        _PTRunVerb()
     end
-    _PTRunVerb()
     local count = 0
     for name, thread in pairs(_PTThreads) do
-        -- Check if the thread is supposed to be asleep
-        local is_awake = true
-        if _PTThreadsActorWait[name] then
-            is_awake = PTActorUpdate(_PTThreadsActorWait[name], _PTThreadsFastForward[name])
-            if is_awake then
-                _PTThreadsActorWait[name] = nil
-            end
-        elseif _PTThreadsFastForward[name] then
+        if not _PTGamePaused or (name == "__gui") then
+            -- Check if the thread is supposed to be asleep
+            local is_awake = true
+            if _PTThreadsActorWait[name] then
+                is_awake = PTActorUpdate(_PTThreadsActorWait[name], _PTThreadsFastForward[name])
+                if is_awake then
+                    _PTThreadsActorWait[name] = nil
+                end
+            elseif _PTThreadsFastForward[name] then
             -- Ignore all sleeps, go at top speed.
-        elseif _PTThreadsSleepUntil[name] then
-            if _PTThreadsSleepUntil[name] > _PTGetMillis() then
-                is_awake = false
-            else
-                _PTThreadsSleepUntil[name] = nil
+            elseif _PTThreadsSleepUntil[name] then
+                if _PTThreadsSleepUntil[name] > _PTGetMillis() then
+                    is_awake = false
+                else
+                    _PTThreadsSleepUntil[name] = nil
+                end
             end
-        end
-        if is_awake then
-            -- Tell the watchdog to chomp the thread if we take longer than 10000 instructions.
-            if _PTWatchdogEnabled then
-                debug.sethook(thread, _PTWatchdog, "", _PTWatchdogLimit)
-            end
-            -- Resume the thread, let it run until the next sleep command
-            local success, result = coroutine.resume(thread)
-            -- Pet the watchdog for a job well done
-            debug.sethook(thread)
+            if is_awake then
+                -- Tell the watchdog to chomp the thread if we take longer than 10000 instructions.
+                if _PTWatchdogEnabled then
+                    debug.sethook(thread, _PTWatchdog, "", _PTWatchdogLimit)
+                end
+                -- Resume the thread, let it run until the next sleep command
+                local success, result = coroutine.resume(thread)
+                -- Pet the watchdog for a job well done
+                debug.sethook(thread)
 
-            -- Handle the response from the execution run.
-            if not success then
-                PTLog("PTRunThreads(): Thread %s errored:\n  %s", name, result)
-                PTLog(debug.traceback(_PTThreads[name]))
-            end
-            local status = coroutine.status(thread)
-            if status == "dead" then
-                PTLog("PTRunThreads(): Thread %s terminated", name)
-                coroutine.close(_PTThreads[name])
-                _PTThreads[name] = nil
-                _PTThreadsFastForward[name] = nil
-                if name == "__verb" and _PTGrabInputOnVerb then
-                    PTReleaseInput()
+                -- Handle the response from the execution run.
+                if not success then
+                    PTLog("PTRunThreads(): Thread %s errored:\n  %s", name, result)
+                    PTLog(debug.traceback(_PTThreads[name]))
+                end
+                local status = coroutine.status(thread)
+                if status == "dead" then
+                    PTLog("PTRunThreads(): Thread %s terminated", name)
+                    coroutine.close(_PTThreads[name])
+                    _PTThreads[name] = nil
+                    _PTThreadsFastForward[name] = nil
+                    if name == "__verb" and _PTGrabInputOnVerb then
+                        PTReleaseInput()
+                    end
+                else
+                    count = count + 1
                 end
             else
                 count = count + 1
             end
-        else
-            count = count + 1
         end
     end
     return count
