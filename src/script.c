@@ -575,6 +575,17 @@ void script_init()
     }
     lua_setglobal(main_thread, "inspect");
 
+    // load cbor module
+#include "cbor.h"
+    if (result != LUA_OK) {
+        log_print("script_init(): cbor: %s\n", lua_tostring(main_thread, -1));
+        luaL_traceback(main_thread, main_thread, NULL, 1);
+        log_print("%s", lua_tostring(main_thread, 1));
+        lua_pop(main_thread, 1);
+        exit(1);
+    }
+    lua_setglobal(main_thread, "cbor");
+
     // load perentie Lua code
 #include "boot.h"
     if (result != LUA_OK) {

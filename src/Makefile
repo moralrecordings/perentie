@@ -54,13 +54,19 @@ boot.lo: boot.lua
 boot.h: boot.lo
 	$(LUA) bin2c.lua boot.lo > boot.h
 
+cbor.lo: cbor.lua
+	$(LUAC) -o cbor.lo cbor.lua
+
+cbor.h: cbor.lo
+	$(LUA) bin2c.lua cbor.lo > cbor.h
+
 inspect.lo: inspect.lua
 	$(LUAC) -o inspect.lo inspect.lua
 
 inspect.h: inspect.lo
 	$(LUA) bin2c.lua inspect.lo > inspect.h
 
-script.o: script.c boot.h inspect.h
+script.o: script.c boot.h cbor.h inspect.h
 	$(CC) $(CFLAGS) -g -c script.c -o script.o
 
 %.o : %.c
