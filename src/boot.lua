@@ -737,11 +737,7 @@ PTIterObjects = function(objects, reverse)
                 return obj, obj.x, obj.y
             elseif obj._type == "PTHorizSlider" and #obj.objects > 0 then
                 group_iter = PTIterObjects(obj.objects, reverse)
-                local inner, inner_x, inner_y = group_iter()
-                if inner then
-                    return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
-                end
-                group_iter = nil
+                return obj, obj.x, obj.y
             elseif obj._type == "PTActor" or obj._type == "PTBackground" or obj._type == "PTSprite" then
                 i = i + 1
                 return obj, obj.x, obj.y
@@ -887,7 +883,33 @@ PTPanel = function(image, x, y, width, height, visible)
     }
 end
 
-PTHorizSlider = function(images, x, y, width, height, track_size, handle_size, move_callback, set_callback)
+--- Create a new horizontal slider control.
+-- @tparam table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled", "track"
+-- @tparam integer x X coordinate.
+-- @tparam integer y Y coordinate.
+-- @tparam integer width Width of the control.
+-- @tparam integer height Height of the control.
+-- @tparam integer track_size Height of the track image.
+-- @tparam integer handle_size Width of the handle image.
+-- @tparam integer value Start value of the slider.
+-- @tparam integer min_value Minimum permitted value.
+-- @tparam integer max_value Maximum permitted value.
+-- @tparam function change_callback Callback to run when slider changes position.
+-- @tparam function set_callback Callback to run when the value is set.
+PTHorizSlider = function(
+    images,
+    x,
+    y,
+    width,
+    height,
+    track_size,
+    handle_size,
+    value,
+    min_value,
+    max_value,
+    change_callback,
+    set_callback
+)
     local target_images = {}
     if images then
         for _, key in ipairs({ "default", "hover", "active", "disabled" }) do
@@ -906,17 +928,24 @@ PTHorizSlider = function(images, x, y, width, height, track_size, handle_size, m
 
     return {
         _type = "PTHorizSlider",
+        value = value,
+        min_value = min_value,
+        max_value = max_value,
         images = target_images,
         x = x,
         y = y,
         z = 0,
+        width = width,
+        height = height,
+        track_size = track_size,
+        handle_size = handle_size,
         hover = false,
         active = false,
         disabled = false,
         visible = true,
         origin_x = 0,
         origin_y = 0,
-        move_callback = move_callback,
+        change_callback = change_callback,
         set_callback = set_callback,
         objects = {
             PTBackground(target_images["track"], 0, (height - track_size) // 2),
@@ -990,8 +1019,8 @@ _PTTestRect = function(x, y, width, height, test_x, test_y)
     return (test_x >= x) and (test_x < (x + width)) and (test_y >= y) and (test_y < (y + height))
 end
 
-local _PTGUIActiveObject = nil
-local _PTGUIMouseOver = nil
+_PTGUIActiveObject = nil
+_PTGUIMouseOver = nil
 _PTUpdateGUI = function()
     local has_changed = false
     local mouse_x, mouse_y = PTGetMousePos()
@@ -1013,7 +1042,26 @@ _PTUpdateGUI = function()
                         _PTGUIMouseOver = obj
                         has_changed = true
                     end
-                    obj.active = test and (obj == _PTGUIActiveObject)
+                    obj.active = (obj == _PTGUIActiveObject)
+                    if obj.active then
+                        local x_rel = math.min(math.max(mouse_x, x), x + obj.width - obj.handle_size) - x
+                        local new_value = obj.min_value
+                            + (
+                                ((x_rel * 2 * (obj.max_value - obj.min_value)) // (obj.width - obj.handle_size) + 1)
+                                // 2
+                            )
+                        local x_snap = (
+                            (obj.width - obj.handle_size)
+                            * (new_value - obj.min_value)
+                            // (obj.max_value - obj.min_value)
+                        )
+                        print(x_rel, x_snap, new_value)
+                        if obj.value ~= new_value then
+                            obj.value = new_value
+                            obj.objects[2].x = x_snap
+                            PTStartThread("__gui", obj.change_callback, obj)
+                        end
+                    end
                 end
             end
         end
@@ -1025,12 +1073,14 @@ end
 
 _PTGUIEvent = function(ev)
     if ev.type == "mouseDown" and _PTGUIMouseOver then
-        if _PTGUIMouseOver._type == "PTButton" then
+        if _PTGUIMouseOver._type == "PTButton" or _PTGUIMouseOver._type == "PTHorizSlider" then
             _PTGUIActiveObject = _PTGUIMouseOver
         end
     elseif ev.type == "mouseUp" and _PTGUIActiveObject then
-        if _PTGUIActiveObject == _PTGUIMouseOver then
-            PTStartThread("__gui", _PTGUIActiveObject.callback)
+        if _PTGUIActiveObject._type == "PTButton" and _PTGUIActiveObject == _PTGUIMouseOver then
+            PTStartThread("__gui", _PTGUIActiveObject.callback, _PTGUIActiveObject)
+        elseif _PTGUIActiveObject._type == "PTHorizSlider" then
+            PTStartThread("__gui", _PTGUIActiveObject.set_callback, _PTGUIActiveObject)
         end
         _PTGUIActiveObject = nil
     end
@@ -2241,6 +2291,10 @@ PTReleaseInput = function()
     _PTInputGrabbed = false
 end
 
+PTGetInputGrabbed = function()
+    return _PTInputGrabbed
+end
+
 local _PTGamePaused = false
 PTPauseGame = function()
     _PTGamePaused = true
@@ -2248,6 +2302,10 @@ end
 
 PTUnpauseGame = function()
     _PTGamePaused = false
+end
+
+PTGetGamePaused = function()
+    return _PTGamePaused
 end
 
 --- Run and handle execution for all of the threads.
