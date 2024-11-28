@@ -926,7 +926,7 @@ PTHorizSlider = function(
         end
     end
 
-    return {
+    local result = {
         _type = "PTHorizSlider",
         value = value,
         min_value = min_value,
@@ -952,6 +952,24 @@ PTHorizSlider = function(
             PTBackground(target_images["default"]),
         },
     }
+    PTSliderSetValue(result, value)
+    return result
+end
+
+PTSliderPosToValue = function(slider, pos)
+    return (
+        slider.min_value
+        + (((pos * 2 * (slider.max_value - slider.min_value)) // (slider.width - slider.handle_size) + 1) // 2)
+    )
+end
+
+PTSliderValueToPos = function(slider, value)
+    return ((slider.width - slider.handle_size) * (value - slider.min_value) // (slider.max_value - slider.min_value))
+end
+
+PTSliderSetValue = function(slider, value)
+    slider.value = value
+    slider.objects[2].x = PTSliderValueToPos(slider, value)
 end
 
 PTButton = function(images, x, y, width, height, objects, callback)
@@ -1045,20 +1063,10 @@ _PTUpdateGUI = function()
                     obj.active = (obj == _PTGUIActiveObject)
                     if obj.active then
                         local x_rel = math.min(math.max(mouse_x, x), x + obj.width - obj.handle_size) - x
-                        local new_value = obj.min_value
-                            + (
-                                ((x_rel * 2 * (obj.max_value - obj.min_value)) // (obj.width - obj.handle_size) + 1)
-                                // 2
-                            )
-                        local x_snap = (
-                            (obj.width - obj.handle_size)
-                            * (new_value - obj.min_value)
-                            // (obj.max_value - obj.min_value)
-                        )
-                        print(x_rel, x_snap, new_value)
+                        local new_value = PTSliderPosToValue(obj, x_rel)
+                        --print(x_rel, x_snap, new_value)
                         if obj.value ~= new_value then
-                            obj.value = new_value
-                            obj.objects[2].x = x_snap
+                            PTSliderSetValue(obj, new_value)
                             PTStartThread("__gui", obj.change_callback, obj)
                         end
                     end
@@ -1878,10 +1886,10 @@ PTStartThread = function(name, func, ...)
     if _PTThreads[name] then
         error(string.format("PTStartThread(): thread named %s exists", name))
     end
-    local varargs = ...
-    if varargs then
+    local args = { ... }
+    if #args > 0 then
         _PTThreads[name] = coroutine.create(function()
-            func(table.unpack(varargs))
+            func(table.unpack(args))
         end)
     else
         _PTThreads[name] = coroutine.create(function()
@@ -2352,7 +2360,7 @@ _PTRunThreads = function()
                 end
                 local status = coroutine.status(thread)
                 if status == "dead" then
-                    PTLog("PTRunThreads(): Thread %s terminated", name)
+                    --PTLog("PTRunThreads(): Thread %s terminated", name)
                     coroutine.close(_PTThreads[name])
                     _PTThreads[name] = nil
                     _PTThreadsFastForward[name] = nil
