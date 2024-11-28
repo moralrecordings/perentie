@@ -430,7 +430,7 @@ int serial_gets(byte* buffer, size_t length)
     // Data terminal ready + Request to send bits
     outportb(COM4_PORT + SERIAL_MCR, 0x03);
     uint32_t millis = timer_millis();
-    while ((result < length) && (timer_millis() < millis + 10)) {
+    while ((result < length) && (timer_millis() < millis + 50)) {
         if (!serial_rx_ready()) {
             __dpmi_yield();
             continue;
