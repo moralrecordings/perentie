@@ -21,14 +21,14 @@ int main(int argc, char** argv)
 
 #ifdef SYSTEM_DOS
     // Lock data so that pt_sys is accessible from interrupts
-    _go32_dpmi_lock_data((void*)&pt_sys, sizeof(pt_sys));
-    _go32_dpmi_lock_data((void*)&dos_timer, sizeof(dos_timer));
-    _go32_dpmi_lock_data((void*)&dos_keyboard, sizeof(dos_keyboard));
-    _go32_dpmi_lock_data((void*)&dos_mouse, sizeof(dos_mouse));
-    _go32_dpmi_lock_data((void*)&dos_serial, sizeof(dos_serial));
-    _go32_dpmi_lock_data((void*)&dos_opl, sizeof(dos_opl));
-    _go32_dpmi_lock_data((void*)&dos_beep, sizeof(dos_beep));
-    _go32_dpmi_lock_data((void*)&dos_vga, sizeof(dos_vga));
+    LOCK_DATA(pt_sys)
+    LOCK_DATA(dos_timer)
+    LOCK_DATA(dos_keyboard)
+    LOCK_DATA(dos_mouse)
+    LOCK_DATA(dos_serial)
+    LOCK_DATA(dos_opl)
+    LOCK_DATA(dos_beep)
+    LOCK_DATA(dos_vga)
     pt_sys.timer = &dos_timer;
     pt_sys.keyboard = &dos_keyboard;
     pt_sys.mouse = &dos_mouse;
@@ -60,6 +60,9 @@ int main(int argc, char** argv)
     bool running = true;
 
     uint32_t samples[16] = { 0 };
+    uint32_t draws[16] = { 0 };
+    uint32_t blits[16] = { 0 };
+    uint32_t flips[16] = { 0 };
     uint32_t sample_idx = 0;
 
     while (!script_has_quit()) {
@@ -68,18 +71,39 @@ int main(int argc, char** argv)
         pt_sys.keyboard->update();
         pt_sys.mouse->update();
         script_events();
-        script_render();
-        pt_sys.video->blit();
-        script_repl();
         samples[sample_idx] = pt_sys.timer->millis() - ticks;
-        sample_idx = (sample_idx + 1) % 16;
 
+        ticks = pt_sys.timer->millis();
+        script_render();
+        draws[sample_idx] = pt_sys.timer->millis() - ticks;
+
+        ticks = pt_sys.timer->millis();
+        pt_sys.video->blit();
+        blits[sample_idx] = pt_sys.timer->millis() - ticks;
+
+        script_repl();
+
+        ticks = pt_sys.timer->millis();
         pt_sys.video->flip();
+        flips[sample_idx] = pt_sys.timer->millis() - ticks;
+        sample_idx = (sample_idx + 1) % 16;
     }
 
     log_print("Last frame times: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", samples[0], samples[1], samples[2],
         samples[3], samples[4], samples[5], samples[6], samples[7], samples[8], samples[9], samples[10], samples[11],
         samples[12], samples[13], samples[14], samples[15]);
+
+    log_print("Last FB draw times: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", draws[0], draws[1], draws[2],
+        draws[3], draws[4], draws[5], draws[6], draws[7], draws[8], draws[9], draws[10], draws[11], draws[12],
+        draws[13], draws[14], draws[15]);
+
+    log_print("Last FB copy times: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", blits[0], blits[1], blits[2],
+        blits[3], blits[4], blits[5], blits[6], blits[7], blits[8], blits[9], blits[10], blits[11], blits[12],
+        blits[13], blits[14], blits[15]);
+
+    log_print("Last flip times: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", flips[0], flips[1], flips[2],
+        flips[3], flips[4], flips[5], flips[6], flips[7], flips[8], flips[9], flips[10], flips[11], flips[12],
+        flips[13], flips[14], flips[15]);
 
     radplayer_shutdown();
     pt_sys.video->shutdown();

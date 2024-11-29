@@ -2,7 +2,9 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+
 #ifdef SYSTEM_DOS
+#include "dos.h"
 #include <dpmi.h>
 #endif
 
@@ -181,15 +183,6 @@ void rad_set_opl3(RADPlayer* rad, uint16_t reg, uint8_t val);
 uint8_t rad_get_opl3(RADPlayer* rad, uint16_t reg);
 void rad_portamento(RADPlayer* rad, uint16_t channum, CEffects* fx, int8_t amount, bool toneslide);
 void rad_transpose(RADPlayer* rad, int8_t note, int8_t octave);
-
-void _radplayer_lock();
-
-void radplayer_init()
-{
-#ifdef SYSTEM_DOS
-    _radplayer_lock();
-#endif
-}
 
 void radplayer_shutdown()
 {
@@ -1336,14 +1329,62 @@ uint32_t rad_compute_total_time(RADPlayer* rad)
 void _radplayer_lock()
 {
     // Lock the memory pages that contain the RAD player
-    _go32_dpmi_lock_data((void*)&rad_player, sizeof(rad_player));
-    _go32_dpmi_lock_data((void*)&rad_timer, sizeof(rad_timer));
-    _go32_dpmi_lock_data((void*)&NoteSize, sizeof(NoteSize));
-    _go32_dpmi_lock_data((void*)&ChanOffsets3, sizeof(ChanOffsets3));
-    _go32_dpmi_lock_data((void*)&Chn2Offsets3, sizeof(Chn2Offsets3));
-    _go32_dpmi_lock_data((void*)&NoteFreq, sizeof(NoteFreq));
-    _go32_dpmi_lock_data((void*)&OpOffsets3, sizeof(OpOffsets3));
-    _go32_dpmi_lock_data((void*)&AlgCarriers, sizeof(AlgCarriers));
-    _go32_dpmi_lock_code(radplayer_init, (uint32_t)(_radplayer_lock - radplayer_init));
+    LOCK_DATA(rad_player)
+    LOCK_DATA(rad_timer)
+    LOCK_DATA(NoteSize)
+    LOCK_DATA(ChanOffsets3)
+    LOCK_DATA(Chn2Offsets3)
+    LOCK_DATA(NoteFreq)
+    LOCK_DATA(OpOffsets3)
+    LOCK_DATA(AlgCarriers)
+
+    // Sadly the layout of codespace is undefined behaviour,
+    // so we gotta lock each function one by one.
+    LOCK_CODE(radplayer_init)
+    LOCK_CODE(radplayer_shutdown)
+    LOCK_CODE(radplayer_callback)
+    LOCK_CODE(radplayer_load_file)
+    LOCK_CODE(radplayer_play)
+    LOCK_CODE(radplayer_stop)
+
+    LOCK_CODE(rad_load)
+    LOCK_CODE(rad_play)
+    LOCK_CODE(rad_stop)
+    LOCK_CODE(rad_update)
+    LOCK_CODE(rad_get_hertz)
+    LOCK_CODE(rad_get_play_time_in_seconds)
+    LOCK_CODE(rad_get_tune_pos)
+    LOCK_CODE(rad_get_tune_length)
+    LOCK_CODE(rad_get_tune_line)
+    LOCK_CODE(rad_set_master_volume)
+    LOCK_CODE(rad_get_master_volume)
+    LOCK_CODE(rad_get_speed)
+
+    LOCK_CODE(rad_get_track)
+    LOCK_CODE(rad_play_line)
+    LOCK_CODE(rad_play_note)
+    LOCK_CODE(rad_play_note_opl3)
+    LOCK_CODE(rad_reset_fx)
+    LOCK_CODE(rad_tick_riff)
+    LOCK_CODE(rad_continue_fx)
+    LOCK_CODE(rad_set_volume)
+    LOCK_CODE(rad_get_slide_dir)
+    LOCK_CODE(rad_load_inst_multiplier_opl3)
+    LOCK_CODE(rad_load_inst_volume_opl3)
+    LOCK_CODE(rad_load_inst_feedback_opl3)
+    LOCK_CODE(rad_load_instrument_opl3)
+    LOCK_CODE(rad_set_opl3)
+    LOCK_CODE(rad_get_opl3)
+    LOCK_CODE(rad_portamento)
+    LOCK_CODE(rad_transpose)
+
+    LOCK_CODE(_radplayer_lock)
 }
 #endif
+
+void radplayer_init()
+{
+#ifdef SYSTEM_DOS
+    _radplayer_lock();
+#endif
+}

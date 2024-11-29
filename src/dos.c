@@ -130,12 +130,6 @@ void _int_8h_prot()
     enable();
 }
 
-void _int_8h_prot_lock()
-{
-    // Lock the memory page that contains _int_8h_prot()
-    _go32_dpmi_lock_code(_int_8h_prot, (uint32_t)(_int_8h_prot_lock - _int_8h_prot));
-}
-
 void _int_8h_real()
 {
     // Real mode interrupt handler
@@ -163,12 +157,6 @@ void _int_8h_real()
     enable();
 }
 
-void _int_8h_real_lock()
-{
-    // Lock the memory page that contains _int_8h_real()
-    _go32_dpmi_lock_code(_int_8h_real, (uint32_t)(_int_8h_real_lock - _int_8h_real));
-}
-
 void timer_shutdown();
 
 void timer_init()
@@ -179,11 +167,11 @@ void timer_init()
         disable();
 
         // Lock code memory used by the two new handlers
-        _int_8h_real_lock();
-        _int_8h_prot_lock();
+        LOCK_CODE(_int_8h_real)
+        LOCK_CODE(_int_8h_prot)
 
         // Lock data memory used by timer state
-        _go32_dpmi_lock_data(&_timer, sizeof(_timer));
+        LOCK_DATA(_timer)
 
         // Chain the new protected mode handler to 8h
         _go32_dpmi_get_protected_mode_interrupt_vector(8, &_timer.handler_prot_old);
@@ -756,12 +744,6 @@ void _int_9h_prot()
     enable();
 }
 
-void _int_9h_prot_lock()
-{
-    // Lock the memory page that contains _int_9h_prot()
-    _go32_dpmi_lock_code(_int_9h_prot, (uint32_t)(_int_9h_prot_lock - _int_9h_prot));
-}
-
 void keyboard_init()
 {
     // Disable all interrupts while installing the new keyboard interrupt
@@ -770,12 +752,12 @@ void keyboard_init()
     // Zero out the key event buffer
     memset(&keyevent_buffer, 0, sizeof(keyevent_buffer));
 
-    // Lock code memory used by the new handler
-    _int_9h_prot_lock();
+    // Lock the memory page that contains _int_9h_prot()
+    LOCK_CODE(_int_9h_prot)
 
     _go32_dpmi_lock_data((char*)&keyboard_key_states, KEY_MAX);
-    _go32_dpmi_lock_data((char*)&keyboard_flags, sizeof(uint8_t));
-    _go32_dpmi_lock_data((char*)&keyevent_buffer, sizeof(keyevent_buffer));
+    LOCK_DATA(keyboard_flags)
+    LOCK_DATA(keyevent_buffer)
 
     // Replace the protected mode keyboard handler
     _go32_dpmi_get_protected_mode_interrupt_vector(9, &keyboard_handler_old);
@@ -909,19 +891,14 @@ void opl_write_reg(uint16_t addr, uint8_t data)
     }
 }
 
-void _opl_lock()
-{
-    // Lock the memory page that contains all of the OPL code
-    _go32_dpmi_lock_code(opl_write_reg, (uint32_t)((void*)_opl_lock - (void*)opl_write_reg));
-    _go32_dpmi_lock_data((void*)&sound_opl2_available, sizeof(sound_opl2_available));
-    _go32_dpmi_lock_data((void*)&sound_opl3_available, sizeof(sound_opl3_available));
-}
+void _opl_lock();
 
 // detection method nicked from https://moddingwiki.shikadi.net/wiki/OPL_chip#Detection_Methods
 void opl_init()
 {
-    log_print("dos:opl_init: Detecting Yamaha OPL chip...\n");
     _opl_lock();
+
+    log_print("dos:opl_init: Detecting Yamaha OPL chip...\n");
 
     // Reset timer 1 and timer 2
     sound_opl3_out_raw(OPL3_BASE_PORT, 0x4, 0x60);
@@ -980,4 +957,12 @@ void opl_shutdown()
     sound_opl3_available = false;
 }
 
-pt_drv_opl dos_opl = { &opl_init, &opl_shutdown, &opl_write_reg };
+void _opl_lock() { // Lock the memory page that contains all of the OPL code
+    LOCK_CODE(opl_write_reg) LOCK_CODE(opl_init) LOCK_CODE(opl_shutdown) LOCK_DATA(sound_opl2_available)
+        LOCK_DATA(sound_opl3_available)
+}
+
+pt_drv_opl dos_opl
+    = { &opl_init,
+          &opl_shutdown,
+          &opl_write_reg };

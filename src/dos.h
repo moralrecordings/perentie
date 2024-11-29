@@ -10,6 +10,9 @@
 #define SCREEN_HEIGHT 200
 #define SCREEN_PLANE ((SCREEN_WIDTH * SCREEN_HEIGHT) >> 2)
 
+#define LOCK_DATA(x) _go32_dpmi_lock_data((void*)&x, sizeof(x));
+#define LOCK_CODE(x) _go32_dpmi_lock_code(x, sizeof(x));
+
 typedef struct pt_image pt_image;
 typedef struct pt_image_vga pt_image_vga;
 
