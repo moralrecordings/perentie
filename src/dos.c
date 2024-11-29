@@ -22,9 +22,17 @@
 
 uint32_t timer_millis();
 
+static bool use_dpmi_yield = false;
+
+void sys_yield()
+{
+    if (use_dpmi_yield)
+        __dpmi_yield();
+}
+
 bool sys_idle(int (*idle_callback)(), int idle_callback_period)
 {
-    __dpmi_yield();
+    sys_yield();
     if (idle_callback && (timer_millis() % idle_callback_period == 0))
         return idle_callback() > 0;
     return 1;
@@ -165,6 +173,7 @@ void timer_shutdown();
 
 void timer_init()
 {
+    log_print("dos:timer_init(): Replacing DOS timer interrupt...\n");
     if (!_timer.installed) {
         // Disable all interrupts while installing the new timer
         disable();
@@ -207,6 +216,13 @@ void timer_init()
 
         atexit(timer_shutdown);
     }
+    log_print("dos:timer_init(): DOS timer hotpatched to run at %dHz\n", TIMER_HZ);
+    errno = 0;
+    // Check if we're running with an external DPMI server (e.g. Windows 98)
+    __dpmi_yield();
+    if (errno != ENOSYS) {
+        use_dpmi_yield = true;
+    }
 }
 
 uint32_t timer_ticks()
@@ -238,7 +254,7 @@ void timer_sleep(uint32_t delay_millis)
     // Blocking loop until enough ticks have passed
     do {
         // Yield/halt CPU until next interrupt
-        __dpmi_yield();
+        sys_yield();
         end = timer_ticks();
     } while ((end - begin) < delay_ticks);
 }
@@ -361,6 +377,11 @@ pt_drv_beep dos_beep = {
 // Serial port
 // Info: https://www.lammertbies.nl/comm/info/serial-uart
 
+static uint16_t serial_port_base = 0;
+
+#define COM1_PORT 0x3f8
+#define COM2_PORT 0x2f8
+#define COM3_PORT 0x3e8
 #define COM4_PORT 0x2e8
 #define SERIAL_RBR_THR 0
 #define SERIAL_IER 1
@@ -372,50 +393,59 @@ pt_drv_beep dos_beep = {
 
 void serial_init()
 {
+    // FIXME: Make this programmable
+    serial_port_base = COM4_PORT;
+
     // COM4 - FIFO Control Register
     // - Clear Transmit FIFO
     // - Clear Receive FIFO
     // - Enable FIFO
-    outportb(COM4_PORT + SERIAL_IIR_FCR, 0x07);
+    outportb(serial_port_base + SERIAL_IIR_FCR, 0x07);
 
     // COM4 - Line Control Register
     // Enable DLAB bit
-    outportb(COM4_PORT + SERIAL_LCR, 0x80);
+    outportb(serial_port_base + SERIAL_LCR, 0x80);
 
     // COM4 - Divisor Latches
     // Crank this baby to 115200bps
-    outportb(COM4_PORT + SERIAL_RBR_THR, 0x01);
-    outportb(COM4_PORT + SERIAL_IER, 0x00);
+    outportb(serial_port_base + SERIAL_RBR_THR, 0x01);
+    outportb(serial_port_base + SERIAL_IER, 0x00);
 
     // COM4 - Line Control Register
     // Disable DLAB bit
-    outportb(COM4_PORT + SERIAL_LCR, 0x00);
+    outportb(serial_port_base + SERIAL_LCR, 0x00);
 }
 
 bool serial_rx_ready()
 {
+    if (!serial_port_base)
+        return false;
+
     // COM4 - Modem Status Register
     // Data set ready bit
-    if ((inportb(COM4_PORT + SERIAL_MSR) & 0x20) == 0)
+    if ((inportb(serial_port_base + SERIAL_MSR) & 0x20) == 0)
         return false;
 
     // COM4 - Line Status Register
     // Data available bit
-    if ((inportb(COM4_PORT + SERIAL_LSR) & 0x01) == 0)
+    if ((inportb(serial_port_base + SERIAL_LSR) & 0x01) == 0)
         return false;
     return true;
 }
 
 bool serial_tx_ready()
 {
+    if (!serial_port_base)
+        return false;
+
     // COM4 - Line Status Register
     // TX Holding Register empty bit
-    if ((inportb(COM4_PORT + SERIAL_LSR) & 0x20) == 0)
+    if ((inportb(serial_port_base + SERIAL_LSR) & 0x20) == 0)
         return false;
 
     // COM4 - Modem Status Register
     // Data set ready + Clear to send bits
-    if ((inportb(COM4_PORT + SERIAL_MSR) & 0x30) != 0x30)
+    if ((inportb(serial_port_base + SERIAL_MSR) & 0x30) != 0x30)
         return false;
 
     return true;
@@ -426,13 +456,16 @@ byte serial_getc();
 int serial_gets(byte* buffer, size_t length)
 {
     size_t result = 0;
+    if (!serial_port_base)
+        return result;
+
     // COM4 - Modem Control Register
     // Data terminal ready + Request to send bits
-    outportb(COM4_PORT + SERIAL_MCR, 0x03);
+    outportb(serial_port_base + SERIAL_MCR, 0x03);
     uint32_t millis = timer_millis();
     while ((result < length) && (timer_millis() < millis + 50)) {
         if (!serial_rx_ready()) {
-            __dpmi_yield();
+            sys_yield();
             continue;
         }
         buffer[result] = serial_getc();
@@ -444,25 +477,34 @@ int serial_gets(byte* buffer, size_t length)
 
 byte serial_getc()
 {
+    if (!serial_port_base)
+        return 0xff;
+
     // COM4 - Receiver Buffer Register
-    return inportb(COM4_PORT + SERIAL_RBR_THR);
+    return inportb(serial_port_base + SERIAL_RBR_THR);
 }
 
 void serial_putc(byte data)
 {
+    if (!serial_port_base)
+        return;
+
     // COM4 - Transmitter Holding Buffer
-    outportb(COM4_PORT + SERIAL_RBR_THR, data);
+    outportb(serial_port_base + SERIAL_RBR_THR, data);
 }
 
 size_t serial_write(const void* buffer, size_t size)
 {
+    size_t result = 0;
+    if (!serial_port_base)
+        return result;
+
     // COM4 - Modem Control Register
     // Data terminal ready + Request to send bits
-    outportb(COM4_PORT + SERIAL_MCR, 0x03);
+    outportb(serial_port_base + SERIAL_MCR, 0x03);
 
-    size_t result = 0;
     while (result < size) {
-        __dpmi_yield();
+        sys_yield();
         if (serial_tx_ready()) {
             serial_putc(((byte*)buffer)[result]);
             result++;
@@ -471,12 +513,15 @@ size_t serial_write(const void* buffer, size_t size)
 
     // COM4 - Modem Control Register
     // Clear request to send bit
-    outportb(COM4_PORT + SERIAL_MCR, 0x01);
+    outportb(serial_port_base + SERIAL_MCR, 0x01);
     return result;
 }
 
 int serial_printf(const char* format, ...)
 {
+    if (!serial_port_base)
+        return 0;
+
     va_list args;
     va_start(args, format);
 
@@ -875,6 +920,7 @@ void _opl_lock()
 // detection method nicked from https://moddingwiki.shikadi.net/wiki/OPL_chip#Detection_Methods
 void opl_init()
 {
+    log_print("dos:opl_init: Detecting Yamaha OPL chip...\n");
     _opl_lock();
 
     // Reset timer 1 and timer 2
@@ -905,15 +951,15 @@ void opl_init()
     sound_opl3_out_raw(OPL3_BASE_PORT, 0x4, 0x80);
 
     if (((status1 & 0xe0) != 0x00) || ((status2 & 0xe0) != 0xc0)) {
-        log_print("sound_init: Yamaha OPL not found: %02x %02x\n", status1, status2);
+        log_print("dos:opl_init: Yamaha OPL not found: %02x %02x\n", status1, status2);
         return;
     }
     sound_opl2_available = true;
     if ((status2 & 0x06) != 0) {
-        log_print("sound_init: found Yamaha OPL2\n");
+        log_print("dos:opl_init: found Yamaha OPL2\n");
     } else {
         sound_opl3_available = true;
-        log_print("sound_init: found Yamaha OPL3\n");
+        log_print("dos:opl_init: found Yamaha OPL3\n");
     }
     // zero all the registers
     for (int i = 1; i < 0xf6; i++) {

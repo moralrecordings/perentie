@@ -1886,6 +1886,9 @@ PTStartThread = function(name, func, ...)
     if _PTThreads[name] then
         error(string.format("PTStartThread(): thread named %s exists", name))
     end
+    if not func then
+        return
+    end
     local args = { ... }
     if #args > 0 then
         _PTThreads[name] = coroutine.create(function()

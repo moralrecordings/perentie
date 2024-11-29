@@ -119,6 +119,11 @@ void vga_init()
     regs.h.al = 0x13;
     int86(0x10, &regs, &regs);
 
+    // Use "Mode X" - two whole frames in VGA memory,
+    // flipping between them.
+    // The downside is that memory is no longer linear,
+    // instead we have 4 planes.
+
     // Turn off chain-4 mode
     outportb(VGA_SC_INDEX, 0x4);
     outportb(VGA_SC_DATA, 0x06);
@@ -436,17 +441,21 @@ void vga_blit()
 
 void vga_flip()
 {
-    // flip the VGA page
-
     if (!vga_framebuffer)
         return;
 
-    // wait until we're out of vblank
-    while (vga_is_vblank()) {
-        __dpmi_yield();
-    }
+    // Busy-loop until we're out of vblank.
+    // You'd think we'd be looking for the opposite, but on
+    // original hardware that causes visible plane tearing?
 
-    // Flip page by setting the address
+    // Do not yield in the busy-loop.
+    // Yielding here causes massive lag under Windows 98,
+    // and no other games seem to do it.
+    do {
+    } while (vga_is_vblank());
+
+    // Flip page by setting the CRTC data address to the
+    // area of VGA memory we just wrote to with vga_blit()
     disable();
     outportb(VGA_CRTC_INDEX, 0x0c);
     outportb(VGA_CRTC_DATA, 0xff & (vga_page_offset >> 8));
@@ -454,12 +463,12 @@ void vga_flip()
     outportb(VGA_CRTC_DATA, 0xff & vga_page_offset);
     enable();
 
+    // Swap the VGA offset used for writes to the other
+    // region of memory
     vga_page_offset = vga_page_offset ? 0 : SCREEN_PLANE;
 
-    // wait until the next vblank interval starts
-    while (!vga_is_vblank()) {
-        __dpmi_yield();
-    }
+    // A little yield as a treat
+    sys_yield();
 }
 
 pt_image_vga* vga_convert_image(pt_image* image)

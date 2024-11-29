@@ -24,6 +24,8 @@ struct pt_image_vga {
     int revision;
 };
 
+void sys_yield();
+
 bool sys_idle(int (*idle_callback)(), int idle_callback_period);
 
 extern pt_drv_video dos_vga;
