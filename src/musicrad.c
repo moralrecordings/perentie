@@ -10,6 +10,7 @@
 
 #include "musicrad.h"
 #include "system.h"
+#include "utils.h"
 
 // Rough C port of the Reality Adlib Tracker 2.0a player example code.
 
@@ -234,6 +235,16 @@ void radplayer_play()
 void radplayer_stop()
 {
     rad_stop(&rad_player);
+}
+
+void radplayer_set_master_volume(int vol)
+{
+    rad_set_master_volume(&rad_player, vol);
+}
+
+int radplayer_get_master_volume()
+{
+    return rad_get_master_volume(&rad_player);
 }
 
 //==================================================================================================
@@ -518,7 +529,13 @@ int rad_get_tune_line(RADPlayer* rad)
 
 void rad_set_master_volume(RADPlayer* rad, int vol)
 {
+    vol = MAX(MIN(vol, 64), 0);
     rad->MasterVol = vol;
+    if (rad->Playing) {
+        for (int i = 0; i < kChannels; i++) {
+            rad_set_volume(rad, i, rad->Channels[i].Volume);
+        }
+    }
 }
 
 int rad_get_master_volume(RADPlayer* rad)
@@ -1346,6 +1363,8 @@ void _radplayer_lock()
     LOCK_CODE(radplayer_load_file)
     LOCK_CODE(radplayer_play)
     LOCK_CODE(radplayer_stop)
+    LOCK_CODE(radplayer_set_master_volume)
+    LOCK_CODE(radplayer_get_master_volume)
 
     LOCK_CODE(rad_load)
     LOCK_CODE(rad_play)

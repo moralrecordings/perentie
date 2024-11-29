@@ -1854,6 +1854,18 @@ PTRadStop = function()
     _PTRadStop()
 end
 
+--- Get the master volume of the RAD player.
+-- @treturn integer Volume, ranging from 0 to 64.
+PTRadGetVolume = function()
+    return _PTGetVolume()
+end
+
+--- Set the master volume of the RAD player.
+-- @tparam integer volume Volume, ranging from 0 to 64.
+PTRadSetVolume = function(volume)
+    _PTRadSetVolume(volume)
+end
+
 --- Threading
 -- @section threading
 

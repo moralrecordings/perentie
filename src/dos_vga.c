@@ -452,6 +452,8 @@ void vga_flip()
     // Yielding here causes massive lag under Windows 98,
     // and no other games seem to do it.
     do {
+    } while (!vga_is_vblank());
+    do {
     } while (vga_is_vblank());
 
     // Flip page by setting the CRTC data address to the
