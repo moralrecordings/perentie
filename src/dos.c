@@ -88,16 +88,24 @@ static float _timer_freq = TIMER_DEFAULT_FREQ;
 void _int_8h_prot()
 {
     // Replacement for timer interrupt 8h in protected mode
-    // disable other interrupts
-    disable();
+
+    // You'll notice this doesn't have enable() and disable().
+    // There is a line of fine print in the DJGPP docs saying that you
+    // shouldn't use them with _go32_dpmi_chain_protected_mode_interrupt_vector();
+    // on real hardware this results in the game hanging on startup,
+    // or better yet crashing with random registers being trashed.
     _timer.ticks++;
     _timer.counter++;
 
+    // Emulate the old, crap timer.
+    // _timer.reset is the number of ticks to approximate TIMER_DEFAULT_FREQ.
+    // If we've hit that, enable the real mode handler.
     if (_timer.counter == _timer.reset) {
         _timer.flag = TIMER_TERM_CHAIN;
         _timer.counter = 0;
     } else {
         _timer.flag = TIMER_TERM_OUTPORTB;
+        // PIC1 command register - end of interrupt
         outportb(0x20, 0x20);
     }
     // run the timer callbacks
@@ -127,17 +135,15 @@ void _int_8h_prot()
             }
         }
     }
-    enable();
 }
 
 void _int_8h_real()
 {
-    // Real mode interrupt handler
-
-    // Disable all other interrupts while processing
-    disable();
+    // Real mode interrupt handler.
+    // This interrupt gets chained off the end of the protected mode handler.
 
     if (_timer.flag == TIMER_TERM_FAIL) {
+        // Something bad happened with the protected mode handler.
         _timer.ticks++;
         _timer.counter++;
     }
@@ -154,7 +160,6 @@ void _int_8h_real()
         // PIC1 command register - end of interrupt
         outportb(0x20, 0x20);
     }
-    enable();
 }
 
 void timer_shutdown();
@@ -720,7 +725,6 @@ _go32_dpmi_seginfo keyboard_handler_old, keyboard_handler_new;
 
 void _int_9h_prot()
 {
-    disable();
     // If the buffer is full, drop the event
     if (keyevent_buffer.readi == ((keyevent_buffer.writei + 1) % KEY_BUFFER_SIZE)) {
         return;
@@ -765,7 +769,6 @@ void _int_9h_prot()
     }
     // PIC1 command register - end of interrupt
     outportb(0x20, 0x20);
-    enable();
 }
 
 void keyboard_init()

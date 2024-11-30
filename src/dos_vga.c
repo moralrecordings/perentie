@@ -414,6 +414,12 @@ bool vga_is_vblank()
     return inportb(VGA_INPUT_STATUS_1) & 8;
 }
 
+bool vga_is_safe_to_edit()
+{
+    // CRT mode and status = CGA/EGA/VGA input status 1 register - display disabled
+    return inportb(VGA_INPUT_STATUS_1) & 1;
+}
+
 void vga_blit()
 {
     // copy the framebuffer to VGA memory
@@ -444,17 +450,17 @@ void vga_flip()
     if (!vga_framebuffer)
         return;
 
-    // Busy-loop until we're out of vblank.
-    // You'd think we'd be looking for the opposite, but on
-    // original hardware that causes visible plane tearing?
-
     // Do not yield in the busy-loop.
     // Yielding here causes massive lag under Windows 98,
     // and no other games seem to do it.
+
+    // Wait until the start of the vertical blanking interval
     do {
     } while (!vga_is_vblank());
+
+    // Wait until the memory is safe to use
     do {
-    } while (vga_is_vblank());
+    } while (!vga_is_safe_to_edit());
 
     // Flip page by setting the CRTC data address to the
     // area of VGA memory we just wrote to with vga_blit()
@@ -467,7 +473,10 @@ void vga_flip()
 
     // Swap the VGA offset used for writes to the other
     // region of memory
-    vga_page_offset = vga_page_offset ? 0 : SCREEN_PLANE;
+    vga_page_offset = (vga_page_offset > 0) ? 0 : 0x10000;
+
+    do {
+    } while (vga_is_vblank());
 
     // A little yield as a treat
     sys_yield();
