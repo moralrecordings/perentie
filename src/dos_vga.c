@@ -240,6 +240,9 @@ void vga_blit_image(
         // image x start/end positions (corrected for plane)
         int16_t ir_left = (ir.left >> 2) + ((ir.left % 4) > pi ? 1 : 0);
         int16_t ir_right = (ir.right >> 2) + ((ir.right % 4) > pi ? 1 : 0);
+        // adjust ir_right - ir_left to be a multiple of 4, then move any overflow onto ir_xtra
+        int16_t ir_xtra = (ir_right - ir_left) % 4;
+        ir_right -= ir_xtra;
         // log_print("plane: %d -> %d, ir_left: %d -> %d, ir_right: %d -> %d\n", pi, pf, ir.left, ir_left, ir.right,
         // ir_right);
         //   framebuffer x start position (corrected for plane)
@@ -265,8 +268,14 @@ void vga_blit_image(
             uint8_t* fb_ptr = fb_base + (yf * (SCREEN_WIDTH >> 2)) + fx;
             if (flags & FLIP_H) {
                 // invert framebuffer x position if horizontal flipped
-                fb_ptr += ir_right - ir_left - 1;
-                for (int xi = ir_left; xi < ir_right; xi++) {
+                fb_ptr += ir_xtra + ir_right - ir_left - 1;
+                for (int i = 0; i < ir_xtra; i++) {
+                    *fb_ptr = (*fb_ptr & ~(*hw_mask)) | (*hw_bitmap & *hw_mask);
+                    hw_bitmap++;
+                    hw_mask++;
+                    fb_ptr--;
+                }
+                for (int xi = ir_left; xi < ir_right; xi += 1) {
                     // log_print("xi: %d, yi: %d, pi: %d, hw_off: %d, fb_off: %d\n", xi, yi, pi, hw_bitmap -
                     //         hw_image->bitmap, fb_ptr - vga_framebuffer);
                     //  in the framebuffer, replace masked bits with source image data
@@ -276,10 +285,17 @@ void vga_blit_image(
                     fb_ptr--;
                 }
             } else {
-                for (int xi = ir_left; xi < ir_right; xi++) {
+                for (int xi = ir_left; xi < ir_right; xi += 4) {
                     // log_print("xi: %d, yi: %d, pi: %d, hw_off: %d, fb_off: %d\n", xi, yi, pi, hw_bitmap -
                     // hw_image->bitmap, fb_ptr - vga_framebuffer);
                     // in the framebuffer, replace masked bits with source image data
+                    *(uint32_t*)fb_ptr
+                        = (*(uint32_t*)fb_ptr & ~(*(uint32_t*)hw_mask)) | (*(uint32_t*)hw_bitmap & *(uint32_t*)hw_mask);
+                    hw_bitmap += 4;
+                    hw_mask += 4;
+                    fb_ptr += 4;
+                }
+                for (int i = 0; i < ir_xtra; i++) {
                     *fb_ptr = (*fb_ptr & ~(*hw_mask)) | (*hw_bitmap & *hw_mask);
                     hw_bitmap++;
                     hw_mask++;
@@ -414,7 +430,7 @@ bool vga_is_vblank()
     return inportb(VGA_INPUT_STATUS_1) & 8;
 }
 
-bool vga_is_safe_to_edit()
+bool vga_is_not_drawing()
 {
     // CRT mode and status = CGA/EGA/VGA input status 1 register - display disabled
     return inportb(VGA_INPUT_STATUS_1) & 1;
@@ -445,41 +461,64 @@ void vga_blit()
     memcpy(vga, buf, SCREEN_PLANE);
 }
 
+static int frame_count = 0;
+
 void vga_flip()
 {
     if (!vga_framebuffer)
         return;
 
+    uint32_t ticks = pt_sys.timer->ticks();
     // Do not yield in the busy-loop.
     // Yielding here causes massive lag under Windows 98,
     // and no other games seem to do it.
 
-    // Wait until the start of the vertical blanking interval
-    do {
-    } while (!vga_is_vblank());
+    // Confirm that the screen is in the middle of being drawn.
+    // Why? Well, the start address gets latched exactly once,
+    // at the start of the vblank interval.
+    // Which means as soon as we detect a vblank it's too late,
+    // the screen will tear.
 
-    // Wait until the memory is safe to use
-    do {
-    } while (!vga_is_safe_to_edit());
+    // On testing on real hardware, this causes a lot more frameskips.
+    // Don't bother.
+    // do {
+    //} while (vga_is_not_drawing());
+    // uint32_t draw_wait = pt_sys.timer->ticks() - ticks;
 
     // Flip page by setting the CRTC data address to the
     // area of VGA memory we just wrote to with vga_blit()
+    // ticks = pt_sys.timer->ticks();
     disable();
     outportb(VGA_CRTC_INDEX, 0x0c);
     outportb(VGA_CRTC_DATA, 0xff & (vga_page_offset >> 8));
     outportb(VGA_CRTC_INDEX, 0x0d);
     outportb(VGA_CRTC_DATA, 0xff & vga_page_offset);
     enable();
+    // uint32_t flip_wait = pt_sys.timer->ticks() - ticks;
 
     // Swap the VGA offset used for writes to the other
     // region of memory
-    vga_page_offset = (vga_page_offset > 0) ? 0 : 0x10000;
+    vga_page_offset = (vga_page_offset > 0) ? 0 : SCREEN_PLANE;
 
+    // Wait until the start of the vertical blanking interval
+    // ticks = pt_sys.timer->ticks();
+    do {
+    } while (!vga_is_vblank());
+    // uint32_t vblankstart = pt_sys.timer->ticks() - ticks;
+
+    // Wait until vblank is over
+    // ticks = pt_sys.timer->ticks();
     do {
     } while (vga_is_vblank());
+    // uint32_t vblankend = pt_sys.timer->ticks() - ticks;
 
     // A little yield as a treat
     sys_yield();
+
+    frame_count += 1;
+    // if ((frame_count % 100) == 0)
+    //     log_print("vga_blit: draw %d flip %d vblankstart %d vblankend %d\n", draw_wait, flip_wait, vblankstart,
+    //     vblankend);
 }
 
 pt_image_vga* vga_convert_image(pt_image* image)
