@@ -171,10 +171,6 @@ void timer_init()
         // Disable all interrupts while installing the new timer
         disable();
 
-        // Lock code memory used by the two new handlers
-        LOCK_CODE(_int_8h_real)
-        LOCK_CODE(_int_8h_prot)
-
         // Lock data memory used by timer state
         LOCK_DATA(_timer)
 
@@ -779,9 +775,6 @@ void keyboard_init()
     // Zero out the key event buffer
     memset(&keyevent_buffer, 0, sizeof(keyevent_buffer));
 
-    // Lock the memory page that contains _int_9h_prot()
-    LOCK_CODE(_int_9h_prot)
-
     _go32_dpmi_lock_data((char*)&keyboard_key_states, KEY_MAX);
     LOCK_DATA(keyboard_flags)
     LOCK_DATA(keyevent_buffer)
@@ -985,8 +978,7 @@ void opl_shutdown()
 }
 
 void _opl_lock() { // Lock the memory page that contains all of the OPL code
-    LOCK_CODE(opl_write_reg) LOCK_CODE(opl_init) LOCK_CODE(opl_shutdown) LOCK_DATA(sound_opl2_available)
-        LOCK_DATA(sound_opl3_available)
+    LOCK_DATA(sound_opl2_available) LOCK_DATA(sound_opl3_available)
 }
 
 pt_drv_opl dos_opl

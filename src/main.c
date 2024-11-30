@@ -16,6 +16,10 @@
 
 #include "musicrad.h"
 
+#ifdef SYSTEM_DOS
+extern char etext;
+#endif
+
 int main(int argc, char** argv)
 {
 
@@ -29,6 +33,19 @@ int main(int argc, char** argv)
     LOCK_DATA(dos_opl)
     LOCK_DATA(dos_beep)
     LOCK_DATA(dos_vga)
+
+    // NASTYHACK: As it turns out, there's no guarantee
+    // with GCC that functions will be linked and stored in the same
+    // order, and therefore no straightforward way of getting the
+    // memory range of individual functions for locking.
+
+    // We could use sections, if it weren't for the fact that CWSDPMI
+    // is hardcoded to load .text and .data and nothing else.
+
+    // Instead, just lock ALL of .text using the magic GCC linker symbol.
+    // It's kind of big but I've stopped caring!
+    _go32_dpmi_lock_code((void*)0x1000, (long)&etext - (long)0x1000);
+
     pt_sys.timer = &dos_timer;
     pt_sys.keyboard = &dos_keyboard;
     pt_sys.mouse = &dos_mouse;
