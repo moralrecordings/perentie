@@ -381,8 +381,23 @@ static uint16_t serial_port_base = 0;
 
 void serial_init()
 {
-    // FIXME: Make this programmable
+}
+
+void serial_open_device(const char* device)
+{
+    // Default to COM4
     serial_port_base = COM4_PORT;
+    if (device) {
+        if (strcmp(device, "COM1") == 0) {
+            serial_port_base = COM1_PORT;
+        } else if (strcmp(device, "COM2") == 0) {
+            serial_port_base = COM2_PORT;
+        } else if (strcmp(device, "COM3") == 0) {
+            serial_port_base = COM3_PORT;
+        } else if (strcmp(device, "COM4") == 0) {
+            serial_port_base = COM4_PORT;
+        }
+    }
 
     // COM4 - FIFO Control Register
     // - Clear Transmit FIFO
@@ -402,6 +417,12 @@ void serial_init()
     // COM4 - Line Control Register
     // Disable DLAB bit
     outportb(serial_port_base + SERIAL_LCR, 0x00);
+}
+
+void serial_close_device()
+{
+    // FIXME: Do we need to clean up the actual port?
+    serial_port_base = 0;
 }
 
 bool serial_rx_ready()
@@ -523,11 +544,14 @@ int serial_printf(const char* format, ...)
 
 void serial_shutdown()
 {
+    serial_close_device();
 }
 
 pt_drv_serial dos_serial = {
     &serial_init,
     &serial_shutdown,
+    &serial_open_device,
+    &serial_close_device,
     &serial_rx_ready,
     &serial_tx_ready,
     &serial_getc,

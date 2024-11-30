@@ -2424,6 +2424,13 @@ PTSetImageDebug = function(val)
     _PTImageDebug = val
 end
 
+PTSetDebugConsole = function(enable, device)
+    if device == nil then
+        device = ""
+    end
+    _PTSetDebugConsole(enable, device)
+end
+
 --- Set a callback for before rendering the current frame to the screen. Useful for animating object positions.
 -- @tparam function callback Function body to call.
 local _PTRenderFrameConsumer = nil

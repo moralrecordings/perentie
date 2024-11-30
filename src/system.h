@@ -52,6 +52,8 @@ struct pt_drv_mouse {
 struct pt_drv_serial {
     void (*init)();
     void (*shutdown)();
+    void (*open_device)(const char*);
+    void (*close_device)();
     bool (*rx_ready)();
     bool (*tx_ready)();
     byte (*getc)();

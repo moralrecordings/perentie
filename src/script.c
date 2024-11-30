@@ -488,6 +488,18 @@ static int lua_pt_set_dither_hint(lua_State* L)
     return 0;
 };
 
+static int lua_pt_set_debug_console(lua_State* L)
+{
+    bool enabled = lua_toboolean(L, 1);
+    const char* device = luaL_checkstring(L, 2);
+    if (enabled) {
+        pt_sys.serial->open_device(device);
+    } else {
+        pt_sys.serial->close_device();
+    }
+    return 0;
+}
+
 static int lua_pt_quit(lua_State* L)
 {
     pt_event* ev = event_push(EVENT_QUIT);
@@ -523,6 +535,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTGetPalette", lua_pt_get_palette },
     { "_PTSetPaletteRemapper", lua_pt_set_palette_remapper },
     { "_PTSetDitherHint", lua_pt_set_dither_hint },
+    { "_PTSetDebugConsole", lua_pt_set_debug_console },
     { "_PTQuit", lua_pt_quit },
     { NULL, NULL },
 };
