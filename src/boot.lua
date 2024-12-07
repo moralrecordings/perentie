@@ -161,7 +161,10 @@ PTActorUpdate = function(actor, fast_forward)
         error("PTActorUpdate: expected PTActor for first argument")
     end
     if actor.talk_img and actor.talk_next_wait then
-        if not fast_forward and _PTGetMillis() < actor.talk_next_wait then
+        if actor.talk_next_wait < 0 then
+            -- negative talk wait time means wait until click
+            return false
+        elseif not fast_forward and _PTGetMillis() < actor.talk_next_wait then
             return false
         else
             PTRoomRemoveObject(actor.room, actor.talk_img)
@@ -184,6 +187,25 @@ end
 TALK_BASE_DELAY = 1000
 TALK_CHAR_DELAY = 85
 
+local _PTTalkBaseDelay = TALK_BASE_DELAY
+local _PTTalkCharDelay = TALK_CHAR_DELAY
+
+PTGetTalkBaseDelay = function()
+    return _PTTalkBaseDelay
+end
+
+PTGetTalkCharDelay = function()
+    return _PTTalkCharDelay
+end
+
+PTSetTalkBaseDelay = function(delay)
+    _PTTalkBaseDelay = delay
+end
+
+PTSetTalkCharDelay = function(delay)
+    _PTTalkCharDelay = delay
+end
+
 PTActorTalk = function(actor, message)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorTalk: expected PTActor for first argument")
@@ -200,7 +222,11 @@ PTActorTalk = function(actor, message)
     local y = math.min(math.max(actor.y + actor.talk_y, height), SCREEN_HEIGHT)
 
     actor.talk_img = PTBackground(text, x, y, 10)
-    actor.talk_next_wait = _PTGetMillis() + TALK_BASE_DELAY + #message * TALK_CHAR_DELAY
+    if _PTTalkBaseDelay < 0 or _PTTalkCharDelay < 0 then
+        actor.talk_next_wait = -1
+    else
+        actor.talk_next_wait = _PTGetMillis() + _PTTalkBaseDelay + #message * _PTTalkCharDelay
+    end
     -- TODO: Make room reference on actor?
     PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
     if _PTActorWaitAfterTalk then
