@@ -12,6 +12,9 @@ void radplayer_play();
 void radplayer_stop();
 void radplayer_set_master_volume(int vol);
 int radplayer_get_master_volume();
+void radplayer_set_position(int order, int line);
+int radplayer_get_order();
+int radplayer_get_line();
 
 void rad_load(RADPlayer* rad);
 void rad_play(RADPlayer* rad);
@@ -25,6 +28,9 @@ int rad_get_tune_line(RADPlayer* rad);
 void rad_set_master_volume(RADPlayer* rad, int vol);
 int rad_get_master_volume(RADPlayer* rad);
 int rad_get_speed(RADPlayer* rad);
+void rad_set_position(RADPlayer* rad, int order, int line);
+int rad_get_order(RADPlayer* rad);
+int rad_get_line(RADPlayer* rad);
 
 #if RAD_DETECT_REPEATS
 uint32_t rad_compute_total_time(RADPlayer* rad);

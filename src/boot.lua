@@ -2099,6 +2099,26 @@ PTRadSetVolume = function(volume)
     _PTRadSetVolume(volume)
 end
 
+--- Get the playback head position of the RAD player.
+-- @tresult integer Order list index.
+-- @tresult integer Line of the pattern.
+PTRadGetPosition = function()
+    return _PTRadGetPosition()
+end
+
+--- Set the playback head position of the RAD player.
+-- @tparam[opt=0] integer order Order list index.
+-- @tparam[opt=0] integer line Line of the pattern.
+PTRadSetPosition = function(order, line)
+    if order == nil or order < 0 then
+        order = 0
+    end
+    if line == nil or line < 0 then
+        line = 0
+    end
+    _PTRadSetPosition(order, line)
+end
+
 --- Threading
 -- @section threading
 

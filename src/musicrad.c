@@ -247,6 +247,21 @@ int radplayer_get_master_volume()
     return rad_get_master_volume(&rad_player);
 }
 
+void radplayer_set_position(int order, int line)
+{
+    rad_set_position(&rad_player, order, line);
+}
+
+int radplayer_get_order()
+{
+    return rad_get_order(&rad_player);
+}
+
+int radplayer_get_line()
+{
+    return rad_get_line(&rad_player);
+}
+
 //==================================================================================================
 // Initialise a RAD tune for playback.  This assumes the tune data is valid and does minimal data
 // checking.
@@ -546,6 +561,23 @@ int rad_get_master_volume(RADPlayer* rad)
 int rad_get_speed(RADPlayer* rad)
 {
     return rad->Speed;
+}
+
+void rad_set_position(RADPlayer* rad, int order, int line)
+{
+    rad->Order = order;
+    rad->Track = rad_get_track(rad);
+    rad->Line = line;
+}
+
+int rad_get_order(RADPlayer* rad)
+{
+    return rad->Order;
+}
+
+int rad_get_line(RADPlayer* rad)
+{
+    return rad->Line;
 }
 
 //==================================================================================================

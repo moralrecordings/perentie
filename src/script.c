@@ -97,6 +97,21 @@ static int lua_pt_rad_set_volume(lua_State* L)
     return 0;
 }
 
+static int lua_pt_rad_get_position(lua_State* L)
+{
+    lua_pushinteger(L, radplayer_get_order());
+    lua_pushinteger(L, radplayer_get_line());
+    return 2;
+}
+
+static int lua_pt_rad_set_position(lua_State* L)
+{
+    int order = luaL_checkinteger(L, 1);
+    int line = luaL_checkinteger(L, 2);
+    radplayer_set_position(order, line);
+    return 0;
+}
+
 static int lua_pt_image_gc(lua_State* L)
 {
     pt_image** target = (pt_image**)lua_touserdata(L, 1);
@@ -517,6 +532,8 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTRadStop", lua_pt_rad_stop },
     { "_PTRadGetVolume", lua_pt_rad_get_volume },
     { "_PTRadSetVolume", lua_pt_rad_set_volume },
+    { "_PTRadGetPosition", lua_pt_rad_get_position },
+    { "_PTRadSetPosition", lua_pt_rad_set_position },
     { "_PTImage", lua_pt_image },
     { "_PTGetImageDims", lua_pt_get_image_dims },
     { "_PTGetImageOrigin", lua_pt_get_image_origin },
