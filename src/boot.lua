@@ -814,6 +814,213 @@ PTGlobalRemoveObject = function(object)
     end)
 end
 
+--- Return a function for linear interpolation.
+-- @tparam[opt={0.0 1.0}] table points List of control points to interpolate between.
+-- @treturn function Callable that takes a progress value from 0.0-1.0 and returns an output from 0.0-1.0.
+PTLinear = function(points)
+    if points == nil then
+        points = { 0.0, 1.0 }
+    end
+    return function(progress)
+        if #points == 0 then
+            return 0.0
+        elseif #points == 1 then
+            return points[1]
+        end
+        if progress < 0.0 then
+            return points[1]
+        elseif progress > 1.0 then
+            return points[#points]
+        end
+        local prog = (#points - 1) * progress
+        local lower = math.floor(prog)
+        return points[1 + lower] + (points[2 + lower] - points[1 + lower]) * (prog - lower)
+    end
+end
+
+--- Return a function for a unit cubic bezier curve.
+-- Start point is always (0, 0), end point is always (1, 1).
+-- @tparam float x1 Curve control point 1 x coordinate.
+-- @tparam float y1 Curve control point 1 y coordinate.
+-- @tparam float x2 Curve control point 2 x coordinate.
+-- @tparam float y2 Curve control point 2 y coordinate.
+-- @treturn function Callable that takes a progress value from 0.0-1.0 and returns an output from 0.0-1.0.
+PTCubicBezier = function(x1, y1, x2, y2)
+    -- Algorithm nicked from Stylo's cubic bezier code, which
+    -- was originally based on code from WebKit
+    x1 = x1 + 0.0
+    y1 = y1 + 0.0
+    x2 = x2 + 0.0
+    y2 = y2 + 0.0
+    --print(string.format("PTCubicBezier(%f, %f, %f, %f)", x1, y1, x2, y2))
+    local cx = 3.0 * x1
+    local bx = 3.0 * (x2 - x1) - cx
+    local ax = 1.0 - cx - bx
+    local cy = 3.0 * y1
+    local by = 3.0 * (y2 - y1) - cy
+    local ay = 1.0 - cy - by
+
+    local f_x = function(t)
+        return ((ax * t + bx) * t + cx) * t
+    end
+
+    local f_y = function(t)
+        return ((ay * t + by) * t + cy) * t
+    end
+
+    local f_dx = function(t)
+        return (3.0 * ax * t + 2.0 * bx) * t + cx
+    end
+
+    local solve_x = function(x, epsilon)
+        local t = x
+        for _ = 0, 8 do
+            local sx = f_x(t)
+            if math.abs(sx - x) <= epsilon then
+                return t
+            end
+            local dx = f_dx(t)
+            if math.abs(dx) < 1e-6 then
+                break
+            end
+            t = t - ((sx - x) / dx)
+        end
+
+        local lo = 0.0
+        local hi = 1.0
+        t = x
+        if t < lo then
+            return lo
+        elseif t > hi then
+            return hi
+        end
+
+        while lo < hi do
+            local sx = f_x(t)
+            if math.abs(sx - x) < epsilon then
+                return t
+            end
+            if x > sx then
+                lo = t
+            else
+                hi = t
+            end
+            t = ((hi - lo) / 2.0) + lo
+        end
+        return t
+    end
+
+    return function(progress)
+        if x1 == y1 and x2 == y2 then
+            return progress
+        end
+        if progress == 0.0 then
+            return 0.0
+        elseif progress == 1.0 then
+            return 1.0
+        end
+        if progress < 0.0 then
+            if x1 > 0.0 then
+                return progress * y1 / x1
+            elseif y1 == 0.0 and x2 > 0.0 then
+                return progress * y2 / x2
+            end
+            return 0.0
+        end
+        if progress > 1.0 then
+            if x2 < 1.0 then
+                return 1.0 + (progress - 1.0) * (y2 - 1.0) / (x2 - 1.0)
+            elseif y2 == 1.0 and x1 < 1.0 then
+                return 1.0 + (progress - 1.0) * (y1 - 1.0) / (x1 - 1.0)
+            end
+            return 1.0
+        end
+
+        return f_y(solve_x(progress, 1e-6))
+    end
+end
+
+--- Return a preset timing function.
+-- A timing function is a callable that accepts a progress value between 0.0-1.0, and returns an output value between 0.0-1.0.
+-- The presets are the same as in the CSS animation-timing-function specification.
+-- "linear" - Even speed.
+-- "ease" - Increases in speed towards the middle of the animation, slowing back down at the end.
+-- "ease-in" - Starts off slowly, with the speed increasing until complete.
+-- "ease-out" - Starts off quickly, with the speed decreasing until complete.
+-- "ease-in-out" - Starts off slowly, speeds up in the middle, and then the speed decreases until complete.
+-- @tparam[opt="linear"] any timing Name of the builtin function, or a timing function.
+-- @treturn The timing function.
+PTTimingFunction = function(timing)
+    if timing == "linear" then
+        timing = PTLinear()
+    elseif timing == "ease" then
+        timing = PTCubicBezier(0.25, 0.1, 0.25, 1.0)
+    elseif timing == "ease-in" then
+        timing = PTCubicBezier(0.42, 0.0, 1.0, 1.0)
+    elseif timing == "ease-out" then
+        timing = PTCubicBezier(0.0, 0.0, 0.58, 1.0)
+    elseif timing == "ease-in-out" then
+        timing = PTCubicBezier(0.42, 0.0, 0.58, 1.0)
+    end
+
+    -- Default to linear
+    if type(timing) ~= "function" then
+        timing = PTLinear()
+    end
+    return timing
+end
+
+PTMoveRef = function(object, x, y, start_time, duration, timing)
+    -- timing functions nicked from the CSS animation-timing-function spec
+    timing = PTTimingFunction(timing)
+    return {
+        _type = "PTMoveRef",
+        timing = timing,
+        start_time = start_time,
+        duration = duration,
+        object = object,
+        x_a = object.x,
+        y_a = object.y,
+        x_b = x,
+        y_b = y,
+    }
+end
+
+_PTMoveRefList = {}
+PTMoveObject = function(object, x, y, duration, timing)
+    for i, obj in ipairs(_PTMoveRefList) do
+        if object == obj.object then
+            table.remove(_PTMoveRefList, i)
+            break
+        end
+    end
+    local moveref = PTMoveRef(object, x, y, PTGetMillis(), duration, timing)
+    table.insert(_PTMoveRefList, moveref)
+end
+
+PTMoveObjectRelative = function(object, dx, dy, duration, timing)
+    PTMoveObject(object, object.x + dx, object.y + dy, duration, timing)
+end
+
+local _PTObjectIsMoving = function(object, fast_forward)
+    for i, obj in ipairs(_PTMoveRefList) do
+        if object == obj.object then
+            if fast_forward then
+                -- fast forward the movement
+                obj.start_time = PTGetMillis() - obj.duration
+                return false
+            else
+                return true
+            end
+        end
+    end
+    return false
+end
+
+PTObjectIsMoving = function(object)
+    return _PTObjectIsMoving(object)
+end
+
 --- GUI controls
 -- @section controls
 
@@ -1884,6 +2091,7 @@ end
 local _PTThreads = {}
 local _PTThreadsSleepUntil = {}
 local _PTThreadsActorWait = {}
+local _PTThreadsMoveObjectWait = {}
 local _PTThreadsFastForward = {}
 
 --- Start a function in a new thread.
@@ -1921,6 +2129,9 @@ PTStopThread = function(name)
     end
     coroutine.close(_PTThreads[name])
     _PTThreads[name] = nil
+    _PTThreadsSleepUntil[name] = nil
+    _PTThreadsActorWait[name] = nil
+    _PTThreadsMoveObjectWait[name] = nil
     _PTThreadsFastForward[name] = nil
 end
 
@@ -1962,6 +2173,18 @@ PTWaitForActor = function(actor)
         end
     end
     error(string.format("PTWaitForActor(): thread not found"))
+end
+
+PTWaitForMoveObject = function(object)
+    local thread, _ = coroutine.running()
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            _PTThreadsMoveObjectWait[k] = object
+            coroutine.yield()
+            return
+        end
+    end
+    error(string.format("PTWaitForMoveObject(): thread not found"))
 end
 
 local _PTWatchdogEnabled = true
@@ -2349,6 +2572,12 @@ _PTRunThreads = function()
                 if is_awake then
                     _PTThreadsActorWait[name] = nil
                 end
+            elseif _PTThreadsMoveObjectWait[name] then
+                is_awake = not _PTObjectIsMoving(_PTThreadsMoveObjectWait[name], _PTThreadsFastForward[name])
+                --print("MoveObjectWait", is_awake)
+                if is_awake then
+                    _PTThreadsMoveObjectWait[name] = nil
+                end
             elseif _PTThreadsFastForward[name] then
             -- Ignore all sleeps, go at top speed.
             elseif _PTThreadsSleepUntil[name] then
@@ -2378,6 +2607,8 @@ _PTRunThreads = function()
                     --PTLog("PTRunThreads(): Thread %s terminated", name)
                     coroutine.close(_PTThreads[name])
                     _PTThreads[name] = nil
+                    _PTThreadsSleepUntil[name] = nil
+                    _PTThreadsActorWait[name] = nil
                     _PTThreadsFastForward[name] = nil
                     if name == "__verb" and _PTGrabInputOnVerb then
                         PTReleaseInput()
@@ -2523,6 +2754,28 @@ local _PTUpdateRoom = function()
     _PTCurrentRoom.y = math.max(math.min(_PTCurrentRoom.y, y_max), y_min)
 end
 
+local _PTUpdateMoveObject = function()
+    if _PTGamePaused then
+        return
+    end
+    local t = PTGetMillis()
+    local done = {}
+    for i, moveref in ipairs(_PTMoveRefList) do
+        local at = (t - moveref.start_time) / moveref.duration
+        local a = moveref.timing(at)
+
+        moveref.object.x = math.floor(moveref.x_a + (moveref.x_b - moveref.x_a) * a)
+        moveref.object.y = math.floor(moveref.y_a + (moveref.y_b - moveref.y_a) * a)
+        --print(string.format("%f,%f", at, a))
+        if at >= 1.0 then
+            table.insert(done, 1, i)
+        end
+    end
+    for _, i in ipairs(done) do
+        table.remove(_PTMoveRefList, i)
+    end
+end
+
 KEY_FLAG_CTRL = 1
 KEY_FLAG_ALT = 2
 KEY_FLAG_SHIFT = 4
@@ -2557,6 +2810,7 @@ _PTEvents = function()
         _PTUpdateMouseOver()
     end
     _PTUpdateRoom()
+    _PTUpdateMoveObject()
     _PTUpdateGUI()
 end
 
