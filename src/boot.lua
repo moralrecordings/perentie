@@ -974,7 +974,7 @@ end
 -- "ease-in" - Starts off slowly, with the speed increasing until complete.
 -- "ease-out" - Starts off quickly, with the speed decreasing until complete.
 -- "ease-in-out" - Starts off slowly, speeds up in the middle, and then the speed decreases until complete.
--- @tparam[opt="linear"] any timing Name of the builtin function, or a timing function.
+-- @tparam[opt="linear"] any timing Alias of a builtin function, or a timing function such as one generated from @{PTCubicBezier} or @{PTLinear}.
 -- @treturn The timing function.
 PTTimingFunction = function(timing)
     if timing == "linear" then
@@ -996,7 +996,7 @@ PTTimingFunction = function(timing)
     return timing
 end
 
-PTMoveRef = function(object, x, y, start_time, duration, timing)
+PTMoveRef = function(object, x, y, start_time, duration, timing, while_paused)
     -- timing functions nicked from the CSS animation-timing-function spec
     timing = PTTimingFunction(timing)
     return {
@@ -1009,23 +1009,42 @@ PTMoveRef = function(object, x, y, start_time, duration, timing)
         y_a = object.y,
         x_b = x,
         y_b = y,
+        while_paused = while_paused,
     }
 end
 
 _PTMoveRefList = {}
-PTMoveObject = function(object, x, y, duration, timing)
+--- Move an object smoothly to a destination point.
+-- On every rendered frame, Perentie will adjust the "x" and "y" parameters on the target object
+-- to move it to the destination, with the speed determined by a duration and a timing function.
+-- You can only have one movement instruction per object. If an existing
+-- move instruction is found for an object, Perentie will replace it.
+-- @tparam table object Any object with "x" and "y" parameters.
+-- @tparam integer x Absolute x coordinate to move towards.
+-- @tparam integer x Absolute y coordinate to move towards.
+-- @tparam integer duration Duration of movement in milliseconds.
+-- @tparam any timing Timing function or alias to use, same as timing argument of @{PTTimingFunction}.
+-- @tparam[opt=false] boolean while_paused Whether to move the object while the game is paused.
+PTMoveObject = function(object, x, y, duration, timing, while_paused)
     for i, obj in ipairs(_PTMoveRefList) do
         if object == obj.object then
             table.remove(_PTMoveRefList, i)
             break
         end
     end
-    local moveref = PTMoveRef(object, x, y, PTGetMillis(), duration, timing)
+    local moveref = PTMoveRef(object, x, y, PTGetMillis(), duration, timing, while_paused)
     table.insert(_PTMoveRefList, moveref)
 end
 
-PTMoveObjectRelative = function(object, dx, dy, duration, timing)
-    PTMoveObject(object, object.x + dx, object.y + dy, duration, timing)
+--- Move an object smoothly to a destination point relative to the object's current position.
+-- @tparam table object Any object with "x" and "y" parameters
+-- @tparam integer x X distance relative to the object's current position to move towards.
+-- @tparam integer y Y distance relative to the object's current position to move towards.
+-- @tparam integer duration Duration of movement in milliseconds.
+-- @tparam any timing Timing function or alias to use, same as timing argument of @{PTTimingFunction}.
+-- @tparam[opt=false] boolean while_paused Whether to move the object while the game is paused.
+PTMoveObjectRelative = function(object, dx, dy, duration, timing, while_paused)
+    PTMoveObject(object, object.x + dx, object.y + dy, duration, timing, while_paused)
 end
 
 local _PTObjectIsMoving = function(object, fast_forward)
@@ -2434,6 +2453,39 @@ PTCurrentRoom = function()
     return _PTCurrentRoom
 end
 
+local _PTUpdateRoom = function(force)
+    if force == nil then
+        force = false
+    end
+
+    if not force then
+        if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+            return
+        end
+        if _PTGamePaused then
+            return
+        end
+    end
+    for i, actor in ipairs(_PTCurrentRoom.actors) do
+        if actor.moving > 0 and PTGetMillis() > actor.walkdata_next_wait then
+            PTActorWalk(actor)
+            PTSpriteIncrementFrame(actor.sprite)
+            actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
+            if actor == _PTCurrentRoom.camera_actor then
+                _PTCurrentRoom.x, _PTCurrentRoom.y = actor.x, actor.y
+            end
+        end
+        --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
+    end
+    -- constrain camera to room bounds
+    local x_min = _PTCurrentRoom.origin_x
+    local x_max = _PTCurrentRoom.width - (SCREEN_WIDTH - _PTCurrentRoom.origin_x)
+    local y_min = _PTCurrentRoom.origin_y
+    local y_max = _PTCurrentRoom.height - (SCREEN_HEIGHT - _PTCurrentRoom.origin_y)
+    _PTCurrentRoom.x = math.max(math.min(_PTCurrentRoom.x, x_max), x_min)
+    _PTCurrentRoom.y = math.max(math.min(_PTCurrentRoom.y, y_max), y_min)
+end
+
 --- Switch the current room.
 -- Will call the callbacks specified by @{PTOnRoomEnter} and
 -- @{PTOnRoomExit}.
@@ -2448,6 +2500,7 @@ PTSwitchRoom = function(room, ctx)
     if _PTCurrentRoom and _PTOnRoomEnterHandlers[_PTCurrentRoom.name] then
         _PTOnRoomEnterHandlers[_PTCurrentRoom.name](ctx)
     end
+    _PTUpdateRoom(true)
     PTLog("PTSwitchRoom: %s, %s", tostring(room), tostring(_PTCurrentRoom))
 end
 
@@ -2773,48 +2826,20 @@ local _PTUpdateMouseOver = function()
     end
 end
 
-local _PTUpdateRoom = function()
-    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
-        return
-    end
-    if _PTGamePaused then
-        return
-    end
-    for i, actor in ipairs(_PTCurrentRoom.actors) do
-        if actor.moving > 0 and PTGetMillis() > actor.walkdata_next_wait then
-            PTActorWalk(actor)
-            PTSpriteIncrementFrame(actor.sprite)
-            actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
-            if actor == _PTCurrentRoom.camera_actor then
-                _PTCurrentRoom.x, _PTCurrentRoom.y = actor.x, actor.y
-            end
-        end
-        --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
-    end
-    -- constrain camera to room bounds
-    local x_min = _PTCurrentRoom.origin_x
-    local x_max = _PTCurrentRoom.width - (SCREEN_WIDTH - _PTCurrentRoom.origin_x)
-    local y_min = _PTCurrentRoom.origin_y
-    local y_max = _PTCurrentRoom.height - (SCREEN_HEIGHT - _PTCurrentRoom.origin_y)
-    _PTCurrentRoom.x = math.max(math.min(_PTCurrentRoom.x, x_max), x_min)
-    _PTCurrentRoom.y = math.max(math.min(_PTCurrentRoom.y, y_max), y_min)
-end
-
 local _PTUpdateMoveObject = function()
-    if _PTGamePaused then
-        return
-    end
     local t = PTGetMillis()
     local done = {}
     for i, moveref in ipairs(_PTMoveRefList) do
-        local at = (t - moveref.start_time) / moveref.duration
-        local a = moveref.timing(at)
+        if (not _PTGamePaused) or moveref.while_paused then
+            local at = (t - moveref.start_time) / moveref.duration
+            local a = moveref.timing(at)
 
-        moveref.object.x = math.floor(moveref.x_a + (moveref.x_b - moveref.x_a) * a)
-        moveref.object.y = math.floor(moveref.y_a + (moveref.y_b - moveref.y_a) * a)
-        --print(string.format("%f,%f", at, a))
-        if at >= 1.0 then
-            table.insert(done, 1, i)
+            moveref.object.x = math.floor(moveref.x_a + (moveref.x_b - moveref.x_a) * a)
+            moveref.object.y = math.floor(moveref.y_a + (moveref.y_b - moveref.y_a) * a)
+            --print(string.format("%f,%f", at, a))
+            if at >= 1.0 then
+                table.insert(done, 1, i)
+            end
         end
     end
     for _, i in ipairs(done) do
