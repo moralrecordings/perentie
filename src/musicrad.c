@@ -565,9 +565,11 @@ int rad_get_speed(RADPlayer* rad)
 
 void rad_set_position(RADPlayer* rad, int order, int line)
 {
+    rad_stop(rad);
     rad->Order = order;
     rad->Track = rad_get_track(rad);
     rad->Line = line;
+    rad_play(rad);
 }
 
 int rad_get_order(RADPlayer* rad)
