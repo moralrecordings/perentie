@@ -39,7 +39,7 @@ You can convert a normal PNG to 8-bit with ImageMagick:
 
 .. code-block:: bash
 
-   magick convert source.png -colors 256 target.png 
+   magick convert source.png -colors 256 PNG8:target.png 
 
 Debugging
 =========

@@ -2188,10 +2188,23 @@ end
 
 --- Stop a running thread.
 -- @tparam string name Name of the thread.
-PTStopThread = function(name)
+-- @tparam boolean ignore_self If true, ignore if this is the currently running thread.
+-- @tparam boolean ignore_self If true, ignore if this thread isn't running.
+PTStopThread = function(name, ignore_self, ignore_missing)
     if not _PTThreads[name] then
-        error(string.format("PTStopThread(): thread named %s doesn't exist", name))
+        if not ignore_missing then
+            error(string.format("PTStopThread(): thread named %s doesn't exist", name))
+        else
+            return
+        end
     end
+    if ignore_self then
+        local thread, _ = coroutine.running()
+        if _PTThreads[name] == thread then
+            return
+        end
+    end
+
     coroutine.close(_PTThreads[name])
     _PTThreads[name] = nil
     _PTThreadsSleepUntil[name] = nil
@@ -2761,11 +2774,19 @@ PTSetDebugConsole = function(enable, device)
     _PTSetDebugConsole(enable, device)
 end
 
+local _PTRenderFrameConsumer = nil
 --- Set a callback for before rendering the current frame to the screen. Useful for animating object positions.
 -- @tparam function callback Function body to call.
-local _PTRenderFrameConsumer = nil
 PTOnRenderFrame = function(callback)
     _PTRenderFrameConsumer = callback
+end
+
+local _PTSkipWhileGrabbed = nil
+--- Set a callback for after skipping a sequence (i.e. hitting Escape while the input is grabbed).
+-- This is seperate to the verb thread, which will be fast-forwarded.
+-- @tparam function callback Function body to call.
+PTOnSkipWhileGrabbed = function(callback)
+    _PTSkipWhileGrabbed = callback
 end
 
 local _PTMouseOver = nil
@@ -2864,6 +2885,9 @@ _PTEvents = function()
             -- Grabbed input mode, intercept events
             if ev.type == "keyDown" and ev.key == "escape" then
                 _PTThreadsFastForward["__verb"] = true
+                if _PTSkipWhileGrabbed then
+                    _PTSkipWhileGrabbed()
+                end
             elseif ev.type == "mouseDown" and _PTThreadsActorWait["__verb"] then
                 _PTThreadsActorWait["__verb"].talk_next_wait = _PTGetMillis()
             end
