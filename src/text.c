@@ -121,6 +121,9 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
     pt_text* text = (pt_text*)calloc(1, sizeof(pt_text));
     text->font = font;
     text->width = width;
+    if (length == 0)
+        return text;
+
     const byte* ptr = string;
     const byte* end = string + length;
 
@@ -153,8 +156,15 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
         }
     }
 
-    if (!word_count)
+    if (!word_count) {
+        if (words) {
+            for (int j = 0; j < word_count; j++) {
+                destroy_text_word(words[j]);
+            }
+            free(words);
+        }
         return text;
+    }
 
     uint16_t x_cursor = 0;
     uint16_t y_cursor = 0;
@@ -295,6 +305,17 @@ pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b)
     return image;
 }
 
+void destroy_text_word(pt_text_word* word)
+{
+    if (!word)
+        return;
+    if (word->glyphs) {
+        free(word->glyphs);
+        word->glyphs = NULL;
+    }
+    free(word);
+}
+
 void destroy_text(pt_text* text)
 {
     if (!text)
@@ -303,15 +324,8 @@ void destroy_text(pt_text* text)
         for (int i = 0; i < text->line_count; i++) {
             pt_text_line* line = text->lines[i];
             for (int j = 0; j < line->word_count; j++) {
-                pt_text_word* word = line->words[j];
-                if (word) {
-                    if (word->glyphs) {
-                        free(word->glyphs);
-                        word->glyphs = NULL;
-                    }
-                    free(word);
-                    line->words[j] = NULL;
-                }
+                destroy_text_word(line->words[j]);
+                line->words[j] = NULL;
             }
             free(line->words);
             line->words = NULL;
