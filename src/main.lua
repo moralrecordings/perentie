@@ -55,7 +55,7 @@ description = PTBackground(description_txt, 16, 64, 0)
 PTRoomAddObject(test_room, description)
 
 -- Add a key handler callback to quit the engine
-PTGlobalOnEvent("keyDown", function(ev)
+PTOnEvent("keyDown", function(ev)
     if ev.key == "q" then
         PTQuit()
     end
@@ -83,7 +83,7 @@ end)
 
 -- Add callback for clicking the left mouse button.
 -- This will run as part of the engine's event processing loop.
-PTGlobalOnEvent("mouseDown", function(event)
+PTOnEvent("mouseDown", function(event)
     local mouseover = PTGetMouseOver()
     if mouseover and mouseover.hotspot_id then
         if (event.button & 1) ~= 0 then -- left mouse button

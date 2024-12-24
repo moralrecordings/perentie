@@ -160,6 +160,14 @@ PTActorUpdate = function(actor, fast_forward)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorUpdate: expected PTActor for first argument")
     end
+    if actor.moving > 0 and PTGetMillis() > actor.walkdata_next_wait then
+        PTActorWalk(actor)
+        PTSpriteIncrementFrame(actor.sprite)
+        actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
+        if actor == _PTCurrentRoom.camera_actor then
+            _PTCurrentRoom.x, _PTCurrentRoom.y = actor.x, actor.y
+        end
+    end
     if actor.talk_img and actor.talk_next_wait then
         if actor.talk_next_wait < 0 then
             -- negative talk wait time means wait until click
@@ -171,6 +179,7 @@ PTActorUpdate = function(actor, fast_forward)
             actor.talk_img = nil
         end
     end
+
     return true
 end
 
@@ -214,6 +223,9 @@ PTActorTalk = function(actor, message)
         PTLog("PTActorTalk: no default font!!")
         return
     end
+    if PTThreadInFastForward() then
+        return
+    end
     local text = PTText(message, actor.talk_font, 200, "center", actor.talk_colour)
 
     local width, height = PTGetImageDims(text)
@@ -221,13 +233,18 @@ PTActorTalk = function(actor, message)
     local x = math.min(math.max(actor.x + actor.talk_x, width / 2), SCREEN_WIDTH - width / 2)
     local y = math.min(math.max(actor.y + actor.talk_y, height), SCREEN_HEIGHT)
 
-    actor.talk_img = PTBackground(text, x, y, 10)
+    if not actor.talk_img then
+        actor.talk_img = PTBackground(nil, 0, 0, 20)
+    end
+    actor.talk_img.x = x
+    actor.talk_img.y = y
+    actor.talk_img.image = text
+
     if _PTTalkBaseDelay < 0 or _PTTalkCharDelay < 0 then
         actor.talk_next_wait = -1
     else
         actor.talk_next_wait = _PTGetMillis() + _PTTalkBaseDelay + #message * _PTTalkCharDelay
     end
-    -- TODO: Make room reference on actor?
     PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
     if _PTActorWaitAfterTalk then
         PTWaitForActor(actor)
@@ -2213,11 +2230,55 @@ PTStopThread = function(name, ignore_self, ignore_missing)
     _PTThreadsFastForward[name] = nil
 end
 
+PTFastForwardThread = function(name, ignore_missing)
+    if not _PTThreads[name] then
+        if not ignore_missing then
+            error(string.format("PTFastForwardThread(): thread named %s doesn't exist", name))
+        else
+            return
+        end
+    end
+    _PTThreadsFastForward[name] = true
+end
+
+PTTalkSkipThread = function(name, ignore_missing)
+    if not _PTThreads[name] then
+        if not ignore_missing then
+            error(string.format("PTTalkSkipThread(): thread named %s doesn't exist", name))
+        else
+            return
+        end
+    end
+    _PTThreadsActorWait[name].talk_next_wait = _PTGetMillis()
+end
+
+--- Check whether a thread is in the fast forward state.
+-- @tparam[opt=nil] string name Name of the thread. Defaults to the current execution context.
+-- @treturn bool Whether the thread is in the fast forward state.
+PTThreadInFastForward = function(name)
+    local thread, _ = coroutine.running()
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            return _PTThreadsFastForward[k]
+        end
+    end
+    return false
+end
+
 --- Check whether a thread is running.
--- @tparam string name Name of the thread.
+-- @tparam[opt=nil] string name Name of the thread. Defaults to the current execution context.
 -- @treturn bool Whether the thread exists.
 PTThreadExists = function(name)
-    return _PTThreads[name] ~= nil
+    if name then
+        return _PTThreads[name] ~= nil
+    end
+    local thread, _ = coroutine.running()
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            return true
+        end
+    end
+    return false
 end
 
 --- Sleep the current thread.
@@ -2443,6 +2504,9 @@ end
 -- @tparam function func Function body to call, with an optional argument
 -- for context data.
 PTOnRoomEnter = function(name, func)
+    if type(name) ~= "string" then
+        error("PTOnRoomEnter: expected string for first argument")
+    end
     if _PTOnRoomEnterHandlers[name] then
         PTLog("PTOnRoomEnter: overwriting handler for %s", name)
     end
@@ -2454,6 +2518,9 @@ end
 -- @tparam function func Function body to call, with an optional argument
 -- for context data.
 PTOnRoomExit = function(name, func)
+    if type(name) ~= "string" then
+        error("PTOnRoomExit: expected string for first argument")
+    end
     if _PTOnRoomExitHandlers[name] then
         PTLog("PTOnRoomExit: overwriting handler for %s", name)
     end
@@ -2480,14 +2547,7 @@ local _PTUpdateRoom = function(force)
         end
     end
     for i, actor in ipairs(_PTCurrentRoom.actors) do
-        if actor.moving > 0 and PTGetMillis() > actor.walkdata_next_wait then
-            PTActorWalk(actor)
-            PTSpriteIncrementFrame(actor.sprite)
-            actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
-            if actor == _PTCurrentRoom.camera_actor then
-                _PTCurrentRoom.x, _PTCurrentRoom.y = actor.x, actor.y
-            end
-        end
+        PTActorUpdate(actor, false)
         --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
     end
     -- constrain camera to room bounds
@@ -2741,9 +2801,9 @@ PTSetMouseSprite = function(sprite)
     _PTMouseSprite = sprite
 end
 
-local _PTGlobalEventConsumers = {}
-PTGlobalOnEvent = function(type, callback)
-    _PTGlobalEventConsumers[type] = callback
+local _PTEventConsumers = {}
+PTOnEvent = function(type, callback)
+    _PTEventConsumers[type] = callback
 end
 
 local _PTAutoClearScreen = true
@@ -2781,12 +2841,20 @@ PTOnRenderFrame = function(callback)
     _PTRenderFrameConsumer = callback
 end
 
-local _PTSkipWhileGrabbed = nil
---- Set a callback for after skipping a sequence (i.e. hitting Escape while the input is grabbed).
--- This is seperate to the verb thread, which will be fast-forwarded.
+local _PTTalkSkipWhileGrabbed = nil
+--- Set a callback for when the user indicates they wish to skip a single spoken line (i.e. clicking or hitting"." while the input is grabbed).
+-- This is seperate to the verb thread, which will always be fast-forwarded.
 -- @tparam function callback Function body to call.
-PTOnSkipWhileGrabbed = function(callback)
-    _PTSkipWhileGrabbed = callback
+PTOnTalkSkipWhileGrabbed = function(callback)
+    _PTTalkSkipWhileGrabbed = callback
+end
+
+local _PTFastForwardWhileGrabbed = nil
+--- Set a callback for when the user indicates they wish to fast-forward a sequence (i.e. hitting Escape while the input is grabbed).
+-- This is seperate to the verb thread, which will always be fast-forwarded.
+-- @tparam function callback Function body to call.
+PTOnFastForwardWhileGrabbed = function(callback)
+    _PTFastForwardWhileGrabbed = callback
 end
 
 local _PTMouseOver = nil
@@ -2884,18 +2952,21 @@ _PTEvents = function()
         if _PTInputGrabbed then
             -- Grabbed input mode, intercept events
             if ev.type == "keyDown" and ev.key == "escape" then
-                _PTThreadsFastForward["__verb"] = true
-                if _PTSkipWhileGrabbed then
-                    _PTSkipWhileGrabbed()
+                PTFastForwardThread("__verb", true)
+                if _PTFastForwardWhileGrabbed then
+                    _PTFastForwardWhileGrabbed()
                 end
-            elseif ev.type == "mouseDown" and _PTThreadsActorWait["__verb"] then
-                _PTThreadsActorWait["__verb"].talk_next_wait = _PTGetMillis()
+            elseif (ev.type == "mouseDown") or (ev.type == "keyDown" and ev.key == ".") then
+                PTTalkSkipThread("__verb", true)
+                if _PTTalkSkipWhileGrabbed then
+                    _PTTalkSkipWhileGrabbed()
+                end
             end
         elseif _PTGamePaused then
             -- Don't run event consumers while paused
         else
-            if _PTGlobalEventConsumers[ev.type] then
-                result = _PTGlobalEventConsumers[ev.type](ev)
+            if _PTEventConsumers[ev.type] then
+                result = _PTEventConsumers[ev.type](ev)
             end
         end
         _PTGUIEvent(ev)
