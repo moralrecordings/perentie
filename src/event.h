@@ -9,6 +9,7 @@
 enum pt_event_type {
     EVENT_NULL,
     EVENT_QUIT,
+    EVENT_RESET,
     EVENT_KEY_DOWN,
     EVENT_KEY_UP,
     EVENT_MOUSE_MOVE,
@@ -46,6 +47,11 @@ typedef union {
         uint8_t flags;
         bool isrepeat;
     } keyboard;
+
+    struct {
+        enum pt_event_type type;
+        char* state_path;
+    } reset;
 
 } pt_event;
 

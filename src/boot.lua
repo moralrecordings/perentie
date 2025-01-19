@@ -13,6 +13,29 @@ PTVersion = function()
     return _PTVersion()
 end
 
+local _PTGameID = nil
+local _PTGameVersion = nil
+local _PTGameName = nil
+--- Set the current game.
+-- Required in order to use the save/load system.
+-- @tparam string id Short identifier code for the game. Used to check that a saved state is for the correct game.
+-- @tparam number version Version number of the code. Used to state which version of the game created a save state.
+-- @tparam name Human readable name
+PTSetGameInfo = function(id, version, name)
+    if not type(id) == "string" then
+        error("PTSetGameInfo: expected string for first argument")
+    end
+    if not type(version) == "number" then
+        error("PTSetGameInfo: expected number for second argument")
+    end
+    if not type(name) == "string" then
+        error("PTSetGameInfo: expected string for third argument")
+    end
+    _PTGameID = id
+    _PTGameVersion = version
+    _PTGameName = name
+end
+
 --- Print a message to the Perentie log file. This is a more accessible replacement for Lua's @{print} function, which will only output to the debug console.
 -- @tparam string format Format string in @{string.format} syntax.
 -- @param ... Arguments for format string.
@@ -27,12 +50,39 @@ PTGetMillis = function()
 end
 
 --- Quit Perentie.
--- @tparam[opt=0] int retcode Return code.
+-- @tparam[opt=0] integer retcode Return code.
 PTQuit = function(retcode)
     if not retcode then
         retcode = 0
     end
     _PTQuit(retcode)
+end
+
+local _PTInitFromStateFile = function(path)
+    PTLog("PTInitFromStateFile: %s", path)
+end
+
+--- Reset Perentie. Clears the scripting engine and restarts.
+PTReset = function()
+    _PTReset()
+end
+
+--- Reset Perentie and load the engine state from a file.
+-- @tparam[opt=nil] string path Path to the Perentie state file.
+PTLoadState = function(path)
+    _PTReset(path)
+end
+
+PTSaveState = function(path)
+    if not _PTGameID then
+        error("PTSaveState: No game ID defined! First, set it up with PTSetGameInfo()")
+    end
+    local file = io.open(path, "w")
+    if not file then
+        error(string.format('PTSaveState: Unable to open path "%s" for writing', path))
+    end
+    file:write("PERENTIE")
+    file:write(string.char(1, 0))
 end
 
 _PTAddToList = function(list, object)

@@ -11,12 +11,15 @@
 #include "log.h"
 #include "musicrad.h"
 #include "repl.h"
+#include "script.h"
 #include "system.h"
 #include "text.h"
 #include "version.h"
 
 lua_State* main_thread = NULL;
 static bool has_quit = false;
+static bool has_reset = false;
+static char* reset_state_path = NULL;
 static int quit_status = 0;
 
 bool script_has_quit()
@@ -29,10 +32,15 @@ int script_quit_status()
     return quit_status;
 }
 
-inline const char* lua_strcpy(lua_State* L, int index, size_t* size)
+inline char* lua_strcpy(lua_State* L, int index, size_t* size)
 {
-    size_t n;
+    size_t n = 0;
     const char* name_src = lua_tolstring(L, index, &n);
+    if (!name_src) {
+        if (size)
+            size = 0;
+        return NULL;
+    }
     char* dest = (char*)calloc(n + 1, sizeof(char));
     memcpy(dest, name_src, n);
     if (size)
@@ -381,6 +389,22 @@ static int lua_pt_pump_event(lua_State* L)
         has_quit = true;
         quit_status = ev->quit.status;
         break;
+    case EVENT_RESET:
+        lua_pushstring(L, "reset");
+        lua_setfield(L, -2, "type");
+        if (ev->reset.state_path) {
+            lua_pushstring(L, ev->reset.state_path);
+        } else {
+            lua_pushnil(L);
+        }
+        lua_setfield(L, -2, "statePath");
+        // if something's raised the reset event,
+        // tell the engine to reload everything
+        // after the current loop
+        has_reset = true;
+        reset_state_path = ev->reset.state_path;
+        ev->reset.state_path = NULL;
+        break;
     case EVENT_KEY_DOWN:
         lua_pushstring(L, "keyDown");
         lua_setfield(L, -2, "type");
@@ -515,6 +539,15 @@ static int lua_pt_set_debug_console(lua_State* L)
     return 0;
 }
 
+static int lua_pt_reset(lua_State* L)
+{
+    pt_event* ev = event_push(EVENT_RESET);
+    size_t path_size = 0;
+    char* path = lua_strcpy(L, 1, &path_size);
+    ev->reset.state_path = path;
+    return 0;
+};
+
 static int lua_pt_quit(lua_State* L)
 {
     pt_event* ev = event_push(EVENT_QUIT);
@@ -553,12 +586,15 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTSetPaletteRemapper", lua_pt_set_palette_remapper },
     { "_PTSetDitherHint", lua_pt_set_dither_hint },
     { "_PTSetDebugConsole", lua_pt_set_debug_console },
+    { "_PTReset", lua_pt_reset },
     { "_PTQuit", lua_pt_quit },
     { NULL, NULL },
 };
 
 int script_exec()
 {
+    if (has_reset)
+        script_reset();
     if (!main_thread)
         return 0;
     lua_getglobal(main_thread, "_PTRunThreads");
@@ -649,4 +685,23 @@ void script_init()
         exit(1);
     }
     repl_init(main_thread);
+}
+
+void script_reset()
+{
+    lua_close(main_thread);
+    main_thread = NULL;
+    script_init();
+    has_reset = false;
+    if (reset_state_path) {
+        lua_getglobal(main_thread, "_PTInitFromStateFile");
+        lua_pushstring(main_thread, reset_state_path);
+        if (lua_pcall(main_thread, 1, 0, 0) != LUA_OK) {
+            const char* error = lua_tostring(main_thread, -1);
+            log_print("script_reset(): error: %s\n", error);
+            lua_pop(main_thread, 1);
+        }
+        free(reset_state_path);
+        reset_state_path = NULL;
+    }
 }
