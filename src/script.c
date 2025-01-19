@@ -21,6 +21,7 @@ static bool has_quit = false;
 static bool has_reset = false;
 static char* reset_state_path = NULL;
 static int quit_status = 0;
+static char* crash_message = NULL;
 
 bool script_has_quit()
 {
@@ -32,7 +33,12 @@ int script_quit_status()
     return quit_status;
 }
 
-inline char* lua_strcpy(lua_State* L, int index, size_t* size)
+char* script_crash_message()
+{
+    return crash_message;
+}
+
+char* lua_strcpy(lua_State* L, int index, size_t* size)
 {
     size_t n = 0;
     const char* name_src = lua_tolstring(L, index, &n);
@@ -677,10 +683,12 @@ void script_init()
         exit(1);
     }
 
-    if (luaL_dofile(main_thread, "main.lua") != LUA_OK) {
-        log_print("script_init(): main.lua: %s\n", lua_tostring(main_thread, -1));
-        luaL_traceback(main_thread, main_thread, NULL, 1);
-        log_print("%s", lua_tostring(main_thread, 1));
+    // load in target game's lua code
+    lua_getglobal(main_thread, "_PTWhoops");
+    int init_result = luaL_loadfile(main_thread, "main.lua") || lua_pcall(main_thread, 0, LUA_MULTRET, 1);
+    if (init_result != LUA_OK) {
+        crash_message = lua_strcpy(main_thread, -1, NULL);
+        log_print("%s", crash_message);
         lua_pop(main_thread, 1);
         exit(1);
     }

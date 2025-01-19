@@ -12,6 +12,7 @@
 #include "image.h"
 #include "log.h"
 #include "rect.h"
+#include "script.h"
 #include "utils.h"
 
 // VGA blitter
@@ -631,6 +632,10 @@ void vga_shutdown()
     if (ega_dither_list) {
         free(ega_dither_list);
         ega_dither_list = NULL;
+    }
+    char* crash = script_crash_message();
+    if (crash) {
+        printf("%s", crash);
     }
 }
 

@@ -85,6 +85,19 @@ PTSaveState = function(path)
     file:write(string.char(1, 0))
 end
 
+_PTWhoops = function(err)
+    return debug.traceback(
+        string.format(
+            "Unhandled script error!\nPlease send this info to the game author so they can fix the problem.\n\nPerentie version: %s, Game: %s (%s) ver. %d\nError: %s",
+            _PTVersion(),
+            _PTGameID,
+            _PTGameName,
+            _PTGameVersion,
+            err
+        )
+    )
+end
+
 _PTAddToList = function(list, object)
     local exists = false
     for i, obj in ipairs(list) do
@@ -1329,24 +1342,27 @@ PTAddPanel = function(panel)
 end
 
 PTRemovePanel = function(panel)
-    if panel and panel._type == "PTPanel" then
-        _PTRemoveFromList(_PTPanelList, panel)
+    if not panel or panel._type ~= "PTPanel" then
+        error("PTRemovePanel: expected PTPanel for first argument")
     end
+    _PTRemoveFromList(_PTPanelList, panel)
 end
 
 PTPanelAddObject = function(panel, object)
-    if panel and panel._type == "PTPanel" then
-        _PTAddToList(panel.objects, object)
+    if not panel or panel._type ~= "PTPanel" then
+        error("PTPanelAddObject: expected PTPanel for first argument")
     end
+    _PTAddToList(panel.objects, object)
     table.sort(panel.objects, function(a, b)
         return a.z < b.z
     end)
 end
 
 PTPanelRemoveObject = function(panel, object)
-    if panel and panel._type == "PTPanel" then
-        _PTRemoveFromList(panel.objects, object)
+    if not panel or panel._type ~= "PTPanel" then
+        error("PTPanelRemoveObject: expected PTPanel for first argument")
     end
+    _PTRemoveFromList(panel.objects, object)
     table.sort(panel.objects, function(a, b)
         return a.z < b.z
     end)

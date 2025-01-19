@@ -3,6 +3,7 @@
 
 bool script_has_quit();
 int script_quit_status();
+char* script_crash_message();
 void script_init();
 int script_exec();
 void script_events();
