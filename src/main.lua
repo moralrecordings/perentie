@@ -1,6 +1,7 @@
 -- Create a room
 test_room = PTRoom("test", SCREEN_WIDTH, SCREEN_HEIGHT)
-PTSwitchRoom(test_room)
+PTAddRoom(test_room)
+PTSwitchRoom("test")
 
 -- Add a background
 background = PTBackground(PTImage("assets/stars.png"), 0, 0, -2)

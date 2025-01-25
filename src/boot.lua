@@ -68,6 +68,8 @@ PTReset = function()
 end
 
 --- Reset Perentie and load the engine state from a file.
+-- Similar to PTReset, this will clear the scripting engine
+-- and restart.
 -- @tparam[opt=nil] string path Path to the Perentie state file.
 PTLoadState = function(path)
     _PTReset(path)
@@ -85,15 +87,28 @@ PTSaveState = function(path)
     file:write(string.char(1, 0))
 end
 
+PTExportState = function(state_name)
+    local room = PTCurrentRoom()
+    return {
+        pt_version = _PTVersion(),
+        game_id = _PTGameID,
+        game_version = _PTGameVersion,
+        name = state_name,
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%S"),
+        vars = {},
+        current_room = room.name,
+    }
+end
+
 _PTWhoops = function(err)
     return debug.traceback(
         string.format(
-            "Unhandled script error!\nPlease send this info to the game author so they can fix the problem.\n\nPerentie version: %s, Game: %s (%s) ver. %d\nError: %s",
+            "Unhandled script error!\nPlease send this info to the game author so they can fix the problem.\n\nPerentie version: %s, Game: %s (%s) ver. %s\nError: %s",
             _PTVersion(),
-            _PTGameID,
-            _PTGameName,
-            _PTGameVersion,
-            err
+            tostring(_PTGameID),
+            tostring(_PTGameName),
+            tostring(_PTGameVersion),
+            tostring(err)
         )
     )
 end
@@ -227,8 +242,9 @@ PTActorUpdate = function(actor, fast_forward)
         PTActorWalk(actor)
         PTSpriteIncrementFrame(actor.sprite)
         actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
-        if actor == _PTCurrentRoom.camera_actor then
-            _PTCurrentRoom.x, _PTCurrentRoom.y = actor.x, actor.y
+        local room = PTCurrentRoom()
+        if room and room._tpye == "PTRoom" and actor == room.camera_actor then
+            room.x, room.y = actor.x, actor.y
         end
     end
     if actor.talk_img and actor.talk_next_wait then
@@ -2535,6 +2551,7 @@ PTRoomGetNextBox = function(room, from_id, to_id)
     return room.boxes[target]
 end
 
+local _PTRoomList = {}
 local _PTCurrentRoom = nil
 local _PTOnRoomEnterHandlers = {}
 local _PTOnRoomExitHandlers = {}
@@ -2546,10 +2563,11 @@ local _PTOnRoomExitHandlers = {}
 -- @treturn int X coordinate in room space.
 -- @treturn int Y coordinate in room space.
 PTScreenToRoom = function(x, y)
-    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+    local room = PTCurrentRoom()
+    if not room or room._type ~= "PTRoom" then
         return x, y
     end
-    return (_PTCurrentRoom.x - _PTCurrentRoom.origin_x) + x, (_PTCurrentRoom.y - _PTCurrentRoom.origin_y) + y
+    return (room.x - room.origin_x) + x, (room.y - room.origin_y) + y
 end
 
 --- Convert coordinates in room space to screen space.
@@ -2559,10 +2577,11 @@ end
 -- @treturn X coordinate in screen space.
 -- @treturn Y coordinate in screen space.
 PTRoomToScreen = function(x, y)
-    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+    local room = PTCurrentRoom()
+    if not room or room._type ~= "PTRoom" then
         return x, y
     end
-    return x - (_PTCurrentRoom.x - _PTCurrentRoom.origin_x), y - (_PTCurrentRoom.y - _PTCurrentRoom.origin_y)
+    return x - (room.x - room.origin_x), y - (room.y - room.origin_y)
 end
 
 --- Set a callback for switching to a particular room.
@@ -2593,10 +2612,45 @@ PTOnRoomExit = function(name, func)
     _PTOnRoomExitHandlers[name] = func
 end
 
---- Return the current room
+--- Return the current room.
 -- @treturn PTRoom The current PTRoom.
 PTCurrentRoom = function()
-    return _PTCurrentRoom
+    return _PTRoomList[_PTCurrentRoom]
+end
+
+--- Return a room by name.
+-- @tparam string name Name of the room.
+-- @treturn PTRoom The PTRoom, or nil.
+PTGetRoom = function(name)
+    if type(name) ~= "string" then
+        error("PTGetRoom: expected string for first argument")
+    end
+    return _PTRoomList[name]
+end
+
+--- Add a room to the engine state.
+-- @tparam PTRoom room The room to add.
+PTAddRoom = function(room)
+    if not room or room._type ~= "PTRoom" then
+        error("PTAddRoom: expected PTRoom for first argument")
+    end
+    if type(room.name) ~= "string" then
+        error("PTAddRoom: room object needs a name")
+    end
+    _PTRoomList[room.name] = room
+end
+
+--- Remove a room from the engine state.
+-- @tparam PTRoom room The room to remove.
+PTRemoveRoom = function(room)
+    if not room or room._type ~= "PTRoom" then
+        error("PTRemoveRoom: expected PTRoom for first argument")
+    end
+    if type(room.name) ~= "string" then
+        error("PTRemoveRoom: room object needs a name")
+    end
+
+    _PTRoomList[room.name] = nil
 end
 
 local _PTUpdateRoom = function(force)
@@ -2604,43 +2658,52 @@ local _PTUpdateRoom = function(force)
         force = false
     end
 
+    local room = PTCurrentRoom()
+    if not room or room._type ~= "PTRoom" then
+        return
+    end
     if not force then
-        if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
-            return
-        end
         if _PTGamePaused then
             return
         end
     end
-    for i, actor in ipairs(_PTCurrentRoom.actors) do
+    for i, actor in ipairs(room.actors) do
         PTActorUpdate(actor, false)
         --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
     end
     -- constrain camera to room bounds
-    local x_min = _PTCurrentRoom.origin_x
-    local x_max = _PTCurrentRoom.width - (SCREEN_WIDTH - _PTCurrentRoom.origin_x)
-    local y_min = _PTCurrentRoom.origin_y
-    local y_max = _PTCurrentRoom.height - (SCREEN_HEIGHT - _PTCurrentRoom.origin_y)
-    _PTCurrentRoom.x = math.max(math.min(_PTCurrentRoom.x, x_max), x_min)
-    _PTCurrentRoom.y = math.max(math.min(_PTCurrentRoom.y, y_max), y_min)
+    local x_min = room.origin_x
+    local x_max = room.width - (SCREEN_WIDTH - room.origin_x)
+    local y_min = room.origin_y
+    local y_max = room.height - (SCREEN_HEIGHT - room.origin_y)
+    room.x = math.max(math.min(room.x, x_max), x_min)
+    room.y = math.max(math.min(room.y, y_max), y_min)
 end
 
 --- Switch the current room.
 -- Will call the callbacks specified by @{PTOnRoomEnter} and
 -- @{PTOnRoomExit}.
--- @tparam PTRoom room Room object to switch to.
+-- @tparam string name Room name to switch to. Must have been added to the engine state with @{PTAddRoom}.
 -- @tparam table ctx Optional Context data to pass to the callbacks.
-PTSwitchRoom = function(room, ctx)
-    PTLog("PTSwitchRoom: %s, %s", tostring(room), tostring(_PTCurrentRoom))
-    if _PTCurrentRoom and _PTOnRoomExitHandlers[_PTCurrentRoom.name] then
-        _PTOnRoomExitHandlers[_PTCurrentRoom.name](ctx)
+PTSwitchRoom = function(name, ctx)
+    if type(name) ~= "string" then
+        error("PTSwitchRoom: first argument must be a string")
     end
-    _PTCurrentRoom = room
-    if _PTCurrentRoom and _PTOnRoomEnterHandlers[_PTCurrentRoom.name] then
-        _PTOnRoomEnterHandlers[_PTCurrentRoom.name](ctx)
+    local current = PTCurrentRoom()
+    local room = PTGetRoom(name)
+    if not room or room._type ~= "PTRoom" then
+        error("PTSwitchRoom: no target room found with name %s", name)
+    end
+    if current and _PTOnRoomExitHandlers[current.name] then
+        PTLog("PTSwitchRoom: calling exit handler for %s", current.name)
+        _PTOnRoomExitHandlers[current.name](ctx)
+    end
+    _PTCurrentRoom = room.name
+    if room and _PTOnRoomEnterHandlers[room.name] then
+        PTLog("PTSwitchRoom: calling enter handler for %s", room.name)
+        _PTOnRoomEnterHandlers[room.name](ctx)
     end
     _PTUpdateRoom(true)
-    PTLog("PTSwitchRoom: %s, %s", tostring(room), tostring(_PTCurrentRoom))
 end
 
 --- Verbs
@@ -2940,7 +3003,8 @@ end
 local _PTUpdateMouseOver = function()
     local mouse_x, mouse_y = PTGetMousePos()
     local room_x, room_y = PTScreenToRoom(mouse_x, mouse_y)
-    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+    local room = PTCurrentRoom()
+    if not room or room._type ~= "PTRoom" then
         return
     end
     -- Need to iterate through objects in reverse draw order
@@ -2958,7 +3022,7 @@ local _PTUpdateMouseOver = function()
             end
         end
     end
-    for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list, true) do
+    for obj, x, y in PTIterObjects(room.render_list, true) do
         if obj.collision then
             frame, flags = PTGetImageFromObject(obj)
             if frame and PTTestImageCollision(frame, room_x - x, room_y - y, flags, frame.collision_mask) then
@@ -3047,7 +3111,8 @@ _PTEvents = function()
 end
 
 _PTRender = function()
-    if not _PTCurrentRoom or _PTCurrentRoom._type ~= "PTRoom" then
+    local room = PTCurrentRoom()
+    if not room or room._type ~= "PTRoom" then
         return
     end
     if _PTAutoClearScreen then
@@ -3069,7 +3134,7 @@ _PTRender = function()
         end
     end
 
-    for obj, x, y in PTIterObjects(_PTCurrentRoom.render_list) do
+    for obj, x, y in PTIterObjects(room.render_list) do
         if obj.visible then
             local frame, flags = PTGetImageFromObject(obj)
             if frame then
@@ -3079,7 +3144,7 @@ _PTRender = function()
         end
     end
     if _PTWalkBoxDebug then
-        for i, box in pairs(_PTCurrentRoom.boxes) do
+        for i, box in pairs(room.boxes) do
             local ul_x, ul_y = PTRoomToScreen(box.ul.x, box.ul.y)
             local ur_x, ur_y = PTRoomToScreen(box.ur.x, box.ur.y)
             local lr_x, lr_y = PTRoomToScreen(box.lr.x, box.lr.y)

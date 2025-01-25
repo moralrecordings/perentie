@@ -66,6 +66,7 @@ struct timer_data_t {
     int16_t counter;
     int16_t reset;
     uint32_t ticks;
+    uint32_t oldticks;
     int flag;
     uint8_t term;
     bool installed;
@@ -150,6 +151,7 @@ void _int_8h_real()
     if ((_timer.counter == _timer.reset) || (_timer.flag == TIMER_TERM_CHAIN)) {
         _timer.flag = TIMER_TERM_FAIL;
         _timer.counter = 0;
+        _timer.oldticks++;
         memset(&_timer.r, 0, sizeof(_timer.r));
         _timer.r.x.cs = _timer.handler_real_old.rm_segment;
         _timer.r.x.ip = _timer.handler_real_old.rm_offset;
@@ -193,8 +195,9 @@ void timer_init()
         outportb(0x40, (TIMER_PIT_CLOCK / TIMER_HZ) & 0xff);
         outportb(0x40, (TIMER_PIT_CLOCK / TIMER_HZ) >> 8);
         _timer.ticks = 0;
+        _timer.oldticks = 0;
         _timer.counter = 0;
-        _timer.reset = TIMER_HZ / TIMER_DEFAULT_FREQ;
+        _timer.reset = (int16_t)(TIMER_HZ / TIMER_DEFAULT_FREQ);
 
         // set up measurement constants
         _timer_freq = TIMER_HZ;
@@ -286,6 +289,7 @@ void timer_shutdown()
         _timer.reset = 1;
         _timer_tick_per_ms = TIMER_DEFAULT_TICK_PER_MS;
         _timer_ms_per_tick = TIMER_DEFAULT_MS_PER_TICK;
+        log_print("dos:timer_shutdown: %d old ticks, %d millis\n", _timer.oldticks, _timer.ticks);
     }
 }
 

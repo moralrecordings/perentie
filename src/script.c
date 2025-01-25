@@ -692,6 +692,7 @@ void script_init()
         lua_pop(main_thread, 1);
         exit(1);
     }
+    lua_pop(main_thread, 1);
     repl_init(main_thread);
 }
 
