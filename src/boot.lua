@@ -243,7 +243,7 @@ PTActorUpdate = function(actor, fast_forward)
         PTSpriteIncrementFrame(actor.sprite)
         actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
         local room = PTCurrentRoom()
-        if room and room._tpye == "PTRoom" and actor == room.camera_actor then
+        if room and room._type == "PTRoom" and actor == room.camera_actor then
             room.x, room.y = actor.x, actor.y
         end
     end
@@ -2147,12 +2147,25 @@ PTActorWalk = function(actor)
     _PTCalcMovementFactor(actor, actor.walkdata_dest)
 end
 
+--- Move an actor into a different room.
+-- @tparam PTActor actor The actor to move.
+-- @tparam PTRoom room Destination room.
+-- @tparam integer x X position for actor.
+-- @tparam integer y Y position for actor.
 PTActorSetRoom = function(actor, room, x, y)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorSetRoom: expected PTActor for first argument")
     end
     if room and room._type ~= "PTRoom" then
         error("PTActorSetRoom: expected nil or PTRoom for second argument")
+    end
+    -- If x and y aren't defined, move the actor to the middle of the room.
+    -- This likely isn't what you want, but it's better than a crash.
+    if not x then
+        x = room.width // 2
+    end
+    if not y then
+        y = room.height // 2
     end
 
     if actor.room then
@@ -2164,7 +2177,7 @@ PTActorSetRoom = function(actor, room, x, y)
         PTRoomAddObject(actor.room, actor)
         _PTAddToList(actor.room.actors, actor)
     end
-    if actor.room.boxes then
+    if #actor.room.boxes > 0 then
         local near_point, near_box = _PTAdjustPointToBeInBox(PTPoint(x, y), actor.room.boxes)
         actor.x, actor.y = near_point.x, near_point.y
         PTActorSetWalkBox(actor, near_box)
