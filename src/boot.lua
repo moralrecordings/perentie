@@ -58,13 +58,24 @@ PTQuit = function(retcode)
     _PTQuit(retcode)
 end
 
-local _PTInitFromStateFile = function(path)
-    PTLog("PTInitFromStateFile: %s", path)
-end
-
 --- Reset Perentie. Clears the scripting engine and restarts.
 PTReset = function()
     _PTReset()
+end
+
+local _PTStore = {}
+--- Return the game's variable store. This will be preserved as part
+-- of @{PTLoadState} and @{PTSaveState}.
+-- Please use the variable store for simple types only (i.e. strings,
+-- numbers, booleans, and tables); you're aiming for the bare minimum of
+-- information to describe the current game state.
+-- You do not need to store information about the current room and the
+-- state of the actors, as these are stored by the engine automatically.
+-- You can use a @{PTOnLoadState} or @{PTOnRoomEnter} hook to apply any
+-- settings after a game is loaded.
+-- @treturn table Table
+PTStore = function()
+    return _PTStore
 end
 
 --- Reset Perentie and load the engine state from a file.
@@ -75,7 +86,11 @@ PTLoadState = function(path)
     _PTReset(path)
 end
 
-PTSaveState = function(path)
+_PTInitFromStateFile = function(path)
+    PTLog("PTInitFromStateFile: %s", path)
+end
+
+PTSaveState = function(path, name)
     if not _PTGameID then
         error("PTSaveState: No game ID defined! First, set it up with PTSetGameInfo()")
     end
@@ -85,20 +100,37 @@ PTSaveState = function(path)
     end
     file:write("PERENTIE")
     file:write(string.char(1, 0))
+    file:write(cbor.encode(PTExportState(name)))
 end
 
 PTExportState = function(state_name)
     local room = PTCurrentRoom()
+    local vars = {}
+    local actors = {}
+    for i, obj in ipairs(_PTStore) do
+        if type(obj) == "userdata" then
+            PTLog("PTExportState(): Variable %s was found to be a C binding! This isn't going to work.", tostring(i))
+        elseif type(obj) == "table" and obj._type and string.sub(tostring(obj._tye), 1, 2) == "PT" then
+            PTLog(
+                "PTExportState(): Variable %s was found to be a PT type! Please don't stick these in the variable store, they need to be initialised by the game when starting up.",
+                tostring(i)
+            )
+        else
+            vars[i] = obj
+        end
+    end
     return {
         pt_version = _PTVersion(),
         game_id = _PTGameID,
         game_version = _PTGameVersion,
         name = state_name,
         timestamp = os.date("!%Y-%m-%dT%H:%M:%S"),
-        vars = {},
+        vars = vars,
         current_room = room.name,
     }
 end
+
+PTImportState = function() end
 
 _PTWhoops = function(err)
     return debug.traceback(

@@ -698,11 +698,13 @@ void script_init()
 
 void script_reset()
 {
+    log_print("script_reset(): Resetting Perentie state!\n");
     lua_close(main_thread);
     main_thread = NULL;
     script_init();
     has_reset = false;
     if (reset_state_path) {
+        log_print("script_reset(): Loading state from path %s\n", reset_state_path);
         lua_getglobal(main_thread, "_PTInitFromStateFile");
         lua_pushstring(main_thread, reset_state_path);
         if (lua_pcall(main_thread, 1, 0, 0) != LUA_OK) {
