@@ -100,10 +100,11 @@ void _int_8h_prot()
 
     // Emulate the old, crap timer.
     // _timer.reset is the number of ticks to approximate TIMER_DEFAULT_FREQ.
-    // If we've hit that, enable the real mode handler.
+    // If we've hit that, call the original DJGPP handler.
     if (_timer.counter == _timer.reset) {
         _timer.flag = TIMER_TERM_CHAIN;
         _timer.counter = 0;
+        _timer.oldticks++;
     } else {
         _timer.flag = TIMER_TERM_OUTPORTB;
         // PIC1 command register - end of interrupt
@@ -138,7 +139,7 @@ void _int_8h_prot()
     }
 }
 
-void _int_8h_real()
+static void _int_8h_real()
 {
     // Real mode interrupt handler.
     // This interrupt gets chained off the end of the protected mode handler.
@@ -293,18 +294,29 @@ void timer_shutdown()
     }
 }
 
+void timer_print()
+{
+    log_print("timer_print: %d slots\n", _timer.slot_head);
+    for (int i = 0; i < _timer.slot_head; i++) {
+        log_print("[%d] id: %d, count: %d, interval: %d, callback: %p\n", i, _timer.slots[i].id, _timer.slots[i].count,
+            _timer.slots[i].interval, (void*)_timer.slots[i].callback);
+    }
+}
+
 uint32_t timer_add_callback(uint32_t interval, pt_timer_callback callback, void* param)
 {
     if (_timer.slot_head >= 256)
         return 0;
-
     _timer.max_callback_id++;
     _timer.slots[_timer.slot_head].id = _timer.max_callback_id;
     _timer.slots[_timer.slot_head].count = 0;
     _timer.slots[_timer.slot_head].interval = interval;
     _timer.slots[_timer.slot_head].callback = callback;
     _timer.slots[_timer.slot_head].param = param;
+    log_print("timer_add_callback: Adding timer id %d to slot %d\n", _timer.max_callback_id, _timer.slot_head);
     _timer.slot_head++;
+    timer_print();
+    return _timer.max_callback_id;
 }
 
 bool timer_remove_callback(uint32_t id)
@@ -322,6 +334,8 @@ bool timer_remove_callback(uint32_t id)
                 // clear last slot
                 memset(&_timer.slots[_timer.slot_head], 0, sizeof(struct timer_slot_t));
             }
+            log_print("timer_remove_callback: Removing timer id %d from slot %d\n", id, i);
+            timer_print();
             result = true;
             break;
         }
