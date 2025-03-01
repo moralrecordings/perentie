@@ -38,8 +38,8 @@ bool sys_idle(int (*idle_callback)(), int idle_callback_period)
     return 1;
 }
 
-// Timer interupt replacement
-// Adapted from PCTIMER 1.4 by Chih-Hao Tsai
+// Timer interrupt replacement
+// Heavily reworked from PCTIMER 1.4 by Chih-Hao Tsai
 
 #define TIMER_TERM_FAIL 0
 #define TIMER_TERM_CHAIN 1
@@ -49,6 +49,8 @@ bool sys_idle(int (*idle_callback)(), int idle_callback_period)
 #define TIMER_PIT_CLOCK 1193180L
 // timer frequency we want
 #define TIMER_HZ 1000
+#define TIMER_HIRES_HZ 16000
+#define TIMER_HIRES_DIV 16
 // default timer values in the BIOS
 #define TIMER_DEFAULT_FREQ 18.2067597
 #define TIMER_DEFAULT_TICK_PER_MS 0.0182068
@@ -66,10 +68,12 @@ struct timer_data_t {
     int16_t counter;
     int16_t reset;
     uint32_t ticks;
+    uint32_t hiresticks;
     uint32_t oldticks;
     int flag;
     uint8_t term;
     bool installed;
+    bool hires;
     float freq;
     _go32_dpmi_seginfo handler_real_old;
     _go32_dpmi_seginfo handler_real_new;
@@ -86,7 +90,21 @@ static float _timer_tick_per_ms = TIMER_DEFAULT_TICK_PER_MS;
 static float _timer_ms_per_tick = TIMER_DEFAULT_MS_PER_TICK;
 static float _timer_freq = TIMER_DEFAULT_FREQ;
 
-void _int_8h_prot()
+#define PCSPEAKER_OFF 0
+#define PCSPEAKER_TONE 1
+#define PCSPEAKER_SAMPLE_8K 2
+#define PCSPEAKER_SAMPLE_16K 3
+struct pcspeaker_data_t {
+    uint8_t mode;
+    byte* sample_data;
+    size_t sample_len;
+    size_t offset;
+};
+static struct pcspeaker_data_t _pcspeaker = { 0 };
+static uint8_t pcspeaker_lut[256] = { 0 };
+void pcspeaker_sample_update();
+
+static bool _int_8h_prot()
 {
     // Replacement for timer interrupt 8h in protected mode
 
@@ -95,73 +113,231 @@ void _int_8h_prot()
     // shouldn't use them with _go32_dpmi_chain_protected_mode_interrupt_vector();
     // on real hardware this results in the game hanging on startup,
     // or better yet crashing with random registers being trashed.
-    _timer.ticks++;
-    _timer.counter++;
 
-    // Emulate the old, crap timer.
-    // _timer.reset is the number of ticks to approximate TIMER_DEFAULT_FREQ.
-    // If we've hit that, call the original DJGPP handler.
-    if (_timer.counter == _timer.reset) {
-        _timer.flag = TIMER_TERM_CHAIN;
-        _timer.counter = 0;
-        _timer.oldticks++;
+    if (_timer.hires) {
+        _timer.hiresticks++;
+        pcspeaker_sample_update();
+    }
+
+    if (!_timer.hires || (_timer.hiresticks % TIMER_HIRES_DIV == 0)) {
+        _timer.ticks++;
+        _timer.counter++;
+
+        // Emulate the old, crap timer.
+        // _timer.reset is the number of ticks to approximate TIMER_DEFAULT_FREQ.
+        // If we've hit that, enable the real mode handler.
+        if (_timer.counter == _timer.reset) {
+            _timer.flag = TIMER_TERM_CHAIN;
+            _timer.counter = 0;
+            _timer.oldticks++;
+        } else {
+            _timer.flag = TIMER_TERM_OUTPORTB;
+            // PIC1 command register - end of interrupt
+            outportb(0x20, 0x20);
+        }
+        // run the timer callbacks
+        for (int i = 0; i < _timer.slot_head; i++) {
+            _timer.slots[i].count++;
+            if (_timer.slots[i].count == _timer.slots[i].interval) {
+                uint32_t result = _timer.slots[i].callback(_timer.slots[i].interval, _timer.slots[i].param);
+                if (result == 0) {
+                    // remove the callback
+                    _timer.slot_head--;
+                    if (i != _timer.slot_head) {
+                        _timer.slots[i].callback = _timer.slots[_timer.slot_head].callback;
+                        _timer.slots[i].count = _timer.slots[_timer.slot_head].count;
+                        _timer.slots[i].id = _timer.slots[_timer.slot_head].id;
+                        _timer.slots[i].interval = _timer.slots[_timer.slot_head].interval;
+                        _timer.slots[i].param = _timer.slots[_timer.slot_head].param;
+                    }
+                    _timer.slots[_timer.slot_head].callback = NULL;
+                    _timer.slots[_timer.slot_head].count = 0;
+                    _timer.slots[_timer.slot_head].id = 0;
+                    _timer.slots[_timer.slot_head].interval = 0;
+                    _timer.slots[_timer.slot_head].param = NULL;
+                } else {
+                    // set the new update interval
+                    _timer.slots[i].interval = result;
+                    _timer.slots[i].count = 0;
+                }
+            }
+        }
     } else {
         _timer.flag = TIMER_TERM_OUTPORTB;
         // PIC1 command register - end of interrupt
         outportb(0x20, 0x20);
     }
-    // run the timer callbacks
-    for (int i = 0; i < _timer.slot_head; i++) {
-        _timer.slots[i].count++;
-        if (_timer.slots[i].count == _timer.slots[i].interval) {
-            uint32_t result = _timer.slots[i].callback(_timer.slots[i].interval, _timer.slots[i].param);
-            if (result == 0) {
-                // remove the callback
-                _timer.slot_head--;
-                if (i != _timer.slot_head) {
-                    _timer.slots[i].callback = _timer.slots[_timer.slot_head].callback;
-                    _timer.slots[i].count = _timer.slots[_timer.slot_head].count;
-                    _timer.slots[i].id = _timer.slots[_timer.slot_head].id;
-                    _timer.slots[i].interval = _timer.slots[_timer.slot_head].interval;
-                    _timer.slots[i].param = _timer.slots[_timer.slot_head].param;
-                }
-                _timer.slots[_timer.slot_head].callback = NULL;
-                _timer.slots[_timer.slot_head].count = 0;
-                _timer.slots[_timer.slot_head].id = 0;
-                _timer.slots[_timer.slot_head].interval = 0;
-                _timer.slots[_timer.slot_head].param = NULL;
-            } else {
-                // set the new update interval
-                _timer.slots[i].interval = result;
-                _timer.slots[i].count = 0;
-            }
-        }
-    }
+    return _timer.flag == TIMER_TERM_CHAIN;
 }
 
-static void _int_8h_real()
+static bool _int_8h_real()
 {
     // Real mode interrupt handler.
-    // This interrupt gets chained off the end of the protected mode handler.
+    // From what I can tell, this gets called if IRQ0 lands when the CPU is in
+    // real mode, or if some real mode code manually triggers INT 8H.
+    // Happens a lot more in DOS on real hardware than on Windows or DOSBox.
 
-    if (_timer.flag == TIMER_TERM_FAIL) {
-        // Something bad happened with the protected mode handler.
-        _timer.ticks++;
-        _timer.counter++;
+    if (_timer.hires) {
+        _timer.hiresticks++;
     }
-    if ((_timer.counter == _timer.reset) || (_timer.flag == TIMER_TERM_CHAIN)) {
-        _timer.flag = TIMER_TERM_FAIL;
-        _timer.counter = 0;
-        _timer.oldticks++;
-        memset(&_timer.r, 0, sizeof(_timer.r));
-        _timer.r.x.cs = _timer.handler_real_old.rm_segment;
-        _timer.r.x.ip = _timer.handler_real_old.rm_offset;
-        _timer.r.x.ss = _timer.r.x.sp = 0;
-        _go32_dpmi_simulate_fcall_iret(&_timer.r);
-    } else {
-        _timer.flag = TIMER_TERM_FAIL;
-        // PIC1 command register - end of interrupt
-        outportb(0x20, 0x20);
+
+    // Just increase the counters, don't bother with the callback system.
+    if (!_timer.hires || (_timer.hiresticks % TIMER_HIRES_DIV == 0)) {
+        if (_timer.flag == TIMER_TERM_FAIL) {
+            // Something bad happened with the protected mode handler.
+            _timer.ticks++;
+            _timer.counter++;
+        }
+        if ((_timer.counter == _timer.reset) || (_timer.flag == TIMER_TERM_CHAIN)) {
+            _timer.flag = TIMER_TERM_FAIL;
+            _timer.counter = 0;
+            _timer.oldticks++;
+            // At this point, we force a call to the old handler.
+            // This is apparently fine because it is a nested interrupt.
+            // _go32_dpmi_simulate_fcall_iret will interrupt the DPMI server (INT 31H)
+            // so that it can call the real mode handler, which is expected to end with IRET.
+            // Afterwards we return here.
+            memset(&_timer.r, 0, sizeof(_timer.r));
+            _timer.r.x.cs = _timer.handler_real_old.rm_segment;
+            _timer.r.x.ip = _timer.handler_real_old.rm_offset;
+            _timer.r.x.ss = _timer.r.x.sp = 0;
+            _go32_dpmi_simulate_fcall_iret(&_timer.r);
+            return true;
+        } else {
+            _timer.flag = TIMER_TERM_FAIL;
+        }
+    }
+    // PIC1 command register - end of interrupt
+    outportb(0x20, 0x20);
+    return false;
+}
+
+// Timer interrupt chain wrapper
+// Adapted from djlsr205/src/libc/go32/gopint.c + gormcb.c by DJ Delorie/C. Sandmann
+#define FILL 0x00
+
+// This is basically the same wrapper code from
+// _go32_dpmi_chain_protected_mode_interrupt_vector,
+// but modded so that it only chains to the old handler
+// if the new handler returns 1.
+static unsigned char int8_prot_wrapper[] = {
+    /* 00 */ 0x1e, /*     push ds              	*/
+    /* 01 */ 0x06, /*     push es			*/
+    /* 02 */ 0x0f, 0xa0, /*     push fs              	*/
+    /* 04 */ 0x0f, 0xa8, /*     push gs              	*/
+    /* 06 */ 0x60, /*     pusha                	*/
+    /* 07 */ 0x66, 0xb8, /*     mov ax,			*/
+    /* 09 */ FILL, FILL, /*         _our_selector	*/
+    /* 0B */ 0x8e, 0xd8, /*     mov ds, ax           	*/
+    /* 0D */ 0xff, 0x05, /*     incl			*/
+    /* 0F */ FILL, FILL, FILL, FILL, /*	    _call_count		*/
+    /* 13 */ 0x83, 0x3d, /*     cmpl			*/
+    /* 15 */ FILL, FILL, FILL, FILL, /*         _in_this_handler	*/
+    /* 19 */ 0x00, /*         $0			*/
+    /* 1A */ 0x75, /*     jne			*/
+    /* 1B */ 0x56, /*         bypass (-1c)		*/
+    /* 1C */ 0xc6, 0x05, /*     movb			*/
+    /* 1E */ FILL, FILL, FILL, FILL, /*         _in_this_handler 	*/
+    /* 22 */ 0x01, /*         $1			*/
+    /* 23 */ 0x8e, 0xc0, /*     mov es, ax           	*/
+    /* 25 */ 0x8e, 0xe0, /*     mov fs, ax           	*/
+    /* 27 */ 0x8e, 0xe8, /*     mov gs, ax           	*/
+    /* 29 */ 0xbb, /*     mov ebx,			*/
+    /* 2A */ FILL, FILL, FILL, FILL, /*         _local_stack		*/
+    /* 2E */ 0xfc, /*     cld                  	*/
+    /* 2F */ 0x89, 0xe1, /*     mov ecx, esp         	*/
+    /* 31 */ 0x8c, 0xd2, /*     mov dx, ss           	*/
+    /* 33 */ 0x8e, 0xd0, /*     mov ss, ax           	*/
+    /* 35 */ 0x89, 0xdc, /*     mov esp, ebx         	*/
+    /* 37 */ 0x52, /*     push edx             	*/
+    /* 38 */ 0x51, /*     push ecx             	*/
+    /* 39 */ 0xe8, /*     call			*/
+    /* 3A */ FILL, FILL, FILL, FILL, /*         _rmih		*/
+    /* 3E */ 0x09, 0xc0, /*     or eax, eax              */
+    /* 40 */ 0x74, /*      jz      */
+    /* 41 */ 0x23, /*      skip  */
+
+    // New handler returned true, chain the old handler
+
+    /* 42 */ 0x58, /*     pop eax                 	*/
+    /* 43 */ 0x5b, /*     pop ebx                 	*/
+    /* 44 */ 0x8e, 0xd3, /*     mov ss, bx               */
+    /* 46 */ 0x89, 0xc4, /*     mov esp, eax             */
+    /* 48 */ 0xc6, 0x05, /*     movb			*/
+    /* 4A */ FILL, FILL, FILL, FILL, /*         _in_this_handler	*/
+    /* 4E */ 0x00, /*         $0			*/
+    /* 4F */ 0x61, /*     popa		*/
+    /* 50 */ 0x90, /*     nop			*/
+    /* 51 */ 0x0f, 0xa9, /*     pop gs                   */
+    /* 53 */ 0x0f, 0xa1, /*     pop fs                   */
+    /* 55 */ 0x07, /*     pop es                   */
+    /* 56 */ 0x1f, /*     pop ds                   */
+    /* 57 */ 0x2e, 0xff, 0x2d, /*     jmp     cs: 		*/
+    /* 5A */ FILL, FILL, FILL, FILL, /*     [see below] 		*/
+    /* 5E */ 0xcf, /*     iret                     */
+    /* 5F */ FILL, FILL, FILL, FILL, /*     dd old_address 		*/
+    /* 63 */ FILL, FILL, /*     dw old_segment 		*/
+
+    // New handler returned false, clean everything up and iret
+
+    /* 65 */ 0x58, /*     skip: pop eax                 	*/
+    /* 66 */ 0x5b, /*     pop ebx                 	*/
+    /* 67 */ 0x8e, 0xd3, /*     mov ss, bx               */
+    /* 69 */ 0x89, 0xc4, /*     mov esp, eax             */
+    /* 6B */ 0xc6, 0x05, /*     movb			*/
+    /* 6D */ FILL, FILL, FILL, FILL, /*         _in_this_handler	*/
+    /* 71 */ 0x00, /*         $0			*/
+    /* 72 */ 0x61, /* bypass:  popa		*/
+    /* 73 */ 0x90, /*     nop			*/
+    /* 74 */ 0x0f, 0xa9, /*     pop gs                   */
+    /* 76 */ 0x0f, 0xa1, /*     pop fs                   */
+    /* 78 */ 0x07, /*     pop es                   */
+    /* 79 */ 0x1f, /*     pop ds                   */
+    /* 7A */ 0xcf, /*     iret                     */
+};
+
+static uint8_t* int8_prot_stack;
+static uint8_t* int8_real_stack;
+
+extern unsigned short __djgpp_ds_alias;
+
+void _setup_int8_wrapper()
+{
+    int8_prot_stack = (uint8_t*)calloc(_go32_interrupt_stack_size, sizeof(uint8_t));
+    _go32_dpmi_lock_data(int8_prot_stack, _go32_interrupt_stack_size);
+    _go32_dpmi_lock_data(int8_prot_wrapper, sizeof(int8_prot_wrapper));
+    ((long*)int8_prot_stack)[0] = 1;
+    *(short*)(int8_prot_wrapper + 0x09) = __djgpp_ds_alias;
+    *(long*)(int8_prot_wrapper + 0x0f) = (long)int8_prot_stack + 8;
+    *(long*)(int8_prot_wrapper + 0x15) = (long)int8_prot_stack + 4;
+    *(long*)(int8_prot_wrapper + 0x1e) = (long)int8_prot_stack + 4;
+    *(long*)(int8_prot_wrapper + 0x2a) = (long)int8_prot_stack + _go32_interrupt_stack_size;
+    *(long*)(int8_prot_wrapper + 0x3a) = (long)_int_8h_prot - ((long)int8_prot_wrapper + 0x3e);
+
+    *(long*)(int8_prot_wrapper + 0x4a) = (long)int8_prot_stack + 4;
+    *(long*)(int8_prot_wrapper + 0x5a) = (long)int8_prot_wrapper + 0x5f;
+    *(long*)(int8_prot_wrapper + 0x5f) = _timer.handler_prot_old.pm_offset;
+    *(short*)(int8_prot_wrapper + 0x63) = _timer.handler_prot_old.pm_selector;
+
+    *(long*)(int8_prot_wrapper + 0x6d) = (long)int8_prot_stack + 4;
+
+    _timer.handler_prot_new.pm_offset = (uint32_t)int8_prot_wrapper;
+    _timer.handler_prot_new.pm_selector = (uint16_t)_go32_my_cs();
+}
+
+void _timer_switch(bool hires)
+{
+    if (_timer.installed) {
+        disable();
+        // https://wiki.osdev.org/Programmable_Interval_Timer
+        // PIT command register - channel 0, two bytes, mode 2 (rate generator)
+        outportb(0x43, 0x34);
+        // PIT0 data register - load in our new frequency
+        outportb(0x40, (TIMER_PIT_CLOCK / (hires ? TIMER_HIRES_HZ : TIMER_HZ)) & 0xff);
+        outportb(0x40, (TIMER_PIT_CLOCK / (hires ? TIMER_HIRES_HZ : TIMER_HZ)) >> 8);
+        log_print("dos:_timer_switch: DOS timer hotpatched to run at %dHz\n", hires ? TIMER_HIRES_HZ : TIMER_HZ);
+        _timer.hires = hires;
+        enable();
     }
 }
 
@@ -169,52 +345,65 @@ void timer_shutdown();
 
 void timer_init()
 {
-    log_print("dos:timer_init(): Replacing DOS timer interrupt...\n");
+    // DOS - get dos version
+    _go32_dpmi_registers r;
+    r.h.ah = 0x30;
+    r.h.al = 0x00;
+    _go32_dpmi_simulate_int(0x21, &r);
+    errno = 0;
+    // Check if we're running with an external DPMI server (e.g. Windows 98)
+    __dpmi_yield();
+    if (errno != ENOSYS) {
+        use_dpmi_yield = true;
+    }
+    bool use_hires = !use_dpmi_yield;
+
+    log_print("dos:timer_init: DOS version %d.%02d\n", r.h.al, r.h.ah);
+    log_print("dos:timer_init: %s DPMI server detected\n", use_dpmi_yield ? "Windows" : "Bare metal");
     if (!_timer.installed) {
+        log_print("dos:timer_init: Replacing DOS timer interrupt...\n");
         // Disable all interrupts while installing the new timer
         disable();
-
-        // Lock data memory used by timer state
-        LOCK_DATA(_timer)
-
-        // Chain the new protected mode handler to 8h
-        _go32_dpmi_get_protected_mode_interrupt_vector(8, &_timer.handler_prot_old);
-        _timer.handler_prot_new.pm_offset = (uint32_t)_int_8h_prot;
-        _timer.handler_prot_new.pm_selector = (uint32_t)_go32_my_cs();
-        _go32_dpmi_chain_protected_mode_interrupt_vector(8, &_timer.handler_prot_new);
-
-        // Inject a shim for the existing real mode handler
-        _go32_dpmi_get_real_mode_interrupt_vector(8, &_timer.handler_real_old);
-        _timer.handler_real_new.pm_offset = (uint32_t)_int_8h_real;
-        _go32_dpmi_allocate_real_mode_callback_iret(&_timer.handler_real_new, &_timer.r1);
-        _go32_dpmi_set_real_mode_interrupt_vector(8, &_timer.handler_real_new);
-
-        // https://wiki.osdev.org/Programmable_Interval_Timer
-        // PIT command register - channel 1, high byte, mode 2 (rate generator)
-        outportb(0x43, 0x36);
-        // PIT0 data register - load in our new frequency
-        outportb(0x40, (TIMER_PIT_CLOCK / TIMER_HZ) & 0xff);
-        outportb(0x40, (TIMER_PIT_CLOCK / TIMER_HZ) >> 8);
-        _timer.ticks = 0;
-        _timer.oldticks = 0;
-        _timer.counter = 0;
-        _timer.reset = (int16_t)(TIMER_HZ / TIMER_DEFAULT_FREQ);
 
         // set up measurement constants
         _timer_freq = TIMER_HZ;
         _timer_tick_per_ms = _timer_freq / 1000;
         _timer_ms_per_tick = 1000 / _timer_freq;
         _timer.installed = true;
+
+        // zero counters
+        _timer.ticks = 0;
+        _timer.hiresticks = 0;
+        _timer.oldticks = 0;
+        _timer.counter = 0;
+        _timer.reset = (int16_t)(TIMER_HZ / TIMER_DEFAULT_FREQ);
+
+        // Lock data memory used by timer state
+        LOCK_DATA(_timer)
+
+        // Replace the protected mode INT 8H handler.
+        _go32_dpmi_get_protected_mode_interrupt_vector(8, &_timer.handler_prot_old);
+        _setup_int8_wrapper();
+        _go32_dpmi_set_protected_mode_interrupt_vector(8, &_timer.handler_prot_new);
+
+        // Replace the real mode INT 8H handler.
+        // It's worth noting that the new handler runs in protected mode.
+        // _go32_dpmi_allocate_real_mode_callback_iret uses the DPMI server to create
+        // a tiny stub in real mode segmented memory, which handles a switch
+        // to protected mode followed by setting up/restoring the CPU registers similar to
+        // the above wrapper.
+        _go32_dpmi_get_real_mode_interrupt_vector(8, &_timer.handler_real_old);
+        _timer.handler_real_new.pm_offset = (uint32_t)_int_8h_real;
+        _go32_dpmi_allocate_real_mode_callback_iret(&_timer.handler_real_new, &_timer.r1);
+        _go32_dpmi_set_real_mode_interrupt_vector(8, &_timer.handler_real_new);
+
         enable();
 
+        // Cank the timer frequency.
+        // If DPMI is present, 99% chance we're in Windows, so don't go to 16KHz.
+        _timer_switch(use_hires);
+
         atexit(timer_shutdown);
-    }
-    log_print("dos:timer_init(): DOS timer hotpatched to run at %dHz\n", TIMER_HZ);
-    errno = 0;
-    // Check if we're running with an external DPMI server (e.g. Windows 98)
-    __dpmi_yield();
-    if (errno != ENOSYS) {
-        use_dpmi_yield = true;
     }
 }
 
@@ -265,6 +454,7 @@ void timer_shutdown()
 
         // Restore protected mode 8h handler
         _go32_dpmi_set_protected_mode_interrupt_vector(8, &_timer.handler_prot_old);
+        free(int8_prot_stack);
         // Restore real mode 8h handler and free the shim
         _go32_dpmi_set_real_mode_interrupt_vector(8, &_timer.handler_real_old);
         _go32_dpmi_free_real_mode_callback(&_timer.handler_real_new);
@@ -346,9 +536,17 @@ bool timer_remove_callback(uint32_t id)
 pt_drv_timer dos_timer = { &timer_init, &timer_shutdown, &timer_ticks, &timer_millis, &timer_sleep, &timer_add_callback,
     &timer_remove_callback };
 
+void pcspeaker_play_sample(byte* data, size_t len, int rate);
 void pcspeaker_stop();
 void pcspeaker_init()
 {
+    // 6-bit LUT for the sample playback mode
+    for (int i = 0; i < 256; i++) {
+        pcspeaker_lut[i] = (uint8_t)(i * TIMER_PIT_CLOCK / (TIMER_HIRES_HZ * 255));
+    }
+    memset(&_pcspeaker, 0, sizeof(_pcspeaker));
+    LOCK_DATA(_pcspeaker);
+    pcspeaker_stop();
 }
 
 void pcspeaker_shutdown()
@@ -358,18 +556,93 @@ void pcspeaker_shutdown()
 
 void pcspeaker_tone(float freq)
 {
-    uint32_t units = TIMER_PIT_CLOCK / freq;
-    // PIT mode/command register
+    _pcspeaker.mode = PCSPEAKER_TONE;
+    // PIT mode/command register:
+    // - counter 2 (PC speaker)
+    // - bits 0-7 then 8-15
+    // - mode 3 (square wave generator)
     outportb(0x43, 0xb6);
     // Load tone frequency into PIT channel 2 data port
+    // The PC speaker is attached to PIT channel 2 and has two states: high
+    // and low. The square wave generator will cycle between high and low
+    // after a specified number of ticks of the main clock (1193180Hz),
+    // making a tone frequency at the loudest possible volume.
+    uint32_t units = TIMER_PIT_CLOCK / freq;
     outportb(0x42, units & 0xff);
     outportb(0x42, units >> 8);
     // Enable PC speaker gate on keyboard controller
     outportb(0x61, inportb(0x61) | 3);
 }
 
+void pcspeaker_play_sample(byte* data, size_t len, int rate)
+{
+    if (!_timer.hires) {
+        log_print("pcspeaker_sample: hires timer not enabled, sample playback disabled\n");
+        return;
+    } else if (rate == 8000) {
+        _pcspeaker.mode = PCSPEAKER_SAMPLE_8K;
+    } else if (rate == 16000) {
+        _pcspeaker.mode = PCSPEAKER_SAMPLE_16K;
+    } else {
+        log_print("pcspeaker_sample: audio must have a sample rate of 8000 or 16000\n");
+        return;
+    }
+    _pcspeaker.sample_data = data;
+    _pcspeaker.sample_len = len;
+    _pcspeaker.offset = 0;
+    _go32_dpmi_lock_data(data, len);
+    // PIT mode/command register:
+    // - counter 2 (PC speaker)
+    // - bits 0-7 only
+    // - mode 0 (interrupt on terminal count)
+    outportb(0x43, 0x90);
+    // Enable PC speaker gate on keyboard controller
+    outportb(0x61, inportb(0x61) | 0x3);
+}
+
+void pcspeaker_sample_update()
+{
+    // This is the same trick used by Access Software's "RealSound".
+    // Even though we can only send an on-off signal to the PC speaker,
+    // the speaker cone is still subject to real world physics.
+    // If we change the signal faster than the cone can move, then
+    // it will average out to an analogue waveform.
+
+    // We set PIT channel 2 to mode 0; this means whenever we write [value]
+    // to counter 2, the PC speaker output will go high for [value] main
+    // clock ticks, then go low.
+
+    // ------------0x4a------------
+    // --- value ----
+    // _____________
+    //              |______________ -> PC speaker
+
+    // Say that we ran our main timer at 16000Hz. That gives us 0x4a ticks
+    // of the main clock between each timer interrupt. So if we had an
+    // 8000Hz unsigned 8-bit WAV, we could convert each sample to the 0x00-0x4a
+    // range, and make our main timer interrupt set counter 2 (twice per sample)
+    // to play it back.
+    size_t offset = 0;
+    if (_pcspeaker.mode == PCSPEAKER_SAMPLE_8K) {
+        offset = _pcspeaker.offset >> 1;
+    } else if (_pcspeaker.mode == PCSPEAKER_SAMPLE_16K) {
+        offset = _pcspeaker.offset;
+    } else {
+        return;
+    }
+    if (offset > _pcspeaker.sample_len) {
+        pcspeaker_stop();
+    } else {
+        // PIT channel 2 data port
+        // outportb(0x42, _pcspeaker.sample_data[offset]);
+        outportb(0x42, pcspeaker_lut[_pcspeaker.sample_data[offset]]);
+        _pcspeaker.offset += 1;
+    }
+}
+
 void pcspeaker_stop()
 {
+    _pcspeaker.mode = PCSPEAKER_OFF;
     // Disable PC speaker gate on keyboard controller
     outportb(0x61, inportb(0x61) & 0xfc);
 }
@@ -378,6 +651,7 @@ pt_drv_beep dos_beep = {
     &pcspeaker_init,
     &pcspeaker_shutdown,
     &pcspeaker_tone,
+    &pcspeaker_play_sample,
     &pcspeaker_stop,
 };
 

@@ -106,3 +106,6 @@ PTOnVerb("use", "logo", function()
         PTStopBeep()
     end
 end)
+
+-- Enable debug terminal
+PTSetDebugConsole(true, "COM4")
