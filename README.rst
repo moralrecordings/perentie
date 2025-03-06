@@ -1,7 +1,7 @@
 Perentie
 ========
 
-.. image:: src/assets/logo.png
+.. image:: example/assets/logo.png
 
 Perentie is a Lua-based graphical adventure game engine for DOS. The design takes several cues from LucasArts' SCUMM and GrimE adventure game engines.
 
@@ -13,6 +13,7 @@ Featuring:
 - Co-operative threading
 - 320x200 256 colour VGA graphics
 - Bitmap text rendering with support for UTF-8
+- OPL2/OPL3 music playback
 - Debug shell over null modem/Telnet connection
 
 Perentie was originally created for DOS Games Jam July 2024.
@@ -22,20 +23,46 @@ Compiling
 
 In order to build Perentie, you will need the following tools in your PATH:
 
-- A copy of the DJGPP cross-compiler toolchain, such as from https://github.com/andrewwutw/build-djgpp
-- lua and luac version 5.4
-- GNU make
+- `Meson <https://mesonbuild.com>`_
+- `Ninja <https://ninja-build.org>`_
+- `lua and luac <https://www.lua.org>`_, version 5.4
 
-Running `make all` in the src directory should be enough to compile the single DOS EXE file `perentie.exe`.
+MS-DOS executable
+-----------------
+
+You will also need:
+
+- A copy of the DJGPP cross-compiler toolchain. You can build one using the scripts from https://github.com/andrewwutw/build-djgpp
+
+.. code-block:: bash
+
+   source /path/to/djgpp/setenv
+   meson setup --cross-file=i586-pc-msdosdjgpp.ini build_dos
+   cd build_dos
+   ninja 
+
+Documentation
+-------------
+
+You will also need:
+
+- `LDoc <https://github.com/lunarmodules/LDoc>`_ 
+
+.. code-block:: bash
+
+   source /path/to/djgpp/setenv
+   meson setup --cross-file=i586-pc-msdosdjgpp.ini build_dos
+   cd build_dos
+   ninja doc 
 
 Images 
 ======
 
 Perentie supports exactly one image format: PNG. Speifically, PNGs in 8-bit indexed or grayscale format.
 
-Don't worry too much about palettes; Perentie will keep a running tab of all the colours used and convert your graphics for the target hardware.
+Don't worry too much about palettes; Perentie will keep a running tab of all the colours used and convert your graphics for the target hardware. Once 256 colours have been used, subsequent colours will be remapped to the nearest matching colour.
 
-You can convert a normal PNG to 8-bit with ImageMagick:
+You can convert a normal PNG to 8-bit with `ImageMagick <https://imagemagick.org>`_:
 
 .. code-block:: bash
 
@@ -51,6 +78,12 @@ Perentie includes a built-in Lua shell, accessible over a COM port via a null-mo
    [serial]
    serial4       = nullmodem telnet:1 port:42424
 
+In your game's Lua code, add the following call:
+
+.. code-block:: lua
+
+   PTSetDebugConsole(true, "COM4")
+
 When the engine is running, you can connect to the shell on port 42424 using a Telnet client:
 
 .. code-block:: bash
@@ -60,11 +93,11 @@ When the engine is running, you can connect to the shell on port 42424 using a T
    Connected to localhost.
    Escape character is '^]'.
 
-   ┈┅━┥ Perentie v0.6 - Console ┝━┅┈
+   ┈┅━┥ Perentie v0.9.0 - Console ┝━┅┈
    Lua 5.4.7  Copyright (C) 1994-2024 Lua.org, PUC-Rio
 
    >> PTVersion()
-   "0.6"
+   "0.9.0"
    >> 
 
 Calls to Lua's `print` function will display the output in the debug shell.
