@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "colour.h"
+#include "system.h"
 
 pt_colour_rgb ega_palette[] = {
     { 0x00, 0x00, 0x00 },
@@ -144,4 +145,67 @@ void get_ega_dither_for_color(pt_colour_oklab* ega_dither_list, size_t n, pt_col
     dest->type = DITHER_D50;
     dest->idx_a = nearest / 16;
     dest->idx_b = nearest % 16;
+}
+
+uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b)
+{
+    for (int i = 0; i < pt_sys.palette_top; i++) {
+        if (pt_sys.palette[i].r == r && pt_sys.palette[i].g == g && pt_sys.palette[i].b == b)
+            return i;
+    }
+    // add a new colour
+    if (pt_sys.palette_top < 256) {
+        int idx = pt_sys.palette_top;
+        pt_sys.palette_top++;
+        pt_sys.palette[idx].r = r;
+        pt_sys.palette[idx].g = g;
+        pt_sys.palette[idx].b = b;
+        pt_sys.video->update_colour(idx);
+        pt_sys.palette_revision++;
+        return idx;
+    }
+    // Out of palette slots; need to macguyver the nearest colour.
+    // Formula borrowed from ScummVM's palette code.
+    uint8_t best_color = 0;
+    uint32_t min = 0xffffffff;
+    for (int i = 0; i < 256; ++i) {
+        int rmean = (pt_sys.palette[i].r + r) / 2;
+        int dr = pt_sys.palette[i].r - r;
+        int dg = pt_sys.palette[i].g - g;
+        int db = pt_sys.palette[i].b - b;
+
+        uint32_t dist_squared = (((512 + rmean) * dr * dr) >> 8) + 4 * dg * dg + (((767 - rmean) * db * db) >> 8);
+        if (dist_squared < min) {
+            best_color = i;
+            min = dist_squared;
+        }
+    }
+    return best_color;
+}
+
+void dither_set_hint(pt_colour_rgb* src, enum pt_dither_type type, pt_colour_rgb* a, pt_colour_rgb* b)
+{
+    uint8_t idx_src = map_colour(src->r, src->g, src->b);
+    uint8_t idx_a = map_colour(a->r, a->g, a->b);
+    uint8_t idx_b = map_colour(b->r, b->g, b->b);
+    pt_sys.dither[idx_src].type = type;
+    pt_sys.dither[idx_src].idx_a = idx_a;
+    pt_sys.dither[idx_src].idx_b = idx_b;
+    pt_sys.palette_revision++;
+}
+
+uint8_t dither_calc(uint8_t src, int16_t x, int16_t y)
+{
+    pt_dither* dither = &pt_sys.dither[src];
+    switch (dither->type) {
+    case DITHER_D50:
+        return x + y % 2 ? dither->idx_b : dither->idx_a;
+    case DITHER_FILL_A:
+        return dither->idx_a;
+    case DITHER_FILL_B:
+        return dither->idx_b;
+    case DITHER_NONE:
+    default:
+        return src;
+    }
 }

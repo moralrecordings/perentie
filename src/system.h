@@ -34,8 +34,8 @@ struct pt_drv_keyboard {
     void (*init)();
     void (*update)();
     void (*shutdown)();
-    void (*set_key_repeat)(bool);
-    bool (*is_key_down)(const char*);
+    void (*set_key_repeat)(bool allow);
+    bool (*is_key_down)(const char* key);
 };
 
 enum pt_mouse_button { MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_MAX };
@@ -46,27 +46,27 @@ struct pt_drv_mouse {
     void (*shutdown)();
     int (*get_x)();
     int (*get_y)();
-    bool (*is_button_down)(enum pt_mouse_button);
+    bool (*is_button_down)(enum pt_mouse_button button);
 };
 
 struct pt_drv_serial {
     void (*init)();
     void (*shutdown)();
-    void (*open_device)(const char*);
+    void (*open_device)(const char* device);
     void (*close_device)();
     bool (*rx_ready)();
     bool (*tx_ready)();
     byte (*getc)();
-    int (*gets)(byte*, size_t);
-    void (*putc)(byte);
-    size_t (*write)(const void*, size_t);
-    int (*printf)(const char*, ...);
+    int (*gets)(byte* buffer, size_t length);
+    void (*putc)(byte data);
+    size_t (*write)(const void* buffer, size_t size);
+    int (*printf)(const char* format, ...);
 };
 
 struct pt_drv_opl {
     void (*init)();
     void (*shutdown)();
-    void (*write_reg)(uint16_t, uint8_t);
+    void (*write_reg)(uint16_t addr, uint8_t data);
 };
 
 struct pt_drv_beep {
@@ -86,16 +86,16 @@ struct pt_drv_video {
     void (*blit_image)(
         pt_image* image, int16_t x, int16_t y, uint8_t flags, int16_t left, int16_t top, int16_t right, int16_t bottom);
     void (*blit_line)(int16_t x0, int16_t y0, int16_t x1, int16_t y1, pt_colour_rgb* colour);
-    bool (*is_vblank)();
     void (*blit)();
     void (*flip)();
-    uint8_t (*map_colour)(uint8_t r, uint8_t g, uint8_t b);
-    void (*destroy_hw_image)(void*);
-    void (*set_palette_remapper)(enum pt_palette_remapper);
-    void (*set_dither_hint)(pt_colour_rgb* src, enum pt_dither_type type, pt_colour_rgb* a, pt_colour_rgb* b);
+    void (*update_colour)(uint8_t idx);
+    void (*destroy_hw_image)(void* hw_image);
+    void (*set_palette_remapper)(enum pt_palette_remapper remapper);
 };
 
 struct pt_system {
+    void (*init)();
+    void (*shutdown)();
     pt_drv_timer* timer;
     pt_drv_keyboard* keyboard;
     pt_drv_mouse* mouse;
@@ -104,7 +104,9 @@ struct pt_system {
     pt_drv_beep* beep;
     pt_drv_video* video;
     int palette_top;
+    int palette_revision;
     pt_colour_rgb palette[256];
+    pt_dither dither[256];
 };
 
 extern pt_system pt_sys;

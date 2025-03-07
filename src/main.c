@@ -1,87 +1,29 @@
+#include "colour.h"
+#include "event.h"
+#include "log.h"
+#include "musicrad.h"
+#include "script.h"
 #include "stb/stb_ds.h"
+#include "system.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#ifdef SYSTEM_DOS
-#include <dpmi.h>
+
+#ifdef SYSTEM_SDL
+#include "sdl.h"
 #endif
 
-#include "colour.h"
-#include "dos.h"
-#include "event.h"
-#include "log.h"
-#include "script.h"
-#include "system.h"
-
-#include "musicrad.h"
-
 #ifdef SYSTEM_DOS
-extern char etext;
+#include "dos.h"
 #endif
 
 int main(int argc, char** argv)
 {
 
 #ifdef SYSTEM_DOS
-    // We're running under CWSDPMI in protected mode.
-    // That means virtual memory. On the surface it looks like
-    // one big continuous address space, but underneath its based
-    // on 4K pages which can be shuffled between RAM and a
-    // swap file on the disk.
-
-    // This causes a problem with interrupt code:
-    // - interrupts can be raised at -any time- during execution
-    // - interrupts can't load pages from the swap file
-    // - ergo, everything an interrupt touches has to be in RAM
-
-    // DPMI advises you to lock all regions code or data memory
-    // that are used by interrupts. For us, that's the driver layer,
-    // plus anything accessed by the timer callback system.
-
-    // Lock data so that pt_sys is accessible from interrupts.
-    // All of these memory regions are statically declared,
-    // so this macro uses sizeof() to find the end.
-    LOCK_DATA(pt_sys)
-    LOCK_DATA(dos_timer)
-    LOCK_DATA(dos_keyboard)
-    LOCK_DATA(dos_mouse)
-    LOCK_DATA(dos_serial)
-    LOCK_DATA(dos_opl)
-    LOCK_DATA(dos_beep)
-    LOCK_DATA(dos_vga)
-
-    // As it turns out, there's no guarantee with new GCC
-    // that functions will be linked and stored in the same
-    // order, and therefore no straightforward way of getting the
-    // memory range of individual functions for locking.
-    // Most DJGPP advice will tell you to do something like:
-    //
-    // void func() { ... }
-    // void func_end() {}
-    //
-    // int main(int argc, char **argv) {
-    //     _go32_dpmi_lock_code((void *)func, (long)func_end - (long)func);
-    // }
-    //
-    // which will not work if you use modern GCC with the default
-    // optimisation settings, as func_end() is not guaranteed to be
-    // positioned by the linker after func().
-
-    // gamedevjeff points out this was introduced by gcc in about 2007
-    // for -O1 and above, and supposedly can be disabled with
-    // -fno-toplevel-reorder.
-
-    // We could use pragma sections to mask off areas of code, if it
-    // weren't for the fact that CWSDPMI is hardcoded to load .text and
-    // .data and nothing else.
-
-    // For now, just lock ALL of .text using the magic GCC linker symbol
-    // for the end of the .text area.
-    // As of writing that's 93 pages. Peanuts for a Pentium. Plenty of
-    // other junk that deserves swapping before that.
-    _go32_dpmi_lock_code((void*)0x1000, (long)&etext - (long)0x1000);
-
+    pt_sys.init = &dos_init;
+    pt_sys.shutdown = &dos_shutdown;
     pt_sys.timer = &dos_timer;
     pt_sys.keyboard = &dos_keyboard;
     pt_sys.mouse = &dos_mouse;
@@ -89,9 +31,22 @@ int main(int argc, char** argv)
     pt_sys.opl = &dos_opl;
     pt_sys.beep = &dos_beep;
     pt_sys.video = &dos_vga;
+#elif SYSTEM_SDL
+    pt_sys.init = &sdl_init;
+    pt_sys.shutdown = &sdl_shutdown;
+    pt_sys.timer = &sdl_timer;
+    pt_sys.keyboard = &sdl_keyboard;
+    pt_sys.mouse = &sdl_mouse;
+    pt_sys.serial = &sdl_serial;
+    pt_sys.opl = &sdl_opl;
+    pt_sys.beep = &sdl_beep;
+    pt_sys.video = &sdl_video;
 #else
     return 0;
 #endif
+    // Initialise driver system
+    pt_sys.init();
+
     // Fill the top 16 colours with the EGA palette.
     // DOS should default to this, but better safe than sorry.
     for (int i = 0; i < 16; i++) {
@@ -112,7 +67,6 @@ int main(int argc, char** argv)
     pt_sys.keyboard->init();
     radplayer_init();
     script_init();
-    bool running = true;
 
     uint32_t samples[16] = { 0 };
     uint32_t draws[16] = { 0 };
@@ -178,5 +132,6 @@ int main(int argc, char** argv)
     pt_sys.timer->shutdown();
     event_shutdown();
     log_shutdown();
+    pt_sys.shutdown();
     return script_quit_status();
 }

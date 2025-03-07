@@ -529,7 +529,7 @@ static int lua_pt_set_dither_hint(lua_State* L)
     b.b = luaL_checkinteger(L, -1);
     lua_pop(L, 1);
 
-    pt_sys.video->set_dither_hint(&src, type, &a, &b);
+    dither_set_hint(&src, type, &a, &b);
     return 0;
 };
 

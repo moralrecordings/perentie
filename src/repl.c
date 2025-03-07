@@ -5,7 +5,6 @@
 #include "lua/lprefix.h"
 
 #include <fcntl.h>
-#include <io.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>

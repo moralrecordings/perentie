@@ -18,7 +18,6 @@
 // VGA blitter
 
 static byte vga_palette[256 * 3] = { 0 };
-static pt_dither vga_dither[256] = { 0 };
 static pt_colour_oklab* ega_dither_list = NULL;
 static enum pt_palette_remapper vga_remapper = REMAPPER_NONE;
 
@@ -91,8 +90,6 @@ static byte* vga_framebuffer = NULL;
 static bool vga_available = false;
 
 static int vga_page_offset = 0;
-
-static int vga_revision = 0;
 
 void vga_shutdown();
 
@@ -188,7 +185,7 @@ void vga_blit_image(
         return;
     }
 
-    if (image->hw_image && ((pt_image_vga*)image->hw_image)->revision != vga_revision) {
+    if (image->hw_image && ((pt_image_vga*)image->hw_image)->revision != pt_sys.palette_revision) {
         vga_destroy_hw_image(image->hw_image);
         image->hw_image = NULL;
     }
@@ -320,49 +317,21 @@ void vga_load_palette_colour(int idx)
     enable();
 }
 
-uint8_t vga_map_colour(uint8_t r, uint8_t g, uint8_t b)
+void vga_update_colour(uint8_t idx)
 {
-    for (int i = 0; i < pt_sys.palette_top; i++) {
-        if (pt_sys.palette[i].r == r && pt_sys.palette[i].g == g && pt_sys.palette[i].b == b)
-            return i;
-    }
+    byte r = pt_sys.palette[idx].r;
+    byte g = pt_sys.palette[idx].g;
+    byte b = pt_sys.palette[idx].b;
     byte r_v = vga_remap[r];
     byte g_v = vga_remap[g];
     byte b_v = vga_remap[b];
-    // add a new colour
-    if (pt_sys.palette_top < 256) {
-        int idx = pt_sys.palette_top;
-        pt_sys.palette_top++;
-        pt_sys.palette[idx].r = r;
-        pt_sys.palette[idx].g = g;
-        pt_sys.palette[idx].b = b;
-        vga_palette[3 * idx] = r_v;
-        vga_palette[3 * idx + 1] = g_v;
-        vga_palette[3 * idx + 2] = b_v;
-        vga_load_palette_colour(idx);
-        set_dither_from_remapper(idx, &vga_dither[idx]);
-        log_print("vga_map_colour: vga_palette[%d] = %d, %d, %d -> %d, %d, %d (dither %d %d)\n", idx, r, g, b, r_v, g_v,
-            b_v, vga_dither[idx].idx_a, vga_dither[idx].idx_b);
-        vga_revision++;
-        return idx;
-    }
-    // Out of palette slots; need to macguyver the nearest colour.
-    // Formula borrowed from ScummVM's palette code.
-    uint8_t best_color = 0;
-    uint32_t min = 0xffffffff;
-    for (int i = 0; i < 256; ++i) {
-        int rmean = (vga_palette[3 * i + 0] + r_v) / 2;
-        int dr = vga_palette[3 * i + 0] - r_v;
-        int dg = vga_palette[3 * i + 1] - g_v;
-        int db = vga_palette[3 * i + 2] - b_v;
-
-        uint32_t dist_squared = (((512 + rmean) * dr * dr) >> 8) + 4 * dg * dg + (((767 - rmean) * db * db) >> 8);
-        if (dist_squared < min) {
-            best_color = i;
-            min = dist_squared;
-        }
-    }
-    return best_color;
+    vga_palette[3 * idx] = r_v;
+    vga_palette[3 * idx + 1] = g_v;
+    vga_palette[3 * idx + 2] = b_v;
+    vga_load_palette_colour(idx);
+    set_dither_from_remapper(idx, &pt_sys.dither[idx]);
+    log_print("vga_update_colour: vga_palette[%d] = %d, %d, %d -> %d, %d, %d (dither %d %d)\n", idx, r, g, b, r_v, g_v,
+        b_v, pt_sys.dither[idx].idx_a, pt_sys.dither[idx].idx_b);
 }
 
 void vga_plot(int16_t x, int16_t y, uint8_t value)
@@ -398,7 +367,7 @@ void vga_blit_line(int16_t x0, int16_t y0, int16_t x1, int16_t y1, pt_colour_rgb
     int16_t x_inc = (x0 < x1) ? 1 : -1;
     int16_t y_inc = (y0 < y1) ? 1 : -1;
 
-    uint8_t value = vga_map_colour(colour->r, colour->g, colour->b);
+    uint8_t value = map_colour(colour->r, colour->g, colour->b);
 
     if (steep)
         vga_plot(y, x, value);
@@ -514,7 +483,7 @@ void vga_flip()
     // uint32_t vblankend = pt_sys.timer->ticks() - ticks;
 
     // A little yield as a treat
-    sys_yield();
+    dos_yield();
 
     frame_count += 1;
     // if ((frame_count % 100) == 0)
@@ -532,11 +501,11 @@ pt_image_vga* vga_convert_image(pt_image* image)
     result->plane_pitch = (image->pitch) >> 2;
     result->bitmap = (byte*)calloc(result->pitch * result->height, sizeof(byte));
     result->mask = (byte*)calloc(result->pitch * result->height, sizeof(byte));
-    result->revision = vga_revision;
+    result->revision = pt_sys.palette_revision;
 
     byte palette_map[256];
     for (int i = 0; i < 256; i++) {
-        palette_map[i] = vga_map_colour(image->palette[3 * i], image->palette[3 * i + 1], image->palette[3 * i + 2]);
+        palette_map[i] = map_colour(image->palette[3 * i], image->palette[3 * i + 1], image->palette[3 * i + 2]);
     }
 
     for (int p = 0; p < 4; p++) {
@@ -545,22 +514,7 @@ pt_image_vga* vga_convert_image(pt_image* image)
         for (int y = 0; y < result->height; y++) {
             for (int x = 0; x < result->plane_pitch; x++) {
                 byte pixel = image->data[y * result->pitch + (x << 2) + p];
-                pt_dither* dither = &vga_dither[palette_map[pixel]];
-                switch (dither->type) {
-                case DITHER_D50:
-                    bitmap[y * result->plane_pitch + x] = (((x << 2) + y + p) % 2) ? dither->idx_b : dither->idx_a;
-                    break;
-                case DITHER_FILL_A:
-                    bitmap[y * result->plane_pitch + x] = dither->idx_a;
-                    break;
-                case DITHER_FILL_B:
-                    bitmap[y * result->plane_pitch + x] = dither->idx_b;
-                    break;
-                case DITHER_NONE:
-                default:
-                    bitmap[y * result->plane_pitch + x] = palette_map[pixel];
-                    break;
-                }
+                bitmap[y * result->plane_pitch + x] = dither_calc(palette_map[pixel], (x << 2) + p, y);
                 mask[y * result->plane_pitch + x]
                     = ((pixel == image->colourkey) || (image->palette_alpha[pixel] == 0x00)) ? 0x00 : 0xff;
             }
@@ -593,27 +547,16 @@ void vga_set_palette_remapper(enum pt_palette_remapper remapper)
         if (remapper == REMAPPER_NONE) {
             // If we're explicitly setting the mapper to be NONE,
             // clear the dither table.
-            vga_dither[i].type = DITHER_NONE;
-            vga_dither[i].idx_a = 0;
-            vga_dither[i].idx_b = 0;
+            pt_sys.dither[i].type = DITHER_NONE;
+            pt_sys.dither[i].idx_a = 0;
+            pt_sys.dither[i].idx_b = 0;
         } else {
-            set_dither_from_remapper(i, &vga_dither[i]);
+            set_dither_from_remapper(i, &pt_sys.dither[i]);
         }
     }
 
     // Force all hardware images to be recalculated
-    vga_revision++;
-}
-
-void vga_set_dither_hint(pt_colour_rgb* src, enum pt_dither_type type, pt_colour_rgb* a, pt_colour_rgb* b)
-{
-    uint8_t idx_src = vga_map_colour(src->r, src->g, src->b);
-    uint8_t idx_a = vga_map_colour(a->r, a->g, a->b);
-    uint8_t idx_b = vga_map_colour(b->r, b->g, b->b);
-    vga_dither[idx_src].type = type;
-    vga_dither[idx_src].idx_a = idx_a;
-    vga_dither[idx_src].idx_b = idx_b;
-    vga_revision++;
+    pt_sys.palette_revision++;
 }
 
 void vga_shutdown()
@@ -639,5 +582,15 @@ void vga_shutdown()
     }
 }
 
-pt_drv_video dos_vga = { &vga_init, &vga_shutdown, &vga_clear, &vga_blit_image, &vga_blit_line, &vga_is_vblank,
-    &vga_blit, &vga_flip, &vga_map_colour, &vga_destroy_hw_image, &vga_set_palette_remapper, &vga_set_dither_hint };
+pt_drv_video dos_vga = {
+    &vga_init,
+    &vga_shutdown,
+    &vga_clear,
+    &vga_blit_image,
+    &vga_blit_line,
+    &vga_blit,
+    &vga_flip,
+    &vga_update_colour,
+    &vga_destroy_hw_image,
+    &vga_set_palette_remapper,
+};

@@ -197,9 +197,6 @@ libs = [
   libspng,
 ]
 
-exe_name = 'perentie'
-platform_src = []
-platform_args = []
 if host_machine.system() == 'msdos'
   exe_name = 'pt_base.exe'
   platform_src = [
@@ -210,6 +207,22 @@ if host_machine.system() == 'msdos'
   platform_args = [
     '-DSYSTEM_DOS',
   ]
+  platform_libs = []
+  platform_deps = []
+else
+  exe_name = 'perentie'
+  sdl_dep = dependency(
+    'sdl3', version : '>=3.0.0'
+  )
+  platform_src = [
+    'src/sdl.c',
+    'src/sdl.h',
+  ]
+  platform_args = [
+    '-DSYSTEM_SDL',
+  ]
+  platform_libs = []
+  platform_deps = [sdl_dep]
 endif
 
 exe = executable(
@@ -220,8 +233,8 @@ exe = executable(
     inspect_h
   ],
   c_args : platform_args,
-  dependencies : deps,
-  link_with : libs,
+  dependencies : deps + platform_deps,
+  link_with : libs + platform_libs,
 )
 
 if host_machine.system() == 'msdos'

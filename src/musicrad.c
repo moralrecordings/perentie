@@ -214,7 +214,6 @@ bool radplayer_load_file(const char* path)
         fclose(fp);
         return false;
     }
-    uint8_t* rad_buffer = (uint8_t*)malloc(rad_size);
     fread(rad_player.Data, rad_size, 1, fp);
     fclose(fp);
     rad_load(&rad_player);

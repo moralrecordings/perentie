@@ -20,11 +20,13 @@
 #include "image.h"
 #include "log.h"
 
+extern char etext;
+
 uint32_t timer_millis();
 
 static bool use_dpmi_yield = false;
 
-void sys_yield()
+void dos_yield()
 {
     if (use_dpmi_yield)
         __dpmi_yield();
@@ -32,7 +34,7 @@ void sys_yield()
 
 bool sys_idle(int (*idle_callback)(), int idle_callback_period)
 {
-    sys_yield();
+    dos_yield();
     if (idle_callback && (timer_millis() % idle_callback_period == 0))
         return idle_callback() > 0;
     return 1;
@@ -436,7 +438,7 @@ void timer_sleep(uint32_t delay_millis)
     // Blocking loop until enough ticks have passed
     do {
         // Yield/halt CPU until next interrupt
-        sys_yield();
+        dos_yield();
         end = timer_ticks();
     } while ((end - begin) < delay_ticks);
 }
@@ -767,7 +769,7 @@ int serial_gets(byte* buffer, size_t length)
     uint32_t millis = timer_millis();
     while ((result < length) && (timer_millis() < millis + 50)) {
         if (!serial_rx_ready()) {
-            sys_yield();
+            dos_yield();
             continue;
         }
         buffer[result] = serial_getc();
@@ -806,7 +808,7 @@ size_t serial_write(const void* buffer, size_t size)
     outportb(serial_port_base + SERIAL_MCR, 0x03);
 
     while (result < size) {
-        sys_yield();
+        dos_yield();
         if (serial_tx_ready()) {
             serial_putc(((byte*)buffer)[result]);
             result++;
@@ -975,7 +977,7 @@ static const char *DOS_SCANCODES[] = {
     [72] = "up",      [73] = "pageup",    [74] = "-",          [75] = "left",
     [76] = "5",       [77] = "right",     [78] = "+",          [79] = "end",
     [80] = "down",    [81] = "pagedown",  [82] = "insert",     [83] = "delete",
-    [84] = "?",       [85] = "?",         [86] = "?",          [87] = "?",
+    [84] = "?",       [85] = "?",         [86] = "?",          [87] = "f11",
     [88] = "f12",     [89] = "?",         [90] = "?",          [91] = "?",
     [92] = "?",       [93] = "?",         [94] = "?",          [95] = "?",
     [96] = "enter",   [97] = "lctrl",     [98] = "/",          [99] = "f12",
@@ -1277,3 +1279,68 @@ pt_drv_opl dos_opl
     = { &opl_init,
           &opl_shutdown,
           &opl_write_reg };
+
+void dos_init()
+{
+    // We're running under CWSDPMI in protected mode.
+    // That means virtual memory. On the surface it looks like
+    // one big continuous address space, but underneath its based
+    // on 4K pages which can be shuffled between RAM and a
+    // swap file on the disk.
+
+    // This causes a problem with interrupt code:
+    // - interrupts can be raised at -any time- during execution
+    // - interrupts can't load pages from the swap file
+    // - ergo, everything an interrupt touches has to be in RAM
+
+    // DPMI advises you to lock all regions code or data memory
+    // that are used by interrupts. For us, that's the driver layer,
+    // plus anything accessed by the timer callback system.
+
+    // Lock data so that pt_sys is accessible from interrupts.
+    // All of these memory regions are statically declared,
+    // so this macro uses sizeof() to find the end.
+    LOCK_DATA(pt_sys)
+    LOCK_DATA(dos_timer)
+    LOCK_DATA(dos_keyboard)
+    LOCK_DATA(dos_mouse)
+    LOCK_DATA(dos_serial)
+    LOCK_DATA(dos_opl)
+    LOCK_DATA(dos_beep)
+    LOCK_DATA(dos_vga)
+
+    // As it turns out, there's no guarantee with new GCC
+    // that functions will be linked and stored in the same
+    // order, and therefore no straightforward way of getting the
+    // memory range of individual functions for locking.
+    // Most DJGPP advice will tell you to do something like:
+    //
+    // void func() { ... }
+    // void func_end() {}
+    //
+    // int main(int argc, char **argv) {
+    //     _go32_dpmi_lock_code((void *)func, (long)func_end - (long)func);
+    // }
+    //
+    // which will not work if you use modern GCC with the default
+    // optimisation settings, as func_end() is not guaranteed to be
+    // positioned by the linker after func().
+
+    // gamedevjeff points out this was introduced by gcc in about 2007
+    // for -O1 and above, and supposedly can be disabled with
+    // -fno-toplevel-reorder.
+
+    // We could use pragma sections to mask off areas of code, if it
+    // weren't for the fact that CWSDPMI is hardcoded to load .text and
+    // .data and nothing else.
+
+    // For now, just lock ALL of .text using the magic GCC linker symbol
+    // for the end of the .text area.
+    // As of writing that's 93 pages. Peanuts for a Pentium. Plenty of
+    // other junk that deserves swapping before that.
+    _go32_dpmi_lock_code((void*)0x1000, (long)&etext - (long)0x1000);
+}
+
+void dos_shutdown()
+{
+}

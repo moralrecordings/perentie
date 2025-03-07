@@ -27,7 +27,7 @@ struct pt_image_vga {
     int revision;
 };
 
-void sys_yield();
+void dos_yield();
 
 bool sys_idle(int (*idle_callback)(), int idle_callback_period);
 
@@ -44,5 +44,8 @@ extern pt_drv_keyboard dos_keyboard;
 extern pt_drv_serial dos_serial;
 
 extern pt_drv_opl dos_opl;
+
+void dos_init();
+void dos_shutdown();
 
 #endif
