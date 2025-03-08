@@ -41,11 +41,12 @@ void sdlvideo_init()
     }
 
     if (!SDL_CreateWindowAndRenderer(
-            "Perentie", SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
+            "Perentie", SCREEN_WIDTH * 3, SCREEN_HEIGHT * 3, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
         log_print("sdlvideo_init: Failed to create window: %s\n", SDL_GetError());
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return;
     }
+    SDL_SetRenderLogicalPresentation(renderer, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
     framebuffer = SDL_CreateTexture(
         renderer, SDL_GetWindowPixelFormat(window), SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
     SDL_SetTextureScaleMode(framebuffer, SDL_SCALEMODE_NEAREST);
@@ -197,6 +198,7 @@ void sdlvideo_blit()
 
     // SDL renderer manages the frame buffer for us
     SDL_SetRenderTarget(renderer, NULL);
+    sdlvideo_clear();
     SDL_RenderTexture(renderer, framebuffer, NULL, NULL);
 }
 
@@ -295,6 +297,7 @@ void sdlkeyboard_update()
             event_push(EVENT_QUIT);
             break;
         case SDL_EVENT_MOUSE_MOTION: {
+            SDL_ConvertEventToRenderCoordinates(renderer, &ev);
             pt_event* t = event_push(EVENT_MOUSE_MOVE);
             t->mouse.x = (int)ev.motion.x;
             t->mouse.y = (int)ev.motion.y;
@@ -305,6 +308,7 @@ void sdlkeyboard_update()
         } break;
         case SDL_EVENT_MOUSE_BUTTON_DOWN:
         case SDL_EVENT_MOUSE_BUTTON_UP:
+            SDL_ConvertEventToRenderCoordinates(renderer, &ev);
             if (ev.button.button <= SDL_BUTTON_RIGHT) {
                 pt_event* t = event_push(ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? EVENT_MOUSE_DOWN : EVENT_MOUSE_UP);
                 switch (ev.button.button) {

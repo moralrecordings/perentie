@@ -1,6 +1,7 @@
 #ifndef PERENTIE_COLOUR_H
 #define PERENTIE_COLOUR_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef uint8_t byte;
