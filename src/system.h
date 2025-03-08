@@ -67,6 +67,7 @@ struct pt_drv_opl {
     void (*init)();
     void (*shutdown)();
     void (*write_reg)(uint16_t addr, uint8_t data);
+    void (*update)();
 };
 
 struct pt_drv_beep {

@@ -77,6 +77,8 @@ int main(int argc, char** argv)
     // Main löp
     while (!script_has_quit()) {
         uint32_t ticks = pt_sys.timer->millis();
+        // Update audio playback
+        pt_sys.opl->update();
         // Run Lua coroutines for 1 step
         script_exec();
         // Rack up any input events

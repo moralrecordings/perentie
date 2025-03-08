@@ -17,6 +17,7 @@
 #include "system.h"
 #include "utils.h"
 
+static SDL_AudioDeviceID audio_out = 0;
 static SDL_Window* window = NULL;
 static SDL_Renderer* renderer = NULL;
 
@@ -24,21 +25,25 @@ static SDL_Texture* framebuffer = NULL;
 
 void sdl_init()
 {
+    if (!SDL_InitSubSystem(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+        log_print("sdl_init: Failed to init: %s\n", SDL_GetError());
+        return;
+    }
+    audio_out = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
+    if (!audio_out) {
+        log_print("sdl_init: Failed to open audio device: %s\n", SDL_GetError());
+    }
 }
 
 void sdl_shutdown()
 {
+    SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 }
 
 void sdlvideo_init()
 {
     if (window)
         return;
-
-    if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
-        log_print("sdlvideo_init: Failed to init video: %s\n", SDL_GetError());
-        return;
-    }
 
     if (!SDL_CreateWindowAndRenderer(
             "Perentie", SCREEN_WIDTH * 3, SCREEN_HEIGHT * 3, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
@@ -69,7 +74,6 @@ void sdlvideo_shutdown()
     renderer = NULL;
     SDL_DestroyWindow(window);
     window = NULL;
-    SDL_QuitSubSystem(SDL_INIT_VIDEO);
 }
 
 void sdlvideo_clear()
@@ -473,16 +477,59 @@ void sdlbeep_stop()
 
 pt_drv_beep sdl_beep = { &sdlbeep_init, &sdlbeep_shutdown, &sdlbeep_tone, &sdlbeep_play_sample, &sdlbeep_stop };
 
+// For some reason you can't actually include woodyopl/opl.h, as it has a bunch of
+// player state embedded into it. Oh well!
+extern void adlib_init(uint32_t samplerate);
+extern void adlib_write(uintptr_t idx, uint8_t val);
+extern void adlib_getsample(int16_t* sndptr, intptr_t numsamples);
+
+#define OPL_RATE 49716
+#define OPL_BUFFER 2048
+static SDL_AudioStream* oploutput = NULL;
+
 void sdlopl_init()
 {
+    if (oploutput)
+        return;
+
+    if (!audio_out)
+        return;
+
+    adlib_init(OPL_RATE);
+    SDL_AudioSpec src = { SDL_AUDIO_S16LE, 2, OPL_RATE };
+    oploutput = SDL_CreateAudioStream(&src, NULL);
+    if (!SDL_BindAudioStream(audio_out, oploutput)) {
+        log_print("sdlopl_init: Failed to bind audio stream to device: %s\n", SDL_GetError());
+    }
 }
 
 void sdlopl_shutdown()
 {
+    if (!oploutput)
+        return;
+    SDL_DestroyAudioStream(oploutput);
+    oploutput = NULL;
 }
 
 void sdlopl_write_reg(uint16_t addr, uint8_t data)
 {
+    if (!oploutput)
+        return;
+
+    adlib_write(addr, data);
 }
 
-pt_drv_opl sdl_opl = { &sdlopl_init, &sdlopl_shutdown, &sdlopl_write_reg };
+void sdlopl_update()
+{
+    if (!oploutput)
+        return;
+
+    int16_t samples[OPL_BUFFER];
+    int samples_needed = OPL_BUFFER - (SDL_GetAudioStreamQueued(oploutput) >> 1);
+    if (samples_needed > 0) {
+        adlib_getsample(samples, samples_needed >> 1);
+        SDL_PutAudioStreamData(oploutput, samples, samples_needed * 2);
+    }
+}
+
+pt_drv_opl sdl_opl = { &sdlopl_init, &sdlopl_shutdown, &sdlopl_write_reg, &sdlopl_update };

@@ -116,6 +116,7 @@ Perentie wouldn't be possible without the following third-party components:
 - `The Ultimate Oldschool PC Font Pack <https://int10h.org/oldschool-pc-fonts/>`_ - pixel fonts
 - `inspect.lua <https://github.com/kikito/inspect.lua>`_ - human-readable object representation for Lua debugging
 - `Lua-CBOR <https://www.zash.se/lua-cbor.html>`_ - Lua data serialisation library
+- `WoodyOPL <https://github.com/rofl0r/woody-opl>`_ - OPL2/OPL3 emulator by the DOSBox team, originally based on Ken Silverman's ADLIBEMU.
 
 In addition, Perentie incorporates code and algorithms from the following projects:
 

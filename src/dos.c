@@ -1271,14 +1271,17 @@ void opl_shutdown()
     sound_opl3_available = false;
 }
 
-void _opl_lock() { // Lock the memory page that contains all of the OPL code
+void _opl_lock()
+{ // Lock the memory page that contains all of the OPL code
     LOCK_DATA(sound_opl2_available) LOCK_DATA(sound_opl3_available)
 }
 
-pt_drv_opl dos_opl
-    = { &opl_init,
-          &opl_shutdown,
-          &opl_write_reg };
+void opl_update()
+{
+    // Real hardware! No need for this
+}
+
+pt_drv_opl dos_opl = { &opl_init, &opl_shutdown, &opl_write_reg, opl_update };
 
 void dos_init()
 {

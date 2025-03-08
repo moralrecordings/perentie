@@ -107,6 +107,16 @@ libspng = static_library(
   include_directories : ['src/miniz'],
 )
 
+woodyopl = static_library(
+  'woodyopl',
+  [
+    'src/woodyopl/opl.c',
+    'src/woodyopl/opl.h',
+  ],
+  c_args : ['-DOPLTYPE_IS_OPL3'],
+  include_directories : ['src/woodyopl'],
+)
+
 
 boot_lo = custom_target(
   'boot.lo',
@@ -219,9 +229,9 @@ else
     'src/sdl.h',
   ]
   platform_args = [
-    '-DSYSTEM_SDL',
+    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3',
   ]
-  platform_libs = []
+  platform_libs = [woodyopl]
   platform_deps = [sdl_dep]
 endif
 
