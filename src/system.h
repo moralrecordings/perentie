@@ -19,7 +19,7 @@ typedef struct pt_drv_beep pt_drv_beep;
 typedef struct pt_drv_video pt_drv_video;
 typedef struct pt_system pt_system;
 
-typedef uint32_t (*pt_timer_callback)(uint32_t, void*);
+typedef uint32_t (*pt_timer_callback)(void* data, uint32_t timer_id, uint32_t interval);
 
 struct pt_drv_app {
     void (*init)();

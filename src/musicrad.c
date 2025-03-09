@@ -192,7 +192,7 @@ void radplayer_shutdown()
     rad_timer = 0;
 }
 
-uint32_t radplayer_callback(uint32_t interval, void* data)
+uint32_t radplayer_callback(void* data, uint32_t id, uint32_t interval)
 {
     rad_update(&rad_player);
     return interval;

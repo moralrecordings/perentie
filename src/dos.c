@@ -141,7 +141,8 @@ static bool _int_8h_prot()
         for (int i = 0; i < _timer.slot_head; i++) {
             _timer.slots[i].count++;
             if (_timer.slots[i].count == _timer.slots[i].interval) {
-                uint32_t result = _timer.slots[i].callback(_timer.slots[i].interval, _timer.slots[i].param);
+                uint32_t result
+                    = _timer.slots[i].callback(_timer.slots[i].param, _timer.slots[i].id, _timer.slots[i].interval);
                 if (result == 0) {
                     // remove the callback
                     _timer.slot_head--;

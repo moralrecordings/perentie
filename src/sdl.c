@@ -263,11 +263,11 @@ void sdltimer_sleep(uint32_t millis)
 };
 uint32_t sdltimer_add_callback(uint32_t interval, pt_timer_callback callback, void* param)
 {
-    return 0;
+    return SDL_AddTimer(interval, callback, param);
 }
 bool sdltimer_remove_callback(uint32_t id)
 {
-    return true;
+    return SDL_RemoveTimer(id);
 }
 
 pt_drv_timer sdl_timer = { &sdltimer_init, &sdltimer_shutdown, &sdltimer_ticks, &sdltimer_millis, &sdltimer_sleep,
