@@ -11,12 +11,12 @@ struct rect {
     int16_t right, bottom;
 };
 
-inline struct rect* create_rect()
+static inline struct rect* create_rect()
 {
     return (struct rect*)calloc(1, sizeof(struct rect));
 }
 
-inline struct rect* create_rect_dims(int16_t w, int16_t h)
+static inline struct rect* create_rect_dims(int16_t w, int16_t h)
 {
     struct rect* result = (struct rect*)calloc(1, sizeof(struct rect));
     result->right = w;
@@ -24,7 +24,7 @@ inline struct rect* create_rect_dims(int16_t w, int16_t h)
     return result;
 }
 
-inline struct rect* create_rect_bounds(int16_t t, int16_t l, int16_t b, int16_t r)
+static inline struct rect* create_rect_bounds(int16_t t, int16_t l, int16_t b, int16_t r)
 {
     struct rect* result = (struct rect*)calloc(1, sizeof(struct rect));
     result->left = l;
@@ -34,34 +34,34 @@ inline struct rect* create_rect_bounds(int16_t t, int16_t l, int16_t b, int16_t 
     return result;
 }
 
-inline void destroy_rect(struct rect* rect)
+static inline void destroy_rect(struct rect* rect)
 {
     if (rect)
         free(rect);
 }
 
-inline int rect_width(struct rect* rect)
+static inline int rect_width(struct rect* rect)
 {
     if (!rect)
         return 0;
     return rect->right - rect->left;
 }
 
-inline int rect_height(struct rect* rect)
+static inline int rect_height(struct rect* rect)
 {
     if (!rect)
         return 0;
     return rect->bottom - rect->top;
 }
 
-inline bool rect_contains_point(struct rect* rect, int16_t x, int16_t y)
+static inline bool rect_contains_point(struct rect* rect, int16_t x, int16_t y)
 {
     if (!rect)
         return false;
     return (rect->left <= x) && (x < rect->right) && (rect->top <= y) && (y < rect->bottom);
 }
 
-inline bool rect_contains_rect(struct rect* rect, struct rect* target)
+static inline bool rect_contains_rect(struct rect* rect, struct rect* target)
 {
     if (!rect || !target)
         return false;
@@ -69,7 +69,7 @@ inline bool rect_contains_rect(struct rect* rect, struct rect* target)
         && (target->bottom <= rect->bottom);
 }
 
-inline bool rect_equals_rect(struct rect* rect, struct rect* target)
+static inline bool rect_equals_rect(struct rect* rect, struct rect* target)
 {
     if (!rect || !target)
         return false;
@@ -77,14 +77,14 @@ inline bool rect_equals_rect(struct rect* rect, struct rect* target)
         && (rect->bottom == target->bottom);
 }
 
-inline bool rect_is_empty(struct rect* rect)
+static inline bool rect_is_empty(struct rect* rect)
 {
     if (!rect)
         return true;
     return (rect->left >= rect->right || rect->top >= rect->bottom);
 }
 
-inline void rect_move_to(struct rect* rect, int16_t x, int16_t y)
+static inline void rect_move_to(struct rect* rect, int16_t x, int16_t y)
 {
     if (!rect)
         return;
@@ -94,7 +94,7 @@ inline void rect_move_to(struct rect* rect, int16_t x, int16_t y)
     rect->left = x;
 }
 
-inline void rect_translate(struct rect* rect, int16_t dx, int16_t dy)
+static inline void rect_translate(struct rect* rect, int16_t dx, int16_t dy)
 {
     if (!rect)
         return;
@@ -104,7 +104,7 @@ inline void rect_translate(struct rect* rect, int16_t dx, int16_t dy)
     rect->bottom += dy;
 }
 
-inline bool rect_blit_clip(int16_t* x, int16_t* y, struct rect* src, struct rect* clip)
+static inline bool rect_blit_clip(int16_t* x, int16_t* y, struct rect* src, struct rect* clip)
 {
     if (!x || !y || !src || !clip)
         return false;

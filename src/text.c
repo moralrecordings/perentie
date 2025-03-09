@@ -111,7 +111,7 @@ pt_text_word* create_text_word(const byte* string, size_t length, pt_font* font)
     return word;
 }
 
-inline bool is_whitespace(byte c)
+static inline bool is_whitespace(byte c)
 {
     return ((c == ' ') || (c == '\t') || (c == '\n') || (c == '\r'));
 }

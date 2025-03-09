@@ -22,33 +22,33 @@ struct pt_image {
     void* hw_image;
 };
 
-inline uint16_t get_pitch(uint32_t width)
+static inline uint16_t get_pitch(uint32_t width)
 {
     return (width % 4) == 0 ? width : width + 4 - (width % 4);
 }
 
-inline int16_t image_left(pt_image* image)
+static inline int16_t image_left(pt_image* image)
 {
     if (!image)
         return 0;
     return -image->origin_x;
 }
 
-inline int16_t image_top(pt_image* image)
+static inline int16_t image_top(pt_image* image)
 {
     if (!image)
         return 0;
     return -image->origin_y;
 }
 
-inline int16_t image_right(pt_image* image)
+static inline int16_t image_right(pt_image* image)
 {
     if (!image)
         return 0;
     return image->width - image->origin_x;
 }
 
-inline int16_t image_bottom(pt_image* image)
+static inline int16_t image_bottom(pt_image* image)
 {
     if (!image)
         return 0;

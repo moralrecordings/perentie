@@ -17,7 +17,7 @@
     })
 
 #define FREAD_TYPE_LE(T, S)                                                                                            \
-    inline T fread_##S(FILE* fp)                                                                                       \
+    static inline T fread_##S(FILE* fp)                                                                                \
     {                                                                                                                  \
         T result = 0;                                                                                                  \
         fread(&result, sizeof(T), 1, fp);                                                                              \
@@ -25,7 +25,7 @@
     }
 
 #define FREAD_TYPE_BE(T, C, S)                                                                                         \
-    inline T fread_##S(FILE* fp)                                                                                       \
+    static inline T fread_##S(FILE* fp)                                                                                \
     {                                                                                                                  \
         T result = 0;                                                                                                  \
         fread(&result, sizeof(T), 1, fp);                                                                              \
