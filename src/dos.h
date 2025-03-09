@@ -45,7 +45,6 @@ extern pt_drv_serial dos_serial;
 
 extern pt_drv_opl dos_opl;
 
-void dos_init();
-void dos_shutdown();
+extern pt_drv_app dos_app;
 
 #endif

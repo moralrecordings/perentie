@@ -545,6 +545,15 @@ static int lua_pt_set_debug_console(lua_State* L)
     return 0;
 }
 
+static int lua_pt_set_game_info(lua_State* L)
+{
+    const char* identifier = luaL_checkstring(L, 1);
+    const char* version = lua_tostring(L, 2);
+    const char* name = luaL_checkstring(L, 3);
+    pt_sys.app->set_meta(name, version, identifier);
+    return 0;
+}
+
 static int lua_pt_reset(lua_State* L)
 {
     pt_event* ev = event_push(EVENT_RESET);
@@ -592,6 +601,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTSetPaletteRemapper", lua_pt_set_palette_remapper },
     { "_PTSetDitherHint", lua_pt_set_dither_hint },
     { "_PTSetDebugConsole", lua_pt_set_debug_console },
+    { "_PTSetGameInfo", lua_pt_set_game_info },
     { "_PTReset", lua_pt_reset },
     { "_PTQuit", lua_pt_quit },
     { NULL, NULL },

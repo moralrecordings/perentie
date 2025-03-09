@@ -1,3 +1,5 @@
+PTSetGameInfo("au.net.moral.perentie.example", 100, "Perentie - Example app")
+
 -- Create a room
 test_room = PTRoom("test", SCREEN_WIDTH, SCREEN_HEIGHT)
 PTAddRoom(test_room)

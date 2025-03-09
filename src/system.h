@@ -9,6 +9,7 @@
 typedef uint8_t byte;
 typedef struct pt_image pt_image;
 
+typedef struct pt_drv_app pt_drv_app;
 typedef struct pt_drv_timer pt_drv_timer;
 typedef struct pt_drv_keyboard pt_drv_keyboard;
 typedef struct pt_drv_mouse pt_drv_mouse;
@@ -19,6 +20,12 @@ typedef struct pt_drv_video pt_drv_video;
 typedef struct pt_system pt_system;
 
 typedef uint32_t (*pt_timer_callback)(uint32_t, void*);
+
+struct pt_drv_app {
+    void (*init)();
+    void (*set_meta)(const char* name, const char* version, const char* identifier);
+    void (*shutdown)();
+};
 
 struct pt_drv_timer {
     void (*init)();
@@ -95,8 +102,7 @@ struct pt_drv_video {
 };
 
 struct pt_system {
-    void (*init)();
-    void (*shutdown)();
+    pt_drv_app* app;
     pt_drv_timer* timer;
     pt_drv_keyboard* keyboard;
     pt_drv_mouse* mouse;

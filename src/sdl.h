@@ -19,9 +19,6 @@ struct pt_image_sdl {
     int revision;
 };
 
-void sdl_init();
-void sdl_shutdown();
-
 extern pt_drv_video sdl_video;
 
 extern pt_drv_timer sdl_timer;
@@ -35,5 +32,7 @@ extern pt_drv_keyboard sdl_keyboard;
 extern pt_drv_serial sdl_serial;
 
 extern pt_drv_opl sdl_opl;
+
+extern pt_drv_app sdl_app;
 
 #endif

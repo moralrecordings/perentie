@@ -22,8 +22,7 @@ int main(int argc, char** argv)
 {
 
 #ifdef SYSTEM_DOS
-    pt_sys.init = &dos_init;
-    pt_sys.shutdown = &dos_shutdown;
+    pt_sys.app = &dos_app;
     pt_sys.timer = &dos_timer;
     pt_sys.keyboard = &dos_keyboard;
     pt_sys.mouse = &dos_mouse;
@@ -32,8 +31,7 @@ int main(int argc, char** argv)
     pt_sys.beep = &dos_beep;
     pt_sys.video = &dos_vga;
 #elif SYSTEM_SDL
-    pt_sys.init = &sdl_init;
-    pt_sys.shutdown = &sdl_shutdown;
+    pt_sys.app = &sdl_app;
     pt_sys.timer = &sdl_timer;
     pt_sys.keyboard = &sdl_keyboard;
     pt_sys.mouse = &sdl_mouse;
@@ -44,8 +42,13 @@ int main(int argc, char** argv)
 #else
     return 0;
 #endif
+    radplayer_init();
+    log_init();
+    event_init();
+    script_init();
+
     // Initialise driver system
-    pt_sys.init();
+    pt_sys.app->init();
 
     // Fill the top 16 colours with the EGA palette.
     // DOS should default to this, but better safe than sorry.
@@ -56,8 +59,6 @@ int main(int argc, char** argv)
     }
     pt_sys.palette_top = 16;
 
-    log_init();
-    event_init();
     pt_sys.timer->init();
     pt_sys.beep->init();
     pt_sys.opl->init();
@@ -65,8 +66,6 @@ int main(int argc, char** argv)
     pt_sys.video->init();
     pt_sys.mouse->init();
     pt_sys.keyboard->init();
-    radplayer_init();
-    script_init();
 
     uint32_t samples[16] = { 0 };
     uint32_t draws[16] = { 0 };
@@ -134,6 +133,6 @@ int main(int argc, char** argv)
     pt_sys.timer->shutdown();
     event_shutdown();
     log_shutdown();
-    pt_sys.shutdown();
+    pt_sys.app->shutdown();
     return script_quit_status();
 }

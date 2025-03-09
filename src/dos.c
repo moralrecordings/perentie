@@ -1281,7 +1281,7 @@ void opl_update()
     // Real hardware! No need for this
 }
 
-pt_drv_opl dos_opl = { &opl_init, &opl_shutdown, &opl_write_reg, opl_update };
+pt_drv_opl dos_opl = { &opl_init, &opl_shutdown, &opl_write_reg, &opl_update };
 
 void dos_init()
 {
@@ -1344,6 +1344,12 @@ void dos_init()
     _go32_dpmi_lock_code((void*)0x1000, (long)&etext - (long)0x1000);
 }
 
+void dos_set_meta(const char* name, const char* version, const char* identifier)
+{
+}
+
 void dos_shutdown()
 {
 }
+
+pt_drv_app dos_app = { &dos_init, &dos_set_meta, &dos_shutdown };

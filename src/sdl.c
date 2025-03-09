@@ -1,4 +1,5 @@
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_keycode.h>
@@ -35,18 +36,30 @@ void sdl_init()
     }
 }
 
+void sdl_set_meta(const char* name, const char* version, const char* identifier)
+{
+    // This command has to be run before basically any init steps
+    SDL_SetAppMetadata(name, version, identifier);
+}
+
 void sdl_shutdown()
 {
     SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 }
+
+pt_drv_app sdl_app = { &sdl_init, &sdl_set_meta, &sdl_shutdown };
 
 void sdlvideo_init()
 {
     if (window)
         return;
 
+    const char* name = SDL_GetAppMetadataProperty(SDL_PROP_APP_METADATA_NAME_STRING);
+    if (strcmp(name, "SDL Application") == 0)
+        name = "Perentie";
+
     if (!SDL_CreateWindowAndRenderer(
-            "Perentie", SCREEN_WIDTH * 3, SCREEN_HEIGHT * 3, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
+            name, SCREEN_WIDTH * 3, SCREEN_HEIGHT * 3, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
         log_print("sdlvideo_init: Failed to create window: %s\n", SDL_GetError());
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return;
@@ -486,6 +499,17 @@ extern void adlib_getsample(int16_t* sndptr, intptr_t numsamples);
 #define OPL_RATE 49716
 #define OPL_BUFFER 2048
 static SDL_AudioStream* oploutput = NULL;
+static bool oplinited = false;
+
+void sdlopl_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount)
+{
+    int16_t samples[OPL_BUFFER];
+    int samples_needed = MIN(additional_amount >> 2, OPL_BUFFER >> 1);
+    if (samples_needed > 0) {
+        adlib_getsample(samples, samples_needed >> 1);
+        SDL_PutAudioStreamData(stream, samples, samples_needed << 2);
+    }
+}
 
 void sdlopl_init()
 {
@@ -495,9 +519,14 @@ void sdlopl_init()
     if (!audio_out)
         return;
 
-    adlib_init(OPL_RATE);
+    if (!oplinited) {
+        adlib_init(OPL_RATE);
+        oplinited = true;
+    }
+
     SDL_AudioSpec src = { SDL_AUDIO_S16LE, 2, OPL_RATE };
     oploutput = SDL_CreateAudioStream(&src, NULL);
+    SDL_SetAudioStreamGetCallback(oploutput, sdlopl_callback, NULL);
     if (!SDL_BindAudioStream(audio_out, oploutput)) {
         log_print("sdlopl_init: Failed to bind audio stream to device: %s\n", SDL_GetError());
     }
@@ -509,27 +538,28 @@ void sdlopl_shutdown()
         return;
     SDL_DestroyAudioStream(oploutput);
     oploutput = NULL;
+    oplinited = false;
 }
 
 void sdlopl_write_reg(uint16_t addr, uint8_t data)
 {
-    if (!oploutput)
-        return;
+    if (!oplinited) {
+        adlib_init(OPL_RATE);
+        oplinited = true;
+    }
 
+    // Lock the audio stream mutex, aka. block the callback from running
+    if (oploutput)
+        SDL_LockAudioStream(oploutput);
     adlib_write(addr, data);
+    if (oploutput)
+        SDL_UnlockAudioStream(oploutput);
 }
 
 void sdlopl_update()
 {
     if (!oploutput)
         return;
-
-    int16_t samples[OPL_BUFFER];
-    int samples_needed = OPL_BUFFER - (SDL_GetAudioStreamQueued(oploutput) >> 1);
-    if (samples_needed > 0) {
-        adlib_getsample(samples, samples_needed >> 1);
-        SDL_PutAudioStreamData(oploutput, samples, samples_needed * 2);
-    }
 }
 
 pt_drv_opl sdl_opl = { &sdlopl_init, &sdlopl_shutdown, &sdlopl_write_reg, &sdlopl_update };

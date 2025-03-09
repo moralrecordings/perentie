@@ -18,7 +18,7 @@ local _PTGameVersion = nil
 local _PTGameName = nil
 --- Set the current game.
 -- Required in order to use the save/load system.
--- @tparam string id Short identifier code for the game. Used to check that a saved state is for the correct game.
+-- @tparam string id Identifier code for the game, in reverse domain format. Used to check that a saved state is for the correct game.
 -- @tparam number version Version number of the code. Used to state which version of the game created a save state.
 -- @tparam name Human readable name
 PTSetGameInfo = function(id, version, name)
@@ -34,6 +34,7 @@ PTSetGameInfo = function(id, version, name)
     _PTGameID = id
     _PTGameVersion = version
     _PTGameName = name
+    _PTSetGameInfo(id, version, name)
 end
 
 --- Print a message to the Perentie log file. This is a more accessible replacement for Lua's @{print} function, which will only output to the debug console.

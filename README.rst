@@ -41,6 +41,26 @@ You will also need:
    cd build_dos
    ninja 
 
+SDL executable
+--------------
+
+You will also need:
+
+- A POSIX-compatible C compiler toolchain, such as GCC or Clang.
+- `SDL3 <https://www.libsdl.org>`_
+
+.. code-block:: bash
+
+   meson setup build_sdl
+   cd build_sdl
+   ninja
+
+For better debugging, you will probably want to turn off optimisation and turn on AddressSanitiser.
+
+.. code-block:: bash
+
+   meson setup -Doptimization=0 -Db_sanitize=address build_sdl
+
 Documentation
 -------------
 
