@@ -128,7 +128,7 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
     const byte* end = string + length;
 
     pt_text_word** words = NULL;
-    size_t word_count;
+    size_t word_count = 0;
     while (ptr < end) {
         const byte* test = ptr;
         while ((test < end) && !is_whitespace(*test)) {
