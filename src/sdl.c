@@ -497,18 +497,29 @@ extern void adlib_write(uintptr_t idx, uint8_t val);
 extern void adlib_getsample(int16_t* sndptr, intptr_t numsamples);
 
 #define OPL_RATE 49716
-#define OPL_BUFFER 2048
+#define OPL_BUFFER 128
 static SDL_AudioStream* oploutput = NULL;
 static bool oplinited = false;
 
 void sdlopl_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount)
 {
-    int16_t samples[OPL_BUFFER];
-    int samples_needed = MIN(additional_amount >> 2, OPL_BUFFER >> 1);
+    int samples_needed = additional_amount > 0 ? ((additional_amount + OPL_BUFFER * 8) >> 2) : 0;
+    int bytes_given = 0;
     if (samples_needed > 0) {
-        adlib_getsample(samples, samples_needed >> 1);
-        SDL_PutAudioStreamData(stream, samples, samples_needed << 2);
+        // So the trick here is that the callback will be asked for ~4616 bytes at a time.
+        // However if we try and render the whole thing ahead of time, at about the 80% mark
+        // the audio pipeline will run out of data and start mixing in silence, which causes audible pops.
+        // The solution is to cut the request into tiny slices so that the pipeline is always full.
+        int16_t samples[OPL_BUFFER << 1];
+        while (samples_needed > 0) {
+            int sample_count = MIN(OPL_BUFFER, samples_needed);
+            adlib_getsample(samples, sample_count);
+            SDL_PutAudioStreamData(stream, samples, sizeof(int16_t) * (sample_count << 1));
+            samples_needed -= sample_count;
+            bytes_given += sizeof(int16_t) * (sample_count << 1);
+        }
     }
+    // printf("sdlopl_callback: %d additional, %d total, %d given\n", additional_amount, total_amount, bytes_given);
 }
 
 void sdlopl_init()
