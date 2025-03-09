@@ -49,6 +49,8 @@ void sdl_shutdown()
 
 pt_drv_app sdl_app = { &sdl_init, &sdl_set_meta, &sdl_shutdown };
 
+void sdlvideo_shutdown();
+
 void sdlvideo_init()
 {
     if (window)
@@ -71,6 +73,8 @@ void sdlvideo_init()
     SDL_SetRenderTarget(renderer, framebuffer);
     SDL_SetRenderVSync(renderer, 1);
     SDL_HideCursor();
+
+    atexit(sdlvideo_shutdown);
 }
 
 void sdlvideo_shutdown()
@@ -519,7 +523,7 @@ void sdlopl_callback(void* userdata, SDL_AudioStream* stream, int additional_amo
             bytes_given += sizeof(int16_t) * (sample_count << 1);
         }
     }
-    // printf("sdlopl_callback: %d additional, %d total, %d given\n", additional_amount, total_amount, bytes_given);
+    printf("sdlopl_callback: %d additional, %d total, %d given\n", additional_amount, total_amount, bytes_given);
 }
 
 void sdlopl_init()
@@ -567,10 +571,12 @@ void sdlopl_write_reg(uint16_t addr, uint8_t data)
         SDL_UnlockAudioStream(oploutput);
 }
 
-void sdlopl_update()
+bool sdlopl_is_ready()
 {
     if (!oploutput)
-        return;
+        return false;
+
+    return true;
 }
 
-pt_drv_opl sdl_opl = { &sdlopl_init, &sdlopl_shutdown, &sdlopl_write_reg, &sdlopl_update };
+pt_drv_opl sdl_opl = { &sdlopl_init, &sdlopl_shutdown, &sdlopl_write_reg, &sdlopl_is_ready };

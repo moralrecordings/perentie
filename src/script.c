@@ -613,10 +613,16 @@ int script_exec()
         script_reset();
     if (!main_thread)
         return 0;
+    lua_getglobal(main_thread, "_PTWhoops");
     lua_getglobal(main_thread, "_PTRunThreads");
-    lua_call(main_thread, 0, 1);
+    if (lua_pcall(main_thread, 0, LUA_MULTRET, 1)) {
+        crash_message = lua_strcpy(main_thread, -1, NULL);
+        log_print("%s\n", crash_message);
+        lua_pop(main_thread, 2);
+        exit(1);
+    }
     int result = (int)lua_tointeger(main_thread, 1);
-    lua_pop(main_thread, 1);
+    lua_pop(main_thread, 2);
     return result;
 }
 
@@ -698,8 +704,8 @@ void script_init()
     int init_result = luaL_loadfile(main_thread, "main.lua") || lua_pcall(main_thread, 0, LUA_MULTRET, 1);
     if (init_result != LUA_OK) {
         crash_message = lua_strcpy(main_thread, -1, NULL);
-        log_print("%s", crash_message);
-        lua_pop(main_thread, 1);
+        log_print("%s\n", crash_message);
+        lua_pop(main_thread, 2);
         exit(1);
     }
     lua_pop(main_thread, 1);

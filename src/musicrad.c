@@ -114,6 +114,7 @@ struct RADPlayer {
     uint8_t* Riffs[kRiffTracks][kChannels];
     uint8_t* Track;
     bool Initialised;
+    bool PlayLatch;
     bool Playing;
     uint8_t Speed;
     uint8_t OrderListSize;
@@ -194,13 +195,23 @@ void radplayer_shutdown()
 
 uint32_t radplayer_callback(void* data, uint32_t id, uint32_t interval)
 {
+    // Defer play and stop commands until OPL is initialised.
+    if (!pt_sys.opl->is_ready())
+        return interval;
+    if (rad_player.PlayLatch && !rad_player.Playing) {
+        rad_stop(&rad_player); // zero registers, set OPL3 flags
+        rad_play(&rad_player);
+    } else if (!rad_player.PlayLatch && rad_player.Playing) {
+        rad_stop(&rad_player);
+    }
     rad_update(&rad_player);
     return interval;
 }
 
 bool radplayer_load_file(const char* path)
 {
-    rad_stop(&rad_player);
+    if (pt_sys.opl->is_ready())
+        rad_stop(&rad_player);
 
     FILE* fp = fopen(path, "rb");
     if (!fp)
@@ -228,12 +239,12 @@ bool radplayer_load_file(const char* path)
 
 void radplayer_play()
 {
-    rad_play(&rad_player);
+    rad_player.PlayLatch = true;
 }
 
 void radplayer_stop()
 {
-    rad_stop(&rad_player);
+    rad_player.PlayLatch = false;
 }
 
 void radplayer_set_master_volume(int vol)
@@ -403,7 +414,6 @@ void rad_load(RADPlayer* rad)
         rad->OPL3Regs[i] = 255;
 
     rad->Initialised = true;
-    rad_stop(rad); // zero registers, set OPL3 flags
 }
 
 void rad_play(RADPlayer* rad)

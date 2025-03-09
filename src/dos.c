@@ -1246,17 +1246,17 @@ void opl_init()
         log_print("dos:opl_init: Yamaha OPL not found: %02x %02x\n", status1, status2);
         return;
     }
+    // zero all the registers
+    for (int i = 1; i < 0xf6; i++) {
+        sound_opl3_out_raw(OPL3_BASE_PORT, i, 0);
+        sound_opl3_out_raw(OPL3_BASE_PORT + 2, i, 0);
+    }
     sound_opl2_available = true;
     if ((status2 & 0x06) != 0) {
         log_print("dos:opl_init: found Yamaha OPL2\n");
     } else {
         sound_opl3_available = true;
         log_print("dos:opl_init: found Yamaha OPL3\n");
-    }
-    // zero all the registers
-    for (int i = 1; i < 0xf6; i++) {
-        sound_opl3_out_raw(OPL3_BASE_PORT, i, 0);
-        sound_opl3_out_raw(OPL3_BASE_PORT + 2, i, 0);
     }
 }
 
@@ -1277,12 +1277,12 @@ void _opl_lock()
     LOCK_DATA(sound_opl2_available) LOCK_DATA(sound_opl3_available)
 }
 
-void opl_update()
+bool opl_is_ready()
 {
-    // Real hardware! No need for this
+    return sound_opl2_available || sound_opl3_available;
 }
 
-pt_drv_opl dos_opl = { &opl_init, &opl_shutdown, &opl_write_reg, &opl_update };
+pt_drv_opl dos_opl = { &opl_init, &opl_shutdown, &opl_write_reg, &opl_is_ready };
 
 void dos_init()
 {
@@ -1305,6 +1305,7 @@ void dos_init()
     // All of these memory regions are statically declared,
     // so this macro uses sizeof() to find the end.
     LOCK_DATA(pt_sys)
+    LOCK_DATA(dos_app)
     LOCK_DATA(dos_timer)
     LOCK_DATA(dos_keyboard)
     LOCK_DATA(dos_mouse)
