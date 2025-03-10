@@ -66,7 +66,7 @@ struct pt_font {
     size_t char_count;
 };
 
-pt_font* create_font(const char* path);
+pt_font* create_font(char* path);
 void destroy_font(pt_font* font);
 
 #endif

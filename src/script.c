@@ -81,8 +81,9 @@ static int lua_pt_stop_beep(lua_State* L)
 
 static int lua_pt_rad_load(lua_State* L)
 {
-    const char* path = lua_strcpy(L, 1, NULL);
+    char* path = lua_strcpy(L, 1, NULL);
     lua_pushboolean(L, radplayer_load_file(path));
+    free(path);
     return 1;
 }
 
@@ -138,7 +139,7 @@ static int lua_pt_image_gc(lua_State* L)
 
 static int lua_pt_image(lua_State* L)
 {
-    const char* path = lua_strcpy(L, 1, NULL);
+    char* path = lua_strcpy(L, 1, NULL);
     int16_t origin_x = 0;
     int16_t origin_y = 0;
     int16_t colourkey = -1;
@@ -160,7 +161,7 @@ static int lua_pt_image(lua_State* L)
     lua_setfield(L, -2, "__name");
     lua_pushcfunction(L, lua_pt_image_gc);
     lua_setfield(L, -2, "__gc");
-    lua_setmetatable(L, -1);
+    lua_setmetatable(L, -2);
     return 1;
 }
 
@@ -218,7 +219,7 @@ static int lua_pt_font_gc(lua_State* L)
 
 static int lua_pt_font(lua_State* L)
 {
-    const char* path = lua_strcpy(L, 1, NULL);
+    char* path = lua_strcpy(L, 1, NULL);
     pt_font* font = create_font(path);
     if (!font) {
         lua_pushnil(L);
@@ -231,7 +232,7 @@ static int lua_pt_font(lua_State* L)
     lua_setfield(L, -2, "__name");
     lua_pushcfunction(L, lua_pt_font_gc);
     lua_setfield(L, -2, "__gc");
-    lua_setmetatable(L, -1);
+    lua_setmetatable(L, -2);
     return 1;
 }
 
@@ -263,7 +264,7 @@ static int lua_pt_text(lua_State* L)
     lua_setfield(L, -2, "__name");
     lua_pushcfunction(L, lua_pt_image_gc);
     lua_setfield(L, -2, "__gc");
-    lua_setmetatable(L, -1);
+    lua_setmetatable(L, -2);
     return 1;
 }
 
@@ -730,5 +731,15 @@ void script_reset()
         }
         free(reset_state_path);
         reset_state_path = NULL;
+    }
+}
+
+void script_shutdown()
+{
+    if (main_thread) {
+        lua_close(main_thread);
+        main_thread = NULL;
+        // just in case the game tries to go on
+        has_quit = true;
     }
 }

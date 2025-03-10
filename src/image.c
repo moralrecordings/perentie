@@ -12,7 +12,7 @@
 #include "system.h"
 #include "utils.h"
 
-pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey)
+pt_image* create_image(char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey)
 {
     pt_image* image = (pt_image*)calloc(1, sizeof(pt_image));
     image->path = path;
@@ -323,6 +323,10 @@ void destroy_image(pt_image* image)
     if (image->hw_image) {
         pt_sys.video->destroy_hw_image(image->hw_image);
         image->hw_image = NULL;
+    }
+    if (image->path) {
+        free(image->path);
+        image->path = NULL;
     }
     free(image);
 }

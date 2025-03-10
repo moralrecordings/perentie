@@ -10,5 +10,6 @@ void script_events();
 void script_repl();
 void script_render();
 void script_reset();
+void script_shutdown();
 
 #endif

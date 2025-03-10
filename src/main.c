@@ -106,6 +106,7 @@ void perentie_shutdown()
     event_shutdown();
     log_shutdown();
     pt_sys.app->shutdown();
+    script_shutdown();
 }
 
 static void perentie_loop()

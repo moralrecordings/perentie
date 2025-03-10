@@ -8,7 +8,7 @@ typedef unsigned char byte;
 typedef struct pt_image pt_image;
 
 struct pt_image {
-    const char* path;
+    char* path;
     byte* data;
     byte palette[3 * 256];
     byte palette_alpha[256];
@@ -55,7 +55,7 @@ static inline int16_t image_bottom(pt_image* image)
     return image->height - image->origin_y;
 }
 
-pt_image* create_image(const char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey);
+pt_image* create_image(char* path, int16_t origin_x, int16_t origin_y, int16_t colourkey);
 bool image_load(pt_image* image);
 bool image_test_collision(pt_image* image, int16_t x, int16_t y, bool mask, uint8_t flags);
 bool image_test_collision_9slice(pt_image* image, int16_t x, int16_t y, bool mask, uint8_t flags, uint16_t width,

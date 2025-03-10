@@ -114,11 +114,12 @@ void font_load_kerning_block(FILE* fp, size_t size, pt_font* font)
     fseek(fp, size, SEEK_CUR);
 }
 
-pt_font* create_font(const char* path)
+pt_font* create_font(char* path)
 {
     FILE* fp = fopen(path, "rb");
     if (!fp) {
         log_print("create_font: Unable to open %s\n", path);
+        free(path);
         return NULL;
     }
 
@@ -126,6 +127,7 @@ pt_font* create_font(const char* path)
     if (magic != 0x424d4603) { // "BMF"
         log_print("create_font: Only BMFont V3 binary format is supported, not found %s\n", path);
         fclose(fp);
+        free(path);
         return NULL;
     }
     pt_font* font = (pt_font*)calloc(1, sizeof(pt_font));
@@ -163,6 +165,7 @@ pt_font* create_font(const char* path)
     }
     log_print(
         "create_font: Loaded \"%s\", %d pages, %d characters\n", font->font_name, font->page_count, font->char_count);
+    free(path);
     return font;
 }
 
