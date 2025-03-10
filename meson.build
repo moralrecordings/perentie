@@ -217,7 +217,20 @@ if host_machine.system() == 'msdos'
   platform_args = [
     '-DSYSTEM_DOS',
   ]
+  platform_link_args = []
   platform_libs = []
+  platform_deps = []
+elif host_machine.system() == 'emscripten'
+  exe_name = 'perentie'
+  platform_src = [
+    'src/sdl.c',
+    'src/sdl.h'
+  ]
+  platform_args = [
+    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3', '--use-port=sdl3', '-sFORCE_FILESYSTEM'
+  ]
+  platform_link_args = ['--use-port=sdl3', '-sFORCE_FILESYSTEM']
+  platform_libs = [woodyopl]
   platform_deps = []
 else
   exe_name = 'perentie'
@@ -231,6 +244,7 @@ else
   platform_args = [
     '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3',
   ]
+  platform_link_args = []
   platform_libs = [woodyopl]
   platform_deps = [sdl_dep]
 endif
@@ -243,6 +257,7 @@ exe = executable(
     inspect_h
   ],
   c_args : platform_args,
+  link_args : platform_link_args,
   dependencies : deps + platform_deps,
   link_with : libs + platform_libs,
 )

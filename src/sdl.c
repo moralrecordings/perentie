@@ -523,7 +523,7 @@ void sdlopl_callback(void* userdata, SDL_AudioStream* stream, int additional_amo
             bytes_given += sizeof(int16_t) * (sample_count << 1);
         }
     }
-    printf("sdlopl_callback: %d additional, %d total, %d given\n", additional_amount, total_amount, bytes_given);
+    // printf("sdlopl_callback: %d additional, %d total, %d given\n", additional_amount, total_amount, bytes_given);
 }
 
 void sdlopl_init()

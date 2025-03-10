@@ -18,9 +18,18 @@
 #include "dos.h"
 #endif
 
-int main(int argc, char** argv)
-{
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
+static uint32_t samples[16] = { 0 };
+static uint32_t draws[16] = { 0 };
+static uint32_t blits[16] = { 0 };
+static uint32_t flips[16] = { 0 };
+static uint32_t sample_idx = 0;
+
+void perentie_init()
+{
 #ifdef SYSTEM_DOS
     pt_sys.app = &dos_app;
     pt_sys.timer = &dos_timer;
@@ -40,7 +49,7 @@ int main(int argc, char** argv)
     pt_sys.beep = &sdl_beep;
     pt_sys.video = &sdl_video;
 #else
-    return 0;
+    exit(1);
 #endif
     radplayer_init();
     log_init();
@@ -66,45 +75,10 @@ int main(int argc, char** argv)
     pt_sys.video->init();
     pt_sys.mouse->init();
     pt_sys.keyboard->init();
+}
 
-    uint32_t samples[16] = { 0 };
-    uint32_t draws[16] = { 0 };
-    uint32_t blits[16] = { 0 };
-    uint32_t flips[16] = { 0 };
-    uint32_t sample_idx = 0;
-
-    // Main löp
-    while (!script_has_quit()) {
-        uint32_t ticks = pt_sys.timer->millis();
-        // Run Lua coroutines for 1 step
-        script_exec();
-        // Rack up any input events
-        pt_sys.keyboard->update();
-        pt_sys.mouse->update();
-        // Process input events in Lua
-        script_events();
-        samples[sample_idx] = pt_sys.timer->millis() - ticks;
-
-        ticks = pt_sys.timer->millis();
-        // Run Lua routine for drawing graphics to framebuffer
-        script_render();
-        draws[sample_idx] = pt_sys.timer->millis() - ticks;
-
-        ticks = pt_sys.timer->millis();
-        // Copy framebuffer to video memory
-        pt_sys.video->blit();
-        blits[sample_idx] = pt_sys.timer->millis() - ticks;
-
-        // Deal with input from the serial debug console
-        script_repl();
-
-        ticks = pt_sys.timer->millis();
-        // Flip the video page and sync to display refresh rate
-        pt_sys.video->flip();
-        flips[sample_idx] = pt_sys.timer->millis() - ticks;
-        sample_idx = (sample_idx + 1) % 16;
-    }
-
+void perentie_shutdown()
+{
     log_print("Last frame times: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", samples[0], samples[1], samples[2],
         samples[3], samples[4], samples[5], samples[6], samples[7], samples[8], samples[9], samples[10], samples[11],
         samples[12], samples[13], samples[14], samples[15]);
@@ -132,5 +106,59 @@ int main(int argc, char** argv)
     event_shutdown();
     log_shutdown();
     pt_sys.app->shutdown();
-    return script_quit_status();
+}
+
+static void perentie_loop()
+{
+    // Main löp
+    if (script_has_quit()) {
+        perentie_shutdown();
+#ifdef __EMSCRIPTEN__
+        emscripten_cancel_main_loop(); /* this should "kill" the app. */
+#else
+        exit(script_quit_status());
+#endif
+    }
+    uint32_t ticks = pt_sys.timer->millis();
+    // Run Lua coroutines for 1 step
+    script_exec();
+    // Rack up any input events
+    pt_sys.keyboard->update();
+    pt_sys.mouse->update();
+    // Process input events in Lua
+    script_events();
+    samples[sample_idx] = pt_sys.timer->millis() - ticks;
+
+    ticks = pt_sys.timer->millis();
+    // Run Lua routine for drawing graphics to framebuffer
+    script_render();
+    draws[sample_idx] = pt_sys.timer->millis() - ticks;
+
+    ticks = pt_sys.timer->millis();
+    // Copy framebuffer to video memory
+    pt_sys.video->blit();
+    blits[sample_idx] = pt_sys.timer->millis() - ticks;
+
+    // Deal with input from the serial debug console
+    script_repl();
+
+    ticks = pt_sys.timer->millis();
+    // Flip the video page and sync to display refresh rate
+    pt_sys.video->flip();
+    flips[sample_idx] = pt_sys.timer->millis() - ticks;
+    sample_idx = (sample_idx + 1) % 16;
+}
+
+int main(int argc, char** argv)
+{
+    perentie_init();
+
+#ifdef __EMSCRIPTEN__
+    emscripten_set_main_loop(perentie_loop, 0, 1);
+#else
+    while (true) {
+        perentie_loop();
+    }
+#endif
+    return 0;
 }
