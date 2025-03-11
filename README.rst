@@ -61,6 +61,25 @@ For better debugging, you will probably want to turn off optimisation and turn o
 
    meson setup -Doptimization=0 -Db_sanitize=address build_sdl
 
+WebAssembly
+-----------
+
+You will also need:
+
+- Emscripten 4.0.4 or later
+
+.. code-block:: bash
+
+   meson setup --cross-file=wasm32-emscripten.ini build_wasm
+   cd build_wasm
+   ninja
+
+You will need to package your game contents into a prefetch module in order for Perentie to be able to start.
+
+.. code-block:: bash
+
+   /usr/lib/emscripten/tools/file_packager game.data --js-output=game.js --preload ../example
+
 Documentation
 -------------
 

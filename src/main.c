@@ -116,6 +116,7 @@ static void perentie_loop()
         perentie_shutdown();
 #ifdef __EMSCRIPTEN__
         emscripten_cancel_main_loop(); /* this should "kill" the app. */
+        return;
 #else
         exit(script_quit_status());
 #endif

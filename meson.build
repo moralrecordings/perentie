@@ -4,6 +4,49 @@ project('perentie', 'c',
   default_options : ['warning_level=1', 'optimization=2']
 )
 
+if host_machine.system() == 'msdos'
+  exe_name = 'pt_base.exe'
+  platform_src = [
+    'src/dos.c',
+    'src/dos.h',
+    'src/dos_vga.c',
+  ]
+  platform_args = [
+    '-DSYSTEM_DOS',
+  ]
+  platform_link_args = []
+  platform_deps = []
+elif host_machine.system() == 'emscripten'
+  exe_name = 'perentie'
+  platform_src = [
+    'src/sdl.c',
+    'src/sdl.h'
+  ]
+  platform_args = [
+    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3', '--use-port=sdl3', '-sUSE_PTHREADS=1'
+  ]
+  platform_link_args = ['--use-port=sdl3', '-sFORCE_FILESYSTEM', '-sUSE_PTHREADS=1']
+  if get_option('buildtype') in ['debug', 'debugoptimized']
+    platform_link_args += ['-gsource-map']
+  endif
+  platform_deps = []
+else
+  exe_name = 'perentie'
+  sdl_dep = dependency(
+    'sdl3', version : '>=3.0.0'
+  )
+  platform_src = [
+    'src/sdl.c',
+    'src/sdl.h',
+  ]
+  platform_args = [
+    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3',
+  ]
+  platform_link_args = []
+  platform_deps = [sdl_dep]
+endif
+
+
 cc = meson.get_compiler('c')
 libm = cc.find_library('m', required : true)
 
@@ -77,7 +120,7 @@ liblua = static_library(
     'src/lua/lzio.h',
     'src/lua/lparser.h',
   ],
-  c_args : ['-fno-stack-protector', '-fno-common'],
+  c_args : ['-fno-stack-protector', '-fno-common'] + platform_args,
 )
 
 
@@ -95,6 +138,7 @@ libminiz = static_library(
     'src/miniz/miniz_zip.c',
     'src/miniz/miniz_zip.h',
   ],
+  c_args : platform_args
 )
 
 libspng = static_library(
@@ -103,7 +147,7 @@ libspng = static_library(
     'src/spng/spng.c',
     'src/spng/spng.h'
   ],
-  c_args : ['-DSPNG_STATIC', '-DSPNG_DISABLE_OPT=1', '-DSPNG_USE_MINIZ'],
+  c_args : ['-DSPNG_STATIC', '-DSPNG_DISABLE_OPT=1', '-DSPNG_USE_MINIZ'] + platform_args,
   include_directories : ['src/miniz'],
 )
 
@@ -113,10 +157,15 @@ woodyopl = static_library(
     'src/woodyopl/opl.c',
     'src/woodyopl/opl.h',
   ],
-  c_args : ['-DOPLTYPE_IS_OPL3'],
+  c_args : ['-DOPLTYPE_IS_OPL3'] + platform_args,
   include_directories : ['src/woodyopl'],
 )
 
+if host_machine.system() == 'msdos'
+  platform_libs = []
+else
+  platform_libs = [woodyopl]
+endif
 
 boot_lo = custom_target(
   'boot.lo',
@@ -206,48 +255,6 @@ libs = [
   libminiz,
   libspng,
 ]
-
-if host_machine.system() == 'msdos'
-  exe_name = 'pt_base.exe'
-  platform_src = [
-    'src/dos.c',
-    'src/dos.h',
-    'src/dos_vga.c',
-  ]
-  platform_args = [
-    '-DSYSTEM_DOS',
-  ]
-  platform_link_args = []
-  platform_libs = []
-  platform_deps = []
-elif host_machine.system() == 'emscripten'
-  exe_name = 'perentie'
-  platform_src = [
-    'src/sdl.c',
-    'src/sdl.h'
-  ]
-  platform_args = [
-    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3', '--use-port=sdl3', '-sFORCE_FILESYSTEM'
-  ]
-  platform_link_args = ['--use-port=sdl3', '-sFORCE_FILESYSTEM']
-  platform_libs = [woodyopl]
-  platform_deps = []
-else
-  exe_name = 'perentie'
-  sdl_dep = dependency(
-    'sdl3', version : '>=3.0.0'
-  )
-  platform_src = [
-    'src/sdl.c',
-    'src/sdl.h',
-  ]
-  platform_args = [
-    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3',
-  ]
-  platform_link_args = []
-  platform_libs = [woodyopl]
-  platform_deps = [sdl_dep]
-endif
 
 exe = executable(
   exe_name,
