@@ -1,5 +1,6 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_audio.h>
+#include <SDL3/SDL_error.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_keycode.h>
@@ -7,6 +8,7 @@
 #include <SDL3/SDL_pixels.h>
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_surface.h>
+#include <SDL3/SDL_video.h>
 
 #include "dos.h"
 #include "event.h"
@@ -60,9 +62,22 @@ void sdlvideo_init()
     if (strcmp(name, "SDL Application") == 0)
         name = "Perentie";
 
-    if (!SDL_CreateWindowAndRenderer(
-            name, SCREEN_WIDTH * 3, SCREEN_HEIGHT * 3, SDL_WINDOW_RESIZABLE, &window, &renderer)) {
+    log_print("sdlvideo_init: Available render drivers:\n");
+    for (int i = 0; i < SDL_GetNumRenderDrivers(); i++) {
+        log_print("%d - %s\n", i, SDL_GetRenderDriver(i));
+    }
+
+    window = SDL_CreateWindow(name, SCREEN_WIDTH * 3, SCREEN_HEIGHT * 3, SDL_WINDOW_RESIZABLE);
+    if (!window) {
         log_print("sdlvideo_init: Failed to create window: %s\n", SDL_GetError());
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        return;
+    }
+    renderer = SDL_CreateRenderer(window, "software");
+    if (!renderer) {
+        log_print("sdlvideo_init: Failed to create renderer: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        window = NULL;
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return;
     }
@@ -127,8 +142,13 @@ pt_image_sdl* sdlvideo_convert_image(pt_image* image)
     }
 
     result->texture = SDL_CreateTextureFromSurface(renderer, draw);
-    SDL_SetTextureBlendMode(result->texture, SDL_BLENDMODE_BLEND);
-    SDL_SetTextureScaleMode(result->texture, SDL_SCALEMODE_NEAREST);
+    if (result->texture) {
+        SDL_SetTextureBlendMode(result->texture, SDL_BLENDMODE_BLEND);
+        SDL_SetTextureScaleMode(result->texture, SDL_SCALEMODE_NEAREST);
+    } else {
+        log_print("sdlvideo_convert_image: failed to create %dx%d texture for %s: %s\n", draw->w, draw->h, image->path,
+            SDL_GetError());
+    }
     SDL_DestroySurface(draw);
     SDL_DestroyPalette(pal);
 
