@@ -265,7 +265,7 @@ exe = executable(
   ],
   c_args : platform_args,
   link_args : platform_link_args,
-  dependencies : deps + platform_deps,
+  dependencies : deps + platform_deps + luascripts_dep,
   link_with : libs + platform_libs,
 )
 

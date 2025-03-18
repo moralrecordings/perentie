@@ -2,6 +2,7 @@
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_messagebox.h>
@@ -44,12 +45,21 @@ void sdl_set_meta(const char* name, const char* version, const char* identifier)
     SDL_SetAppMetadata(name, version, identifier);
 }
 
+char* sdl_get_data_path()
+{
+    char* path = SDL_GetPrefPath(NULL, SDL_GetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING));
+    char* buffer = (char*)calloc(strlen(path), sizeof(char));
+    memcpy(buffer, path, strlen(path));
+    SDL_free(path);
+    return buffer;
+}
+
 void sdl_shutdown()
 {
     SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 }
 
-pt_drv_app sdl_app = { &sdl_init, &sdl_set_meta, &sdl_shutdown };
+pt_drv_app sdl_app = { &sdl_init, &sdl_set_meta, &sdl_get_data_path, &sdl_shutdown };
 
 void sdlvideo_shutdown();
 

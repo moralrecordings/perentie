@@ -555,6 +555,14 @@ static int lua_pt_set_game_info(lua_State* L)
     return 0;
 }
 
+static int lua_pt_get_app_data_path(lua_State* L)
+{
+    char* path = pt_sys.app->get_data_path();
+    lua_pushstring(L, path);
+    free(path);
+    return 1;
+}
+
 static int lua_pt_reset(lua_State* L)
 {
     pt_event* ev = event_push(EVENT_RESET);
@@ -603,6 +611,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTSetDitherHint", lua_pt_set_dither_hint },
     { "_PTSetDebugConsole", lua_pt_set_debug_console },
     { "_PTSetGameInfo", lua_pt_set_game_info },
+    { "_PTGetAppDataPath", lua_pt_get_app_data_path },
     { "_PTReset", lua_pt_reset },
     { "_PTQuit", lua_pt_quit },
     { NULL, NULL },
@@ -721,7 +730,7 @@ void script_reset()
     script_init();
     has_reset = false;
     if (reset_state_path) {
-        log_print("script_reset(): Loading state from path %s\n", reset_state_path);
+        log_print("script_reset(): Loading state from filename %s\n", reset_state_path);
         lua_getglobal(main_thread, "_PTInitFromStateFile");
         lua_pushstring(main_thread, reset_state_path);
         if (lua_pcall(main_thread, 1, 0, 0) != LUA_OK) {

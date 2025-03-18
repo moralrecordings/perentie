@@ -24,6 +24,7 @@ typedef uint32_t (*pt_timer_callback)(void* data, uint32_t timer_id, uint32_t in
 struct pt_drv_app {
     void (*init)();
     void (*set_meta)(const char* name, const char* version, const char* identifier);
+    char* (*get_data_path)();
     void (*shutdown)();
 };
 

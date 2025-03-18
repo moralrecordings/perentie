@@ -82,26 +82,72 @@ end
 --- Reset Perentie and load the engine state from a file.
 -- Similar to PTReset, this will clear the scripting engine
 -- and restart.
--- @tparam[opt=nil] string path Path to the Perentie state file.
-PTLoadState = function(path)
-    _PTReset(path)
+-- @tparam[opt=nil] string filename Filename of the Perentie state file. This will be stored in the user's app data path, as provided by PTGetAppDataPath.
+PTLoadState = function(filename)
+    _PTReset(filename)
 end
 
-_PTInitFromStateFile = function(path)
-    PTLog("PTInitFromStateFile: %s", path)
+--- Get the path for writing app-specific data (e.g. save states).
+-- @treturn string The app data path (absolute).
+PTGetAppDataPath = function()
+    return _PTGetAppDataPath()
 end
 
-PTSaveState = function(path, name)
+_PTInitFromStateFile = function(filename)
+    PTLog("PTInitFromStateFile: %s", filename)
+    local path = PTGetAppDataPath() .. filename
+    local file = io.open(path, "rb")
+    if not file then
+        error(string.format('PTInitFromStateFile: Unable to open path "%s" for reading', path))
+    end
+    local magic = file:read(8)
+    if magic ~= "PERENTIE" then
+        error(string.format('PTInitFromStateFile: Unrecognised format for file "%s"', path))
+    end
+    local version = file:read(2)
+    if magic ~= string.char(1, 0) then
+        error(string.format('PTInitFromStateFile: Unsupported format version for file "%s"', path))
+    end
+    local state = cbor.decode(file:read("a"))
+    if type(state) ~= "table" then
+        error(string.format('PTInitFromStateFile: Expected table from file "%s"', path))
+    end
+    local game_id = state.game_id
+    if not game_id then
+        error(string.format('PTInitFromStateFile: No game_id found in file "%s"', path))
+    elseif game_id ~= _PTGameID then
+        error(
+            string.format(
+                'PTInitFromStateFile: Expected game_id to be %s, but file "%s" has game_id %s',
+                _PTGameID,
+                path,
+                game_id
+            )
+        )
+    end
+
+    -- copy parameters to PTActors
+    -- fill PTStore with variables
+    -- run PTOnLoadState callback
+    -- PTOnRoomSetup???
+end
+
+--- Save the current game state to a file.
+-- @tparam string filename Filename to use. This will be stored in the user's app data path, as provided by PTGetAppDataPath. This must be in 8.3 format to be DOS compatible.
+-- @tparam string state_name Name of the saved state. Useful for e.g. listing saved games.
+PTSaveState = function(filename, state_name)
     if not _PTGameID then
         error("PTSaveState: No game ID defined! First, set it up with PTSetGameInfo()")
     end
-    local file = io.open(path, "w")
+
+    local path = PTGetAppDataPath() .. filename
+    local file = io.open(path, "wb")
     if not file then
         error(string.format('PTSaveState: Unable to open path "%s" for writing', path))
     end
-    file:write("PERENTIE")
-    file:write(string.char(1, 0))
-    file:write(cbor.encode(PTExportState(name)))
+    file:write("PERENTIE") -- magic number
+    file:write(string.char(1, 0)) -- format version, little endian
+    file:write(cbor.encode(PTExportState(state_name))) -- version 1 is just a CBOR blob containing the state
 end
 
 PTExportState = function(state_name)
@@ -111,7 +157,7 @@ PTExportState = function(state_name)
     for i, obj in ipairs(_PTStore) do
         if type(obj) == "userdata" then
             PTLog("PTExportState(): Variable %s was found to be a C binding! This isn't going to work.", tostring(i))
-        elseif type(obj) == "table" and obj._type and string.sub(tostring(obj._tye), 1, 2) == "PT" then
+        elseif type(obj) == "table" and obj._type and string.sub(tostring(obj._type), 1, 2) == "PT" then
             PTLog(
                 "PTExportState(): Variable %s was found to be a PT type! Please don't stick these in the variable store, they need to be initialised by the game when starting up.",
                 tostring(i)
@@ -132,6 +178,9 @@ PTExportState = function(state_name)
 end
 
 PTImportState = function() end
+
+-- PTListSavedStates
+-- {{ filename = "SAVE.001", "name" = "A great saved game", "timestamp" = "2025-01-01T00:00:00" }, ...}
 
 _PTWhoops = function(err)
     return debug.traceback(

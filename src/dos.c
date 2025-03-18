@@ -1350,8 +1350,19 @@ void dos_set_meta(const char* name, const char* version, const char* identifier)
 {
 }
 
+char* dos_get_data_path()
+{
+    char* buffer = (char*)calloc(512, sizeof(char));
+    getcwd(buffer, 512);
+    size_t idx = strlen(buffer);
+    // DJGPP uses pretendy UNIX paths. Make sure it ends with a slash.
+    if (idx < 512 && buffer[idx - 1] != '/')
+        buffer[idx] = '/';
+    return buffer;
+}
+
 void dos_shutdown()
 {
 }
 
-pt_drv_app dos_app = { &dos_init, &dos_set_meta, &dos_shutdown };
+pt_drv_app dos_app = { &dos_init, &dos_set_meta, &dos_get_data_path, &dos_shutdown };
