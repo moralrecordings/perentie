@@ -625,6 +625,8 @@ end
 -- @tfield[opt=0] integer x X coordinate.
 -- @tfield[opt=0] integer y Y coordinate.
 -- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tfield[opt=1] float parallax_x X parallax scaling factor.
+-- @tfield[opt=1] float parallax_y Y parallax scaling factor.
 -- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
 -- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
 -- @table PTBackground
@@ -649,7 +651,17 @@ PTBackground = function(image, x, y, z, collision)
     if collision == nil then
         collision = false
     end
-    return { _type = "PTBackground", image = image, x = x, y = y, z = z, collision = collision, visible = true }
+    return {
+        _type = "PTBackground",
+        image = image,
+        x = x,
+        y = y,
+        z = z,
+        prallax_x = 1,
+        parallax_y = 1,
+        collision = collision,
+        visible = true,
+    }
 end
 
 --- Animation structure.
@@ -706,6 +718,8 @@ end
 -- @tfield[opt=0] integer x X coordinate.
 -- @tfield[opt=0] integer y Y coordinate.
 -- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tfield[opt=1] float parallax_x X parallax scaling factor.
+-- @tfield[opt=1] float parallax_y Y parallax scaling factor.
 -- @tfield[opt=nil] integer anim_index Index of the current animation from the animations table.
 -- @tfield[opt=0] integer anim_flags Transformation flags to be applied to the frames.
 -- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
@@ -734,6 +748,8 @@ PTSprite = function(animations, x, y, z)
         x = x,
         y = y,
         z = z,
+        x_parallax = 1,
+        y_parallax = 1,
         anim_index = nil,
         anim_flags = 0,
         collision = false,
@@ -2669,14 +2685,23 @@ end
 -- Uses the current room.
 -- @tparam integer x X coordinate in room space.
 -- @tparam integer y Y coordinate in room space.
+-- @tparam[opt=1] float parallax_x X parallax scaling factor.
+-- @tparam[opt=1] float parallax_y Y parallax scaling factor.
 -- @treturn X coordinate in screen space.
 -- @treturn Y coordinate in screen space.
-PTRoomToScreen = function(x, y)
+PTRoomToScreen = function(x, y, parallax_x, parallax_y)
     local room = PTCurrentRoom()
     if not room or room._type ~= "PTRoom" then
         return x, y
     end
-    return x - (room.x - room.origin_x), y - (room.y - room.origin_y)
+    if not parallax_x then
+        parallax_x = 1
+    end
+    if not parallax_y then
+        parallax_y = 1
+    end
+    local dx, dy = math.floor((x - room.x) * parallax_x), math.floor((y - room.y) * parallax_y)
+    return dx + room.origin_x, dy + room.origin_y
 end
 
 --- Set a callback for switching to a particular room.
@@ -3233,7 +3258,7 @@ _PTRender = function()
         if obj.visible then
             local frame, flags = PTGetImageFromObject(obj)
             if frame then
-                local tmp_x, tmp_y = PTRoomToScreen(x, y)
+                local tmp_x, tmp_y = PTRoomToScreen(x, y, obj.parallax_x, obj.parallax_y)
                 blit(frame, tmp_x, tmp_y, flags)
             end
         end
