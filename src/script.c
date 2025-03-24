@@ -386,6 +386,10 @@ static int lua_pt_pump_event(lua_State* L)
         lua_pushstring(L, "null");
         lua_setfield(L, -2, "type");
         break;
+    case EVENT_START:
+        lua_pushstring(L, "start");
+        lua_setfield(L, -2, "type");
+        break;
     case EVENT_QUIT:
         lua_pushstring(L, "quit");
         lua_setfield(L, -2, "type");
@@ -619,8 +623,10 @@ static const struct luaL_Reg lua_funcs[] = {
 
 int script_exec()
 {
-    if (has_reset)
+    if (has_reset) {
         script_reset();
+    } else {
+    }
     if (!main_thread)
         return 0;
     lua_getglobal(main_thread, "_PTWhoops");
@@ -720,6 +726,12 @@ void script_init()
     }
     lua_pop(main_thread, 1);
     repl_init(main_thread);
+
+    if (!reset_state_path) {
+        // Not loading from a save, send EVENT_START to indicate
+        // a fresh start.
+        event_push(EVENT_START);
+    }
 }
 
 void script_reset()

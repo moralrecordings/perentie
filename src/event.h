@@ -8,6 +8,7 @@
 
 enum pt_event_type {
     EVENT_NULL,
+    EVENT_START,
     EVENT_QUIT,
     EVENT_RESET,
     EVENT_KEY_DOWN,

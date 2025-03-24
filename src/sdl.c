@@ -48,7 +48,7 @@ void sdl_set_meta(const char* name, const char* version, const char* identifier)
 char* sdl_get_data_path()
 {
     char* path = SDL_GetPrefPath(NULL, SDL_GetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING));
-    char* buffer = (char*)calloc(strlen(path), sizeof(char));
+    char* buffer = (char*)calloc(strlen(path) + 1, sizeof(char));
     memcpy(buffer, path, strlen(path));
     SDL_free(path);
     return buffer;

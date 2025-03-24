@@ -13,6 +13,12 @@ PTVersion = function()
     return _PTVersion()
 end
 
+local _PTActorList = {}
+local _PTRoomList = {}
+local _PTCurrentRoom = nil
+local _PTOnRoomLoadHandlers = {}
+local _PTOnRoomUnloadHandlers = {}
+
 local _PTGameID = nil
 local _PTGameVersion = nil
 local _PTGameName = nil
@@ -72,19 +78,28 @@ local _PTStore = {}
 -- information to describe the current game state.
 -- You do not need to store information about the current room and the
 -- state of the actors, as these are stored by the engine automatically.
--- You can use a @{PTOnLoadState} or @{PTOnRoomEnter} hook to apply any
+-- You can use a @{PTOnLoadState} or @{PTOnRoomLoad} hook to apply any
 -- settings after a game is loaded.
 -- @treturn table Table
 PTStore = function()
     return _PTStore
 end
 
+PTSaveFileName = function(index)
+    if type(index) ~= "number" then
+        error("PTSaveFileName: index must be an integer")
+    elseif index < 0 or index > 999 then
+        error("PTSaveFileName: index must be between 0 and 999")
+    end
+    return string.format("SAVE.%03d", index)
+end
+
 --- Reset Perentie and load the engine state from a file.
 -- Similar to PTReset, this will clear the scripting engine
 -- and restart.
 -- @tparam[opt=nil] string filename Filename of the Perentie state file. This will be stored in the user's app data path, as provided by PTGetAppDataPath.
-PTLoadState = function(filename)
-    _PTReset(filename)
+PTLoadState = function(index)
+    _PTReset(PTSaveFileName(index))
 end
 
 --- Get the path for writing app-specific data (e.g. save states).
@@ -105,7 +120,7 @@ _PTInitFromStateFile = function(filename)
         error(string.format('PTInitFromStateFile: Unrecognised format for file "%s"', path))
     end
     local version = file:read(2)
-    if magic ~= string.char(1, 0) then
+    if version ~= string.char(1, 0) then
         error(string.format('PTInitFromStateFile: Unsupported format version for file "%s"', path))
     end
     local state = cbor.decode(file:read("a"))
@@ -125,36 +140,40 @@ _PTInitFromStateFile = function(filename)
             )
         )
     end
-
-    -- copy parameters to PTActors
-    -- fill PTStore with variables
-    -- run PTOnLoadState callback
-    -- PTOnRoomSetup???
+    if _PTOnLoadStateHandler then
+        _PTOnLoadStateHandler(state)
+    end
+    PTImportState(state)
 end
 
 --- Save the current game state to a file.
--- @tparam string filename Filename to use. This will be stored in the user's app data path, as provided by PTGetAppDataPath. This must be in 8.3 format to be DOS compatible.
+-- @tparam string filename Save game index to use. This will be stored in the user's app data path, as provided by PTGetAppDataPath.
 -- @tparam string state_name Name of the saved state. Useful for e.g. listing saved games.
-PTSaveState = function(filename, state_name)
+PTSaveState = function(index, state_name)
     if not _PTGameID then
         error("PTSaveState: No game ID defined! First, set it up with PTSetGameInfo()")
     end
 
-    local path = PTGetAppDataPath() .. filename
+    local path = PTGetAppDataPath() .. PTSaveFileName(index)
     local file = io.open(path, "wb")
     if not file then
         error(string.format('PTSaveState: Unable to open path "%s" for writing', path))
     end
     file:write("PERENTIE") -- magic number
     file:write(string.char(1, 0)) -- format version, little endian
-    file:write(cbor.encode(PTExportState(state_name))) -- version 1 is just a CBOR blob containing the state
+    local state = PTExportState(state_name)
+    if _PTOnLoadStateHandler then
+        _PTOnLoadStateHandler(state)
+    end
+    file:write(cbor.encode(state)) -- version 1 is just a CBOR blob containing the state
 end
 
 PTExportState = function(state_name)
     local room = PTCurrentRoom()
     local vars = {}
     local actors = {}
-    for i, obj in ipairs(_PTStore) do
+    local rooms = {}
+    for i, obj in pairs(_PTStore) do
         if type(obj) == "userdata" then
             PTLog("PTExportState(): Variable %s was found to be a C binding! This isn't going to work.", tostring(i))
         elseif type(obj) == "table" and obj._type and string.sub(tostring(obj._type), 1, 2) == "PT" then
@@ -166,6 +185,24 @@ PTExportState = function(state_name)
             vars[i] = obj
         end
     end
+    for i, obj in pairs(_PTActorList) do
+        table.insert(actors, {
+            name = obj.name,
+            x = obj.x,
+            y = obj.y,
+            z = obj.z,
+            facing = obj.facing,
+            room = obj.room and obj.room.name or nil,
+        })
+    end
+    for i, obj in pairs(_PTRoomList) do
+        table.insert(rooms, {
+            name = obj.name,
+            x = obj.x,
+            y = obj.y,
+            camera_actor = obj.camera_actor and obj.camera_actor.name or nil,
+        })
+    end
     return {
         pt_version = _PTVersion(),
         game_id = _PTGameID,
@@ -173,11 +210,91 @@ PTExportState = function(state_name)
         name = state_name,
         timestamp = os.date("!%Y-%m-%dT%H:%M:%S"),
         vars = vars,
+        actors = actors,
+        rooms = rooms,
         current_room = room.name,
     }
 end
 
-PTImportState = function() end
+PTImportState = function(state)
+    if not state or not state.pt_version then
+        error("PTImportState: expected a state payload")
+    end
+    for i, obj in pairs(state.vars) do
+        _PTStore[i] = obj
+    end
+    for i, obj in ipairs(state.actors) do
+        if not _PTActorList[obj.name] then
+            PTLog("PTImportState: No actor found with name %s, skipping", obj.name)
+        else
+            local actor = _PTActorList[obj.name]
+            if obj.room then
+                if _PTRoomList[obj.room] then
+                    PTActorSetRoom(actor, _PTRoomList[obj.room], obj.x, obj.y)
+                    actor.z = obj.z
+                    actor.facing = obj.facing
+                else
+                    PTLog("PTImportState: No room found with name %s, can't add actor %s to it", obj.room, obj.name)
+                end
+            else
+                actor.x = obj.x
+                actor.y = obj.y
+                actor.z = obj.z
+                actor.facing = obj.facing
+            end
+        end
+    end
+    for i, obj in ipairs(state.rooms) do
+        if not _PTRoomList[obj.name] then
+            PTLog("PTImportState: No room found with name %s, skipping", obj.name)
+        else
+            local room = _PTRoomList[obj.name]
+            room.x = obj.x
+            room.y = obj.y
+            if obj.camera_actor and _PTActorList[obj.camera_actor] then
+                room.camera_actor = _PTActorList[obj.camera_actor]
+            end
+        end
+    end
+
+    if not state.current_room or not _PTRoomList[state.current_room] then
+        PTLog("PTImportState: room %s not found", state.current_room)
+    else
+        local current = PTCurrentRoom()
+        local room = _PTRoomList[state.current_room]
+        if current and _PTOnRoomUnloadHandlers[current.name] then
+            PTLog("PTImportState: calling unload handler for %s", current.name)
+            _PTOnRoomUnloadHandlers[current.name]()
+        end
+        _PTCurrentRoom = room.name
+        if room and _PTOnRoomLoadHandlers[room.name] then
+            PTLog("PTSwitchRoom: calling load handler for %s", room.name)
+            _PTOnRoomLoadHandlers[room.name]()
+        end
+    end
+end
+
+_PTOnLoadStateHandler = nil
+_PTOnSaveStateHandler = nil
+--- Set the callback to run when loading a game state.
+-- Perentie will first load all of your game's code, then read the
+-- save file, then call this callback with the state contents, then
+-- apply that state to the running game.
+-- You can use this as a hook to e.g. check for an earlier game version
+-- and apply manual variable fixups to the state.
+-- @tparam function callback Function body to call. Takes the state object as an argument.
+PTOnLoadState = function(callback)
+    _PTOnLoadStateHandler = callback
+end
+
+--- Set the callback to run when saving a game state.
+-- Perentie will first generate a state from the running game,
+-- call this callback with the state contents, then write that state to a file.
+-- Ideally you shouldn't ever need this.
+-- @tparam function callback Function body to call. Takes the state object as an argument.
+PTOnSaveState = function(callback)
+    _PTOnSaveStateHandler = callback
+end
 
 -- PTListSavedStates
 -- {{ filename = "SAVE.001", "name" = "A great saved game", "timestamp" = "2025-01-01T00:00:00" }, ...}
@@ -345,11 +462,23 @@ PTActorUpdate = function(actor, fast_forward)
 end
 
 local _PTActorWaitAfterTalk = true
+--- Set whether to automatically wait after a PTActor starts talking.
+-- If enabled, this means action scripts can make successive calls to
+-- @{PTActorTalk} and the engine will treat them as a conversation; i.e.
+-- you don't need to explicitly call @{PTWaitForActor} after each one.
+-- If you want to do manual conversation timing, disable this feature.
+-- Defaults to true.
+-- @tparam boolean enable Whether to wait after talking.
 PTSetActorWaitAfterTalk = function(enable)
     _PTActorWaitAfterTalk = enable
 end
 
 local _PTGrabInputOnVerb = true
+--- Set whether to grab the user input when a verb callback is run.
+-- If enabled, this means calling any verb action with @{PTDoVerb} or
+-- @{PTDoVerb2} will call @{PTGrabInput} at the start and @{PTReleaseInput}
+-- at the end.
+-- Defaults to true.
 PTSetGrabInputOnVerb = function(enable)
     _PTGrabInputOnVerb = enable
 end
@@ -360,22 +489,36 @@ TALK_CHAR_DELAY = 85
 local _PTTalkBaseDelay = TALK_BASE_DELAY
 local _PTTalkCharDelay = TALK_CHAR_DELAY
 
+--- Get the base delay for talking.
+-- When a @{PTActor} is talking, this is the fixed amount of time to wait, regardless of text length.
+-- @treturn integer The base delay, in milliseconds. Defaults to 1000.
 PTGetTalkBaseDelay = function()
     return _PTTalkBaseDelay
 end
 
+--- Get the character delay for talking.
+-- When a @{PTActor} is talking, this is the variable amount of time to wait, as a multiple of the number of characters in the text.
+-- @treturn integer The character delay, in milliseconds. Defaults to 85.
 PTGetTalkCharDelay = function()
     return _PTTalkCharDelay
 end
 
+--- Set the base delay for talking.
+-- @tparam integer delay The base delay, in milliseconds.
 PTSetTalkBaseDelay = function(delay)
     _PTTalkBaseDelay = delay
 end
 
+--- Set the chracter delay for talking.
+-- @tparam integer delay The character delay, in milliseconds.
 PTSetTalkCharDelay = function(delay)
     _PTTalkCharDelay = delay
 end
 
+--- Make a @{PTActor} talk.
+-- By default, this will
+-- @tparam PTActor actor The actor.
+-- @tparam string message
 PTActorTalk = function(actor, message)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorTalk: expected PTActor for first argument")
@@ -410,6 +553,31 @@ PTActorTalk = function(actor, message)
     if _PTActorWaitAfterTalk then
         PTWaitForActor(actor)
     end
+end
+
+--- Add an actor to the engine state.
+-- @tparam PTActor actor The actor to add.
+PTAddActor = function(actor)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTAddActor: expected PTActor for first argument")
+    end
+    if type(actor.name) ~= "string" then
+        error("PTAddActor: actor object needs a name")
+    end
+    _PTActorList[actor.name] = actor
+end
+
+--- Remove an actor from the engine state.
+-- @tparam PTActor actor The actor to remove.
+PTRemoveRoom = function(actor)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTRemoveActor: expected PTActor for first argument")
+    end
+    if type(actor.name) ~= "string" then
+        error("PTRemoveActor: actor object needs a name")
+    end
+
+    _PTActorList[actor.name] = nil
 end
 
 --- Rendering
@@ -2442,7 +2610,9 @@ PTTalkSkipThread = function(name, ignore_missing)
             return
         end
     end
-    _PTThreadsActorWait[name].talk_next_wait = _PTGetMillis()
+    if _PTThreadsActorWait[name] then
+        _PTThreadsActorWait[name].talk_next_wait = _PTGetMillis()
+    end
 end
 
 --- Check whether a thread is in the fast forward state.
@@ -2482,6 +2652,9 @@ end
 -- aborted early by the watchdog.
 -- @tparam integer millis Time to wait in milliseconds.
 PTSleep = function(millis)
+    if type(millis) ~= "number" then
+        error(string.format("PTSleep(): argument must be an integer"))
+    end
     local thread, _ = coroutine.running()
     for k, v in pairs(_PTThreads) do
         if v == thread then
@@ -2496,6 +2669,9 @@ end
 --- Sleep the current thread until an actor finishes the action in progress.
 -- @tparam PTActor actor The PTActor to wait for.
 PTWaitForActor = function(actor)
+    if type(actor) ~= "table" or actor._type ~= "PTActor" then
+        error(string.format("PTWaitForActor(): argument must be a PTActor"))
+    end
     local thread, _ = coroutine.running()
     for k, v in pairs(_PTThreads) do
         if v == thread then
@@ -2662,8 +2838,6 @@ PTRoomGetNextBox = function(room, from_id, to_id)
     return room.boxes[target]
 end
 
-local _PTRoomList = {}
-local _PTCurrentRoom = nil
 local _PTOnRoomEnterHandlers = {}
 local _PTOnRoomExitHandlers = {}
 
@@ -2704,7 +2878,44 @@ PTRoomToScreen = function(x, y, parallax_x, parallax_y)
     return dx + room.origin_x, dy + room.origin_y
 end
 
+--- Set a callback for setting up a particular room.
+-- This code will be called whenever @{PTSwitchRoom} is
+-- triggered, and also during restoration of a save game.
+-- It is recommended to use this callback function to e.g.
+-- arrange the room contents based on variables from the @{PTStore}.
+-- @tparam string name Name of the room.
+-- @tparam function func Function body to call, with an optional argument
+-- for context data.
+PTOnRoomLoad = function(name, func)
+    if type(name) ~= "string" then
+        error("PTOnRoomLoad: expected string for first argument")
+    end
+    if _PTOnRoomLoadHandlers[name] then
+        PTLog("PTOnRoomLoad: overwriting handler for %s", name)
+    end
+    _PTOnRoomLoadHandlers[name] = func
+end
+
+--- Set a callback for unloading a particular room.
+-- This code will be called whenever @{PTSwitchRoom} is
+-- triggered.
+-- @tparam string name Name of the room.
+-- @tparam function func Function body to call, with an optional argument
+-- for context data.
+PTOnRoomUnload = function(name, func)
+    if type(name) ~= "string" then
+        error("PTOnRoomUnload: expected string for first argument")
+    end
+    if _PTOnRoomUnloadHandlers[name] then
+        PTLog("PTOnRoomUnload: overwriting handler for %s", name)
+    end
+    _PTOnRoomUnloadHandlers[name] = func
+end
+
 --- Set a callback for switching to a particular room.
+-- This code will only be called during gameplay, i.e. when
+-- @{PTSwitchRoom} is triggered. For code that sets up the
+-- state of the room, use @{PTOnRoomLoad}.
 -- @tparam string name Name of the room.
 -- @tparam function func Function body to call, with an optional argument
 -- for context data.
@@ -2818,7 +3029,15 @@ PTSwitchRoom = function(name, ctx)
         PTLog("PTSwitchRoom: calling exit handler for %s", current.name)
         _PTOnRoomExitHandlers[current.name](ctx)
     end
+    if current and _PTOnRoomUnloadHandlers[current.name] then
+        PTLog("PTSwitchRoom: calling unload handler for %s", current.name)
+        _PTOnRoomUnloadHandlers[current.name](ctx)
+    end
     _PTCurrentRoom = room.name
+    if room and _PTOnRoomLoadHandlers[room.name] then
+        PTLog("PTSwitchRoom: calling load handler for %s", room.name)
+        _PTOnRoomLoadHandlers[room.name](ctx)
+    end
     if room and _PTOnRoomEnterHandlers[room.name] then
         PTLog("PTSwitchRoom: calling enter handler for %s", room.name)
         _PTOnRoomEnterHandlers[room.name](ctx)
@@ -2950,10 +3169,13 @@ _PTRunVerb = function()
 end
 
 local _PTInputGrabbed = false
+--- Grab the player's input.
+-- Mouse clicks will be remapped to advancing any speech on the screen, and escape will be remapped to fast forwarding the current interaction.
 PTGrabInput = function()
     _PTInputGrabbed = true
 end
 
+--- Release the player's input.
 PTReleaseInput = function()
     _PTInputGrabbed = false
 end
@@ -3092,7 +3314,7 @@ end
 
 local _PTTalkSkipWhileGrabbed = nil
 --- Set a callback for when the user indicates they wish to skip a single spoken line (i.e. clicking or hitting"." while the input is grabbed).
--- This is seperate to the verb thread, which will always be fast-forwarded.
+-- This is separate to the verb thread, which will always be fast-forwarded.
 -- @tparam function callback Function body to call.
 PTOnTalkSkipWhileGrabbed = function(callback)
     _PTTalkSkipWhileGrabbed = callback
@@ -3100,7 +3322,7 @@ end
 
 local _PTFastForwardWhileGrabbed = nil
 --- Set a callback for when the user indicates they wish to fast-forward a sequence (i.e. hitting Escape while the input is grabbed).
--- This is seperate to the verb thread, which will always be fast-forwarded.
+-- This is separate to the verb thread, which will always be fast-forwarded.
 -- @tparam function callback Function body to call.
 PTOnFastForwardWhileGrabbed = function(callback)
     _PTFastForwardWhileGrabbed = callback

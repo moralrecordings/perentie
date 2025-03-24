@@ -1207,6 +1207,7 @@ void opl_write_reg(uint16_t addr, uint8_t data)
 }
 
 void _opl_lock();
+void opl_shutdown();
 
 // detection method nicked from https://moddingwiki.shikadi.net/wiki/OPL_chip#Detection_Methods
 void opl_init()
@@ -1258,6 +1259,7 @@ void opl_init()
         sound_opl3_available = true;
         log_print("dos:opl_init: found Yamaha OPL3\n");
     }
+    atexit(opl_shutdown);
 }
 
 void opl_shutdown()
