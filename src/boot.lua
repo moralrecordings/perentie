@@ -26,7 +26,7 @@ local _PTGameName = nil
 -- Required in order to use the save/load system.
 -- @tparam string id Identifier code for the game, in reverse domain format. Used to check that a saved state is for the correct game.
 -- @tparam number version Version number of the code. Used to state which version of the game created a save state.
--- @tparam name Human readable name
+-- @tparam string name Human readable name
 PTSetGameInfo = function(id, version, name)
     if not type(id) == "string" then
         error("PTSetGameInfo: expected string for first argument")
@@ -70,7 +70,7 @@ PTReset = function()
     _PTReset()
 end
 
-local _PTStore = {}
+local _PTVars = {}
 --- Return the game's variable store. This will be preserved as part
 -- of @{PTLoadState} and @{PTSaveState}.
 -- Please use the variable store for simple types only (i.e. strings,
@@ -81,8 +81,8 @@ local _PTStore = {}
 -- You can use a @{PTOnLoadState} or @{PTOnRoomLoad} hook to apply any
 -- settings after a game is loaded.
 -- @treturn table Table
-PTStore = function()
-    return _PTStore
+PTVars = function()
+    return _PTVars
 end
 
 PTSaveFileName = function(index)
@@ -97,7 +97,7 @@ end
 --- Reset Perentie and load the engine state from a file.
 -- Similar to PTReset, this will clear the scripting engine
 -- and restart.
--- @tparam[opt=nil] string filename Filename of the Perentie state file. This will be stored in the user's app data path, as provided by PTGetAppDataPath.
+-- @tparam[opt=nil] string index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}.
 PTLoadState = function(index)
     _PTReset(PTSaveFileName(index))
 end
@@ -147,7 +147,7 @@ _PTInitFromStateFile = function(filename)
 end
 
 --- Save the current game state to a file.
--- @tparam string filename Save game index to use. This will be stored in the user's app data path, as provided by PTGetAppDataPath.
+-- @tparam number index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}.
 -- @tparam string state_name Name of the saved state. Useful for e.g. listing saved games.
 PTSaveState = function(index, state_name)
     if not _PTGameID then
@@ -173,7 +173,7 @@ PTExportState = function(state_name)
     local vars = {}
     local actors = {}
     local rooms = {}
-    for i, obj in pairs(_PTStore) do
+    for i, obj in pairs(_PTVars) do
         if type(obj) == "userdata" then
             PTLog("PTExportState(): Variable %s was found to be a C binding! This isn't going to work.", tostring(i))
         elseif type(obj) == "table" and obj._type and string.sub(tostring(obj._type), 1, 2) == "PT" then
@@ -221,7 +221,7 @@ PTImportState = function(state)
         error("PTImportState: expected a state payload")
     end
     for i, obj in pairs(state.vars) do
-        _PTStore[i] = obj
+        _PTVars[i] = obj
     end
     for i, obj in ipairs(state.actors) do
         if not _PTActorList[obj.name] then
@@ -334,6 +334,33 @@ _PTRemoveFromList = function(list, object)
     end
 end
 
+--- Events
+-- @section events
+
+KEY_FLAG_CTRL = 1
+KEY_FLAG_ALT = 2
+KEY_FLAG_SHIFT = 4
+KEY_FLAG_NUM = 8
+KEY_FLAG_CAPS = 16
+KEY_FLAG_SCRL = 32
+
+--- Event structure
+-- @tfield string _type "PTEvent"
+-- @tfield string type Event type code. Options are: "null", "start", "quit", "reset", "keyDown", "keyUp", "mouseMove", "mouseDown", "mouseUp"
+-- @tfield[opt=nil] integer status Used by "quit". Exit status code.
+-- @tfield[opt=nil] string statePath Used by "reset". Path to the saved state to load.
+-- @tfield[opt=nil] string key Used by "keyDown" and "keyUp". Key that has been pressed.
+-- @tfield[opt=nil] boolean isRepeat Used by "keyDown". Whether this event is caused by the key repeat rate.
+-- @tfield[opt=nil] integer flags Used by "keyDown". Bitmask of modifier keys engaged during the keypress.
+-- @tfield[opt=nil] integer x Used by "mouseMove", "mouseDown" and "mouseUp". X position of the mouse, in screen space.
+-- @tfield[opt=nil] integer y Used by "mouseMove", "mouseDown" and "mouseUp". Y position of the mouse, in screen space.
+-- @table PTEvent
+
+local _PTEventConsumers = {}
+PTOnEvent = function(type, callback)
+    _PTEventConsumers[type] = callback
+end
+
 --- Input
 -- @section input
 
@@ -342,6 +369,24 @@ end
 -- @treturn integer Y coordinate in screen space.
 PTGetMousePos = function()
     return _PTGetMousePos()
+end
+
+local _PTInputGrabbed = false
+--- Grab the player's input.
+-- For the verb thread, mouse clicks will be remapped to advancing any speech on the screen, and escape will fast-forward.
+PTGrabInput = function()
+    _PTInputGrabbed = true
+end
+
+--- Release the player's input.
+PTReleaseInput = function()
+    _PTInputGrabbed = false
+end
+
+--- Return whether the player's input is grabbed.
+-- @treturn boolean Whether the input is grabbed.
+PTGetInputGrabbed = function()
+    return _PTInputGrabbed
 end
 
 --- Actors
@@ -471,16 +516,6 @@ local _PTActorWaitAfterTalk = true
 -- @tparam boolean enable Whether to wait after talking.
 PTSetActorWaitAfterTalk = function(enable)
     _PTActorWaitAfterTalk = enable
-end
-
-local _PTGrabInputOnVerb = true
---- Set whether to grab the user input when a verb callback is run.
--- If enabled, this means calling any verb action with @{PTDoVerb} or
--- @{PTDoVerb2} will call @{PTGrabInput} at the start and @{PTReleaseInput}
--- at the end.
--- Defaults to true.
-PTSetGrabInputOnVerb = function(enable)
-    _PTGrabInputOnVerb = enable
 end
 
 TALK_BASE_DELAY = 1000
@@ -1383,7 +1418,7 @@ _PTMoveRefList = {}
 -- move instruction is found for an object, Perentie will replace it.
 -- @tparam table object Any object with "x" and "y" parameters.
 -- @tparam integer x Absolute x coordinate to move towards.
--- @tparam integer x Absolute y coordinate to move towards.
+-- @tparam integer y Absolute y coordinate to move towards.
 -- @tparam integer duration Duration of movement in milliseconds.
 -- @tparam any timing Timing function or alias to use, same as timing argument of @{PTTimingFunction}.
 -- @tparam[opt=false] boolean while_paused Whether to move the object while the game is paused.
@@ -1400,8 +1435,8 @@ end
 
 --- Move an object smoothly to a destination point relative to the object's current position.
 -- @tparam table object Any object with "x" and "y" parameters
--- @tparam integer x X distance relative to the object's current position to move towards.
--- @tparam integer y Y distance relative to the object's current position to move towards.
+-- @tparam integer dx X distance relative to the object's current position to move towards.
+-- @tparam integer dy Y distance relative to the object's current position to move towards.
 -- @tparam integer duration Duration of movement in milliseconds.
 -- @tparam any timing Timing function or alias to use, same as timing argument of @{PTTimingFunction}.
 -- @tparam[opt=false] boolean while_paused Whether to move the object while the game is paused.
@@ -2497,8 +2532,8 @@ PTRadSetVolume = function(volume)
 end
 
 --- Get the playback head position of the RAD player.
--- @tresult integer Order list index.
--- @tresult integer Line of the pattern.
+-- @treturn integer Order list index.
+-- @treturn integer Line of the pattern.
 PTRadGetPosition = function()
     return _PTRadGetPosition()
 end
@@ -2539,7 +2574,7 @@ local _PTThreadsFastForward = {}
 
 --- Start a function in a new thread.
 -- Perentie runs threads with cooperative multitasking; that is,
--- a long-running thread must use a sleep function like PTSleep
+-- a long-running thread must use a sleep function like @{PTSleep}
 -- to yield control back to the engine.
 -- Perentie will exit when all threads have stopped.
 -- @tparam string name Name of the thread. Must be unique.
@@ -2567,7 +2602,7 @@ end
 --- Stop a running thread.
 -- @tparam string name Name of the thread.
 -- @tparam boolean ignore_self If true, ignore if this is the currently running thread.
--- @tparam boolean ignore_self If true, ignore if this thread isn't running.
+-- @tparam boolean ignore_missing If true, ignore if this thread isn't running.
 PTStopThread = function(name, ignore_self, ignore_missing)
     if not _PTThreads[name] then
         if not ignore_missing then
@@ -2727,6 +2762,7 @@ end
 
 --- Room structure.
 -- @table PTRoom
+-- @tfield string type "PTRoom"
 -- @tfield string name Name of the table.
 -- @tfield integer width Width of the room in pixels.
 -- @tfield integer height Height of the room in pixels.
@@ -2845,8 +2881,8 @@ local _PTOnRoomExitHandlers = {}
 -- Uses the current room.
 -- @tparam integer x X coordinate in screen space.
 -- @tparam integer y Y coordinate in screen space.
--- @treturn int X coordinate in room space.
--- @treturn int Y coordinate in room space.
+-- @treturn integer X coordinate in room space.
+-- @treturn integer Y coordinate in room space.
 PTScreenToRoom = function(x, y)
     local room = PTCurrentRoom()
     if not room or room._type ~= "PTRoom" then
@@ -2882,7 +2918,7 @@ end
 -- This code will be called whenever @{PTSwitchRoom} is
 -- triggered, and also during restoration of a save game.
 -- It is recommended to use this callback function to e.g.
--- arrange the room contents based on variables from the @{PTStore}.
+-- arrange the room contents based on variables from the @{PTVars}.
 -- @tparam string name Name of the room.
 -- @tparam function func Function body to call, with an optional argument
 -- for context data.
@@ -3051,21 +3087,30 @@ end
 _PTVerbCallbacks = {}
 _PTVerb2Callbacks = {}
 
-PTOnVerb = function(verb_name, hotspot_id, callback)
-    if not _PTVerbCallbacks[verb_name] then
-        _PTVerbCallbacks[verb_name] = {}
+--- Set a callback for a single-noun verb action.
+PTOnVerb = function(verb, subject, callback)
+    if not _PTVerbCallbacks[verb] then
+        _PTVerbCallbacks[verb] = {}
     end
-    _PTVerbCallbacks[verb_name][hotspot_id] = callback
+    _PTVerbCallbacks[verb][subject] = callback
 end
 
 _PTCurrentVerb = nil
-_PTCurrentHotspotA = nil
-_PTCurrentHotspotB = nil
-PTDoVerb = function(verb_name, hotspot_id)
-    PTLog("PTDoVerb: %s %s\n", tostring(verb_name), tostring(hotspot_id))
-    _PTCurrentVerb = verb_name
-    _PTCurrentHotspotA = hotspot_id
-    _PTCurrentHotspotB = nil
+_PTCurrentSubjectA = nil
+_PTCurrentSubjectB = nil
+--- Run a single-subject verb action in the verb thread.
+-- This will asynchronously run the callback set by @{PTOnVerb}.
+-- Ideally your game's input code would call this - so e.g. on a
+-- mouseDown event, if your game's UI had the "look" verb enabled,
+-- you could fetch the current moused-over object ID and make a call
+-- like PTDoVerb("look", "pinking shears").
+-- @tparam string verb Verb to use.
+-- @tparam string subject Subject of the verb.
+PTDoVerb = function(verb, subject)
+    PTLog("PTDoVerb: %s %s\n", tostring(verb), tostring(subject))
+    _PTCurrentVerb = verb
+    _PTCurrentSubjectA = subject
+    _PTCurrentSubjectB = nil
 end
 
 local _PTVerbReadyCallback = nil
@@ -3073,32 +3118,43 @@ PTSetVerbReadyCheck = function(callback)
     _PTVerbReadyCallback = callback
 end
 
-PTOnVerb2 = function(verb_name, hotspot_a, hotspot_b, callback, directional)
+PTOnVerb2 = function(verb, subject_a, subject_b, callback, directional)
     if directional == nil then
         directional = false
     end
-    if not _PTVerb2Callbacks[verb_name] then
-        _PTVerb2Callbacks[verb_name] = {}
+    if not _PTVerb2Callbacks[verb] then
+        _PTVerb2Callbacks[verb] = {}
     end
     -- forwards case
-    if not _PTVerb2Callbacks[verb_name][hotspot_a] then
-        _PTVerb2Callbacks[verb_name][hotspot_a] = {}
+    if not _PTVerb2Callbacks[verb][subject_a] then
+        _PTVerb2Callbacks[verb][subject_a] = {}
     end
-    _PTVerb2Callbacks[verb_name][hotspot_a][hotspot_b] = callback
+    _PTVerb2Callbacks[verb][subject_a][subject_b] = callback
     -- reverse case
     if not directional then
-        if not _PTVerb2Callbacks[verb_name][hotspot_b] then
-            _PTVerb2Callbacks[verb_name][hotspot_b] = {}
+        if not _PTVerb2Callbacks[verb][subject_b] then
+            _PTVerb2Callbacks[verb][subject_b] = {}
         end
-        _PTVerb2Callbacks[verb_name][hotspot_b][hotspot_a] = callback
+        _PTVerb2Callbacks[verb][subject_b][subject_a] = callback
     end
 end
 
-PTDoVerb2 = function(verb_name, hotspot_a, hotspot_b)
-    PTLog("PTDoVerb2: %s %s %s\n", tostring(verb_name), tostring(hotspot_a), tostring(hotspot_b))
-    _PTCurrentVerb = verb_name
-    _PTCurrentHotspotA = hotspot_a
-    _PTCurrentHotspotB = hotspot_b
+PTDoVerb2 = function(verb, subject_a, subject_b)
+    PTLog("PTDoVerb2: %s %s %s\n", tostring(verb), tostring(subject_a), tostring(subject_b))
+    _PTCurrentVerb = verb
+    _PTCurrentSubjectA = subject_a
+    _PTCurrentSubjectB = subject_b
+end
+
+local _PTGrabInputOnVerb = true
+--- Set whether to grab the user input when a verb callback is run.
+-- If enabled, this means calling any verb action with @{PTDoVerb} or
+-- @{PTDoVerb2} will automatically call @{PTGrabInput} at the start and @{PTReleaseInput}
+-- at the end.
+-- Defaults to true.
+-- @tparam boolean enable Whether to grab user input.
+PTSetGrabInputOnVerb = function(enable)
+    _PTGrabInputOnVerb = enable
 end
 
 --- Return whether the current queued verb action is ready.
@@ -3106,18 +3162,18 @@ end
 PTVerbReady = function()
     if
         _PTCurrentVerb ~= nil
-        and _PTCurrentHotspotA ~= nil
+        and _PTCurrentSubjectA ~= nil
         and (
             (
-                _PTCurrentHotspotB ~= nil
+                _PTCurrentSubjectB ~= nil
                 and _PTVerb2Callbacks[_PTCurrentVerb]
-                and _PTVerb2Callbacks[_PTCurrentVerb][_PTCurrentHotspotA]
-                and _PTVerb2Callbacks[_PTCurrentVerb][_PTCurrentHotspotA][_PTCurrentHotspotB]
+                and _PTVerb2Callbacks[_PTCurrentVerb][_PTCurrentSubjectA]
+                and _PTVerb2Callbacks[_PTCurrentVerb][_PTCurrentSubjectA][_PTCurrentSubjectB]
             )
             or (
-                _PTCurrentHotspotB == nil
+                _PTCurrentSubjectB == nil
                 and _PTVerbCallbacks[_PTCurrentVerb]
-                and _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentHotspotA]
+                and _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentSubjectA]
             )
         )
     then
@@ -3134,28 +3190,28 @@ end
 _PTRunVerb = function()
     if PTVerbReady() then
         if PTThreadExists("__verb") then
-            -- interrupting another verb, stop the existing one
+            -- don't allow for interrupting another verb
             PTLog(
                 "PTRunVerb(): attempted to replace running verb thread with %s %s %s!",
                 _PTCurrentVerb,
-                tostring(_PTCurrentHotspotA),
-                tostring(_PTCurrentHotspotB)
+                tostring(_PTCurrentSubjectA),
+                tostring(_PTCurrentSubjectB)
             )
         else
-            if _PTCurrentHotspotB ~= nil then
+            if _PTCurrentSubjectB ~= nil then
                 PTStartThread(
                     "__verb",
-                    _PTVerb2Callbacks[_PTCurrentVerb][_PTCurrentHotspotA][_PTCurrentHotspotB],
+                    _PTVerb2Callbacks[_PTCurrentVerb][_PTCurrentSubjectA][_PTCurrentSubjectB],
                     _PTCurrentVerb,
-                    _PTCurrentHotspotA,
-                    _PTCurrentHotspotB
+                    _PTCurrentSubjectA,
+                    _PTCurrentSubjectB
                 )
             else
                 PTStartThread(
                     "__verb",
-                    _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentHotspotA],
+                    _PTVerbCallbacks[_PTCurrentVerb][_PTCurrentSubjectA],
                     _PTCurrentVerb,
-                    _PTCurrentHotspotA
+                    _PTCurrentSubjectA
                 )
             end
             if _PTGrabInputOnVerb then
@@ -3163,25 +3219,9 @@ _PTRunVerb = function()
             end
         end
         _PTCurrentVerb = nil
-        _PTCurrentHotspotA = nil
-        _PTCurrentHotspotB = nil
+        _PTCurrentSubjectA = nil
+        _PTCurrentSubjectB = nil
     end
-end
-
-local _PTInputGrabbed = false
---- Grab the player's input.
--- Mouse clicks will be remapped to advancing any speech on the screen, and escape will be remapped to fast forwarding the current interaction.
-PTGrabInput = function()
-    _PTInputGrabbed = true
-end
-
---- Release the player's input.
-PTReleaseInput = function()
-    _PTInputGrabbed = false
-end
-
-PTGetInputGrabbed = function()
-    return _PTInputGrabbed
 end
 
 local _PTGamePaused = false
@@ -3272,11 +3312,6 @@ PTSetMouseSprite = function(sprite)
     _PTMouseSprite = sprite
 end
 
-local _PTEventConsumers = {}
-PTOnEvent = function(type, callback)
-    _PTEventConsumers[type] = callback
-end
-
 local _PTAutoClearScreen = true
 --- Set whether to clear the screen at the start of every frame
 -- @tparam bool val true if the screen is to be cleared, false otherwise.
@@ -3286,18 +3321,21 @@ end
 
 local _PTWalkBoxDebug = false
 --- Set whether to draw the walkbox of the current room
--- @tparam bool val true if the walk box is to be drawn, false otherwise.
+-- @tparam boolean val true if the walk box is to be drawn, false otherwise.
 PTSetWalkBoxDebug = function(val)
     _PTWalkBoxDebug = val
 end
 
 local _PTImageDebug = false
---- Set whether to draw the bounding boxes of images
--- @tparam bool val true if the image bounding boxes are to be drawn, false otherwise.
+--- Set whether to draw the bounding boxes of images.
+-- @tparam boolean val true if the image bounding boxes are to be drawn, false otherwise.
 PTSetImageDebug = function(val)
     _PTImageDebug = val
 end
 
+--- Set whether to enable the debug console.
+-- @tparam boolean enable true if the debug console is to be enabled, false otherwise.
+-- @tparam[opt=""] string device The device to attach the console to; e.g. "COM4"
 PTSetDebugConsole = function(enable, device)
     if device == nil then
         device = ""
@@ -3407,13 +3445,6 @@ local _PTUpdateMoveObject = function()
         table.remove(_PTMoveRefList, i)
     end
 end
-
-KEY_FLAG_CTRL = 1
-KEY_FLAG_ALT = 2
-KEY_FLAG_SHIFT = 4
-KEY_FLAG_NUM = 8
-KEY_FLAG_CAPS = 16
-KEY_FLAG_SCRL = 32
 
 --- Process all input and room events.
 -- @local
