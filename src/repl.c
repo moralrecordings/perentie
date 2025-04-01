@@ -289,7 +289,7 @@ void repl_update(lua_State* L)
     // We're using telnet, so this should be buffered client-side
     // until they hit Enter.
     if (pt_sys.serial->rx_ready()) {
-        line_end = pt_sys.serial->gets(line_buffer, sizeof(line_buffer));
+        line_end = pt_sys.serial->gets(line_buffer, sizeof(line_buffer) - 1);
     }
 
     if (line_end > 0) {
