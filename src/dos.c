@@ -679,10 +679,12 @@ void serial_init()
 {
 }
 
+bool serial_rx_ready();
+byte serial_getc();
+void serial_close_device();
+
 void serial_open_device(const char* device)
 {
-    // Default to COM4
-    serial_port_base = COM4_PORT;
     if (device) {
         if (strcmp(device, "COM1") == 0) {
             serial_port_base = COM1_PORT;
@@ -692,14 +694,28 @@ void serial_open_device(const char* device)
             serial_port_base = COM3_PORT;
         } else if (strcmp(device, "COM4") == 0) {
             serial_port_base = COM4_PORT;
+        } else {
+            log_print("serial_open_device: Unknown device %s, ignoring\n", device);
         }
     }
+
+    if (!serial_port_base)
+        return;
 
     // COM4 - FIFO Control Register
     // - Clear Transmit FIFO
     // - Clear Receive FIFO
     // - Enable FIFO
     outportb(serial_port_base + SERIAL_IIR_FCR, 0x07);
+
+    // COM4 - Interrupt Identification Register
+    // Check for a 16550; FIFO enabled bits
+    byte typecheck = inportb(serial_port_base + SERIAL_IIR_FCR);
+    if ((typecheck & 0xf0) != 0xc0) {
+        log_print("serial_open_device: 16550 UART not found for %s (%02x), serial disabled\n", device, typecheck);
+        serial_port_base = 0;
+        return;
+    }
 
     // COM4 - Line Control Register
     // Enable DLAB bit
@@ -713,11 +729,29 @@ void serial_open_device(const char* device)
     // COM4 - Line Control Register
     // Disable DLAB bit
     outportb(serial_port_base + SERIAL_LCR, 0x00);
+
+    // If there's nothing attached to the COM port, bail
+    if (serial_rx_ready() && serial_getc() == 0xff) {
+        log_print("serial_open_device: nothing on the other end of %s, serial disabled\n", device);
+        serial_close_device();
+        return;
+    }
+    log_print("serial_open_device: listening on UART %s\n", device);
 }
 
 void serial_close_device()
 {
-    // FIXME: Do we need to clean up the actual port?
+    if (!serial_port_base)
+        return;
+
+    // COM4 - Modem Control Register
+    // Zero out
+    outportb(serial_port_base + SERIAL_MCR, 0);
+
+    // COM4 - FIFO Control Register
+    // Zero out
+    outportb(serial_port_base + SERIAL_IIR_FCR, 0);
+
     serial_port_base = 0;
 }
 
@@ -755,8 +789,6 @@ bool serial_tx_ready()
 
     return true;
 }
-
-byte serial_getc();
 
 int serial_gets(byte* buffer, size_t length)
 {
