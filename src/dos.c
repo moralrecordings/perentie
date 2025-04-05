@@ -42,6 +42,7 @@ bool sys_idle(int (*idle_callback)(), int idle_callback_period)
 
 // Timer interrupt replacement
 // Heavily reworked from PCTIMER 1.4 by Chih-Hao Tsai
+// Info: https://www.xtof.info/Timing-on-PC-familly-under-DOS.html
 
 #define TIMER_TERM_FAIL 0
 #define TIMER_TERM_CHAIN 1
@@ -76,6 +77,7 @@ struct timer_data_t {
     uint8_t term;
     bool installed;
     bool hires;
+    bool real_mode_compat;
     float freq;
     _go32_dpmi_seginfo handler_real_old;
     _go32_dpmi_seginfo handler_real_new;
@@ -105,6 +107,11 @@ struct pcspeaker_data_t {
 static struct pcspeaker_data_t _pcspeaker = { 0 };
 static uint8_t pcspeaker_lut[256] = { 0 };
 void pcspeaker_sample_update();
+
+inline uint32_t* bios_ticks_ptr()
+{
+    return (uint32_t*)(0x46c + __djgpp_conventional_base);
+}
 
 static bool _int_8h_prot()
 {
@@ -170,47 +177,80 @@ static bool _int_8h_prot()
         // PIC1 command register - end of interrupt
         outportb(0x20, 0x20);
     }
-    return _timer.flag == TIMER_TERM_CHAIN;
+    return (_timer.flag == TIMER_TERM_CHAIN) || _timer.real_mode_compat;
 }
+
+extern __dpmi_paddr __djgpp_old_timer;
 
 static bool _int_8h_real()
 {
     // Real mode interrupt handler.
-    // From what I can tell, this gets called if IRQ0 lands when the CPU is in
-    // real mode, or if some real mode code manually triggers INT 8H.
+    // This gets called if IRQ0 lands when the CPU is in real mode (e.g. inside a DOS call),
+    // or if some real mode code manually triggers INT 8H.
     // Happens a lot more in DOS on real hardware than on Windows or DOSBox.
 
     if (_timer.hires) {
         _timer.hiresticks++;
+        pcspeaker_sample_update();
     }
 
     // Just increase the counters, don't bother with the callback system.
+    bool run_old_handler = false;
     if (!_timer.hires || (_timer.hiresticks % TIMER_HIRES_DIV == 0)) {
-        if (_timer.flag == TIMER_TERM_FAIL) {
-            // Something bad happened with the protected mode handler.
-            _timer.ticks++;
-            _timer.counter++;
-        }
-        if ((_timer.counter == _timer.reset) || (_timer.flag == TIMER_TERM_CHAIN)) {
-            _timer.flag = TIMER_TERM_FAIL;
+        _timer.ticks++;
+        _timer.counter++;
+
+        if (_timer.counter == _timer.reset) {
+            _timer.flag = TIMER_TERM_CHAIN;
             _timer.counter = 0;
             _timer.oldticks++;
+
             // At this point, we force a call to the old handler.
             // This is apparently fine because it is a nested interrupt.
-            // _go32_dpmi_simulate_fcall_iret will interrupt the DPMI server (INT 31H)
-            // so that it can call the real mode handler, which is expected to end with IRET.
-            // Afterwards we return here.
-            memset(&_timer.r, 0, sizeof(_timer.r));
-            _timer.r.x.cs = _timer.handler_real_old.rm_segment;
-            _timer.r.x.ip = _timer.handler_real_old.rm_offset;
-            _timer.r.x.ss = _timer.r.x.sp = 0;
-            _go32_dpmi_simulate_fcall_iret(&_timer.r);
-            return true;
-        } else {
-            _timer.flag = TIMER_TERM_FAIL;
+            run_old_handler = true;
         }
     }
+    if (run_old_handler || _timer.real_mode_compat) {
+        // _go32_dpmi_simulate_fcall_iret will interrupt the DPMI server (INT 31H)
+        // so that it can call the original real mode code, which is expected to end with IRET.
+        // Afterwards we return here.
+
+        memset(&_timer.r, 0, sizeof(_timer.r));
+        _timer.r.x.cs = _timer.handler_real_old.rm_segment;
+        _timer.r.x.ip = _timer.handler_real_old.rm_offset;
+        _timer.r.x.ss = _timer.r.x.sp = 0;
+        _go32_dpmi_simulate_fcall_iret(&_timer.r);
+        return true;
+
+        // The real_mode_compat flag rigs the real mode handler to always call the old code.
+        // This is required for e.g. calls to the Microsoft Mouse DOS driver:
+        // 000073E1: cmp     cl,es:[di]      # 0000:[046c]
+        // 000073E4: je      73E1h
+        // This is an example of code which busy-loop polls 0000:046C for a change (aka the magic
+        // spot where DOS keeps the number of timer ticks) to establish at least one timer interrupt
+        // has happened.
+
+        // You might be wondering, shouldn't we be calling _timer.handler_real_old?
+        // As it turns out, this is a complicated real-mode wrapper for whatever
+        // is in the protected mode handler slot.
+        // So instead we're going to jump to the old protected mode handler.
+
+        // struct __attribute__((packed)) {unsigned int offset; unsigned short segment;} dest;
+        // dest.segment = __djgpp_old_timer.pm_selector;
+        // dest.offset = __djgpp_old_timer.pm_offset;
+
+        /*asm volatile (
+            "ljmp *%0\n"
+            "1:"
+            :
+            : "m" (__djgpp_old_timer)
+        );*/
+        // uint32_t *bios = bios_ticks_ptr();
+        //(*bios)++;
+        // return true;
+    }
     // PIC1 command register - end of interrupt
+    _timer.flag = TIMER_TERM_OUTPORTB;
     outportb(0x20, 0x20);
     return false;
 }
@@ -300,7 +340,6 @@ static unsigned char int8_prot_wrapper[] = {
 };
 
 static uint8_t* int8_prot_stack;
-static uint8_t* int8_real_stack;
 
 extern unsigned short __djgpp_ds_alias;
 
@@ -359,10 +398,16 @@ void timer_init()
     if (errno != ENOSYS) {
         use_dpmi_yield = true;
     }
-    bool use_hires = !use_dpmi_yield;
+    bool use_hires = false; //! use_dpmi_yield;
 
     log_print("dos:timer_init: DOS version %d.%02d\n", r.h.al, r.h.ah);
     log_print("dos:timer_init: %s DPMI server detected\n", use_dpmi_yield ? "Windows" : "Bare metal");
+
+    if (__djgpp_nearptr_enable() == 0) {
+        log_print("Couldn't access the first 640K of memory. Boourns.\n");
+        exit(-1);
+    }
+
     if (!_timer.installed) {
         log_print("dos:timer_init: Replacing DOS timer interrupt...\n");
         // Disable all interrupts while installing the new timer
@@ -395,10 +440,10 @@ void timer_init()
         // a tiny stub in real mode segmented memory, which handles a switch
         // to protected mode followed by setting up/restoring the CPU registers similar to
         // the above wrapper.
-        _go32_dpmi_get_real_mode_interrupt_vector(8, &_timer.handler_real_old);
-        _timer.handler_real_new.pm_offset = (uint32_t)_int_8h_real;
-        _go32_dpmi_allocate_real_mode_callback_iret(&_timer.handler_real_new, &_timer.r1);
-        _go32_dpmi_set_real_mode_interrupt_vector(8, &_timer.handler_real_new);
+        //        _go32_dpmi_get_real_mode_interrupt_vector(8, &_timer.handler_real_old);
+        //        _timer.handler_real_new.pm_offset = (uint32_t)_int_8h_real;
+        //        _go32_dpmi_allocate_real_mode_callback_iret(&_timer.handler_real_new, &_timer.r1);
+        //        _go32_dpmi_set_real_mode_interrupt_vector(8, &_timer.handler_real_new);
 
         enable();
 
@@ -459,8 +504,8 @@ void timer_shutdown()
         _go32_dpmi_set_protected_mode_interrupt_vector(8, &_timer.handler_prot_old);
         free(int8_prot_stack);
         // Restore real mode 8h handler and free the shim
-        _go32_dpmi_set_real_mode_interrupt_vector(8, &_timer.handler_real_old);
-        _go32_dpmi_free_real_mode_callback(&_timer.handler_real_new);
+        //        _go32_dpmi_set_real_mode_interrupt_vector(8, &_timer.handler_real_old);
+        //        _go32_dpmi_free_real_mode_callback(&_timer.handler_real_new);
         enable();
 
         // set the BIOS tick counter to (RTC time) * default PIT frequency
@@ -901,7 +946,9 @@ void mouse_init()
 {
     union REGS regs = {};
     // INT 33h AH=0 Mouse - Reset driver and read status
+    _timer.real_mode_compat = true;
     int86(0x33, &regs, &regs);
+    _timer.real_mode_compat = false;
     mouse_inited = regs.x.ax ? 1 : 0;
 }
 
@@ -914,7 +961,9 @@ void mouse_update()
     // INT 33h AH=3 - Return position and button status
     union REGS regs = {};
     regs.x.ax = 3;
+    _timer.real_mode_compat = true;
     int86(0x33, &regs, &regs);
+    _timer.real_mode_compat = false;
     mouse_x = regs.x.cx >> 1;
     mouse_y = regs.x.dx;
 
@@ -940,7 +989,9 @@ void mouse_update()
             memset(&regs, 0, sizeof(regs));
             regs.x.ax = 5 + t;
             regs.x.bx = i;
+            _timer.real_mode_compat = true;
             int86(0x33, &regs, &regs);
+            _timer.real_mode_compat = false;
 
             if (regs.x.bx) {
                 // Push event to queue

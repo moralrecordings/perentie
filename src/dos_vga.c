@@ -566,8 +566,6 @@ void vga_shutdown()
     regs.h.ah = 0x00;
     regs.h.al = 0x03;
     int86(0x10, &regs, &regs);
-    // Fine, maybe we should stop being unsafe
-    __djgpp_nearptr_disable();
     if (vga_framebuffer) {
         free(vga_framebuffer);
         vga_framebuffer = NULL;
