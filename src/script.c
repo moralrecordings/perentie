@@ -5,6 +5,8 @@
 #include "lua/lua.h"
 #include "lua/lualib.h"
 
+#include "wave/wave.h"
+
 #include "event.h"
 #include "font.h"
 #include "image.h"
@@ -66,14 +68,14 @@ static int lua_pt_get_millis(lua_State* L)
     return 1;
 }
 
-static int lua_pt_play_beep(lua_State* L)
+static int lua_pt_pc_speaker_tone(lua_State* L)
 {
     float freq = luaL_checknumber(L, 1);
     pt_sys.beep->tone(freq);
     return 0;
 }
 
-static int lua_pt_stop_beep(lua_State* L)
+static int lua_pt_pc_speaker_stop(lua_State* L)
 {
     pt_sys.beep->stop();
     return 0;
@@ -124,6 +126,81 @@ static int lua_pt_rad_set_position(lua_State* L)
     int order = luaL_checkinteger(L, 1);
     int line = luaL_checkinteger(L, 2);
     radplayer_set_position(order, line);
+    return 0;
+}
+
+static int lua_pt_wave_gc(lua_State* L)
+{
+    WaveFile** target = (WaveFile**)lua_touserdata(L, 1);
+    if (target && *target) {
+        wave_close(*target);
+        *target = NULL;
+    }
+    return 0;
+}
+
+static int lua_pt_wave(lua_State* L)
+{
+    char* path = lua_strcpy(L, 1, NULL);
+
+    WaveFile* wave_file = wave_open(path, WAVE_OPEN_READ);
+    if (!wave_file) {
+        log_print("lua_pt_wave: couldn't allocate wave!\n");
+        lua_pushnil(L);
+        return 1;
+    }
+
+    const WaveErr* error = wave_err();
+    if (error && error->code) {
+        wave_err_clear();
+        wave_close(wave_file);
+        log_print("lua_pt_wave: something bad happened - %d %s\n", error->code, error->message);
+        lua_pushnil(L);
+        return 1;
+    }
+
+    WaveFile** target = lua_newuserdatauv(L, sizeof(WaveFile*), 1);
+    *target = wave_file;
+    lua_newtable(L);
+    lua_pushstring(L, "PTWave");
+    lua_setfield(L, -2, "__name");
+    lua_pushcfunction(L, lua_pt_wave_gc);
+    lua_setfield(L, -2, "__gc");
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+static int lua_pt_pc_speaker_sample(lua_State* L)
+{
+    WaveFile** waveptr = (WaveFile**)lua_touserdata(L, 1);
+    if (!waveptr) {
+        log_print("lua_pt_pc_speaker_sample: invalid or missing wave pointer\n");
+        return 0;
+    }
+    size_t sample_size = wave_get_sample_size(*waveptr);
+    if (sample_size != 1) {
+        log_print("lua_pt_pc_speaker_sample: wave needs to be 8-bit samples\n");
+        return 0;
+    }
+    uint16_t channels = wave_get_num_channels(*waveptr);
+    if (channels != 1) {
+        log_print("lua_pt_pc_speaker_sample: wave needs to be mono\n");
+        return 0;
+    }
+
+    uint32_t rate = wave_get_sample_rate(*waveptr);
+    if ((rate != 8000) && (rate != 16000)) {
+        log_print("lua_pt_pc_speaker_sample: wave needs to have a sample rate of 8000 or 16000\n");
+        return 0;
+    }
+
+    wave_seek(*waveptr, 0, SEEK_SET);
+    // 8-bit mono, number of frames == size in bytes
+    size_t length = wave_get_length(*waveptr);
+    byte* buffer = (byte*)malloc(sizeof(byte) * length);
+    wave_read(*waveptr, buffer, length);
+    pt_sys.beep->play_sample(buffer, sizeof(byte) * length, rate);
+
     return 0;
 }
 
@@ -586,8 +663,8 @@ static int lua_pt_quit(lua_State* L)
 static const struct luaL_Reg lua_funcs[] = {
     { "_PTVersion", lua_pt_version },
     { "_PTGetMillis", lua_pt_get_millis },
-    { "_PTPlayBeep", lua_pt_play_beep },
-    { "_PTStopBeep", lua_pt_stop_beep },
+    { "_PTPCSpeakerTone", lua_pt_pc_speaker_tone },
+    { "_PTPCSpeakerStop", lua_pt_pc_speaker_stop },
     { "_PTRadLoad", lua_pt_rad_load },
     { "_PTRadPlay", lua_pt_rad_play },
     { "_PTRadStop", lua_pt_rad_stop },
@@ -595,6 +672,8 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTRadSetVolume", lua_pt_rad_set_volume },
     { "_PTRadGetPosition", lua_pt_rad_get_position },
     { "_PTRadSetPosition", lua_pt_rad_set_position },
+    { "_PTWave", lua_pt_wave },
+    { "_PTPCSpeakerSample", lua_pt_pc_speaker_sample },
     { "_PTImage", lua_pt_image },
     { "_PTGetImageDims", lua_pt_get_image_dims },
     { "_PTGetImageOrigin", lua_pt_get_image_origin },

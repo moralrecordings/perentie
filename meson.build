@@ -151,6 +151,16 @@ libspng = static_library(
   include_directories : ['src/miniz'],
 )
 
+libwave = static_library(
+  'wave',
+  [
+    'src/wave/wave.c',
+    'src/wave/wave.h'
+  ],
+  c_args : ['-D__STDC_CONSTANT_MACROS', '-D__STDC_FORMAT_MACROS', '-D__STDC_LIMIT_MACROS', '-Dwave_EXPORTS'] + platform_args,
+  include_directories : ['src/wave'],
+)
+
 woodyopl = static_library(
   'woodyopl',
   [
@@ -254,6 +264,7 @@ libs = [
   liblua,
   libminiz,
   libspng,
+  libwave,
 ]
 
 exe = executable(

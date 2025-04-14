@@ -2490,16 +2490,31 @@ end
 --- Audio
 -- @section audio
 
+PTWave = function(path)
+    return { _type = "PTWave", ptr = _PTWave(path) }
+end
+
 --- Play a square wave tone on the PC speaker.
 -- The note will play until it is stopped by a call to PTStopBeep.
 -- @tparam number freq Audio frequency of the tone.
-PTPlayBeep = function(freq)
-    return _PTPlayBeep(freq)
+PTPCSpeakerTone = function(freq)
+    return _PTPCSpeakerTone(freq)
+end
+
+--- Play an audio sample through the PC speaker.
+-- This abuses the same timer-driven impulse trick that Access Software's
+-- RealSound uses, producing ~6-bit PCM audio.
+-- @tparam PTWave wave PTWave to play back. Must be mono, 8-bit samples, at either 8000Hz or 16000Hz sample rate.
+PTPCSpeakerSample = function(wave)
+    if not wave or wave._type ~= "PTWave" then
+        error("PTPCSpeakerSample: expected PTWave for first argument")
+    end
+    return _PTPCSpeakerSample(wave.ptr)
 end
 
 --- Stop playing a tone on the PC speaker.
-PTStopBeep = function()
-    return _PTStopBeep()
+PTPCSpeakerStop = function()
+    return _PTPCSpeakerStop()
 end
 
 --- Load a music file in Reality Adlib Tracker format

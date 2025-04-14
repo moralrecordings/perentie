@@ -118,6 +118,7 @@ static bool _int_8h_prot()
     // shouldn't use them with _go32_dpmi_chain_protected_mode_interrupt_vector();
     // on real hardware this results in the game hanging on startup,
     // or better yet crashing with random registers being trashed.
+    _timer.flag = TIMER_TERM_FAIL;
 
     if (_timer.hires) {
         _timer.hiresticks++;
@@ -137,8 +138,6 @@ static bool _int_8h_prot()
             _timer.oldticks++;
         } else {
             _timer.flag = TIMER_TERM_OUTPORTB;
-            // PIC1 command register - end of interrupt
-            outportb(0x20, 0x20);
         }
         // run the timer callbacks
         for (int i = 0; i < _timer.slot_head; i++) {
@@ -170,10 +169,13 @@ static bool _int_8h_prot()
         }
     } else {
         _timer.flag = TIMER_TERM_OUTPORTB;
+    }
+
+    // Try and call this as close to the end as possible
+    if (_timer.flag == TIMER_TERM_OUTPORTB) {
         // PIC1 command register - end of interrupt
         outportb(0x20, 0x20);
     }
-
     // The real_mode_compat flag rigs the handler to always call the old code.
     // This is required for calls to the Microsoft Mouse DOS driver, which pulls crap like this:
     // 000073E1: cmp     cl,es:[di]      # 0000:[046c]
@@ -327,7 +329,6 @@ void timer_init()
     if (errno != ENOSYS) {
         use_dpmi_yield = true;
     }
-    bool use_hires = false; //! use_dpmi_yield;
 
     log_print("dos:timer_init: DOS version %d.%02d\n", r.h.al, r.h.ah);
     log_print("dos:timer_init: %s DPMI server detected\n", use_dpmi_yield ? "Windows" : "Bare metal");
@@ -373,7 +374,7 @@ void timer_init()
 
         // Cank the timer frequency.
         // If DPMI is present, 99% chance we're in Windows, so don't go to 16KHz.
-        _timer_switch(use_hires);
+        _timer_switch(false);
 
         atexit(timer_shutdown);
     }
@@ -545,8 +546,8 @@ void pcspeaker_tone(float freq)
 
 void pcspeaker_play_sample(byte* data, size_t len, int rate)
 {
-    if (!_timer.hires) {
-        log_print("pcspeaker_sample: hires timer not enabled, sample playback disabled\n");
+    if (use_dpmi_yield) {
+        log_print("pcspeaker_sample: Windows detected, sample playback disabled\n");
         return;
     } else if (rate == 8000) {
         _pcspeaker.mode = PCSPEAKER_SAMPLE_8K;
@@ -560,6 +561,7 @@ void pcspeaker_play_sample(byte* data, size_t len, int rate)
     _pcspeaker.sample_len = len;
     _pcspeaker.offset = 0;
     _go32_dpmi_lock_data(data, len);
+    _timer_switch(true);
     // PIT mode/command register:
     // - counter 2 (PC speaker)
     // - bits 0-7 only
@@ -601,6 +603,7 @@ void pcspeaker_sample_update()
     }
     if (offset > _pcspeaker.sample_len) {
         pcspeaker_stop();
+        _timer_switch(false);
     } else {
         // PIT channel 2 data port
         // outportb(0x42, _pcspeaker.sample_data[offset]);

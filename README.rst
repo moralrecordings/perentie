@@ -151,6 +151,7 @@ Perentie wouldn't be possible without the following third-party components:
 - `Lua <https://www.lua.org/>`_ - embedded scripting engine
 - `miniz <https://github.com/richgel999/miniz>`_ - zlib/DEFLATE library
 - `libspng <https://libspng.org/>`_ - PNG image library
+- `libwave <https://github.com/brglng/libwave>`_ - WAV file library
 - `BMFont <http://www.angelcode.com/products/bmfont/>`_  - bitmap font packer and atlas format 
 - `The Ultimate Oldschool PC Font Pack <https://int10h.org/oldschool-pc-fonts/>`_ - pixel fonts
 - `inspect.lua <https://github.com/kikito/inspect.lua>`_ - human-readable object representation for Lua debugging
