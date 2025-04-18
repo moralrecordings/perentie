@@ -402,13 +402,14 @@ end
 -- @tfield[opt=nil] table sprite The @{PTBackground}/@{PTSprite} object used for drawing. Perentie will proxy this; you only need to add the actor object to the rendering list.
 -- @tfield[opt=0] integer talk_x X coordinate in actor space for talk text.
 -- @tfield[opt=0] integer talk_y Y coordinate in actor space for talk text.
--- @tfield[opt=nil] PTImage talk_img Handle used by the engine for caching the rendered talk text.
+-- @tfield[opt=nil] PTBackground talk_img Handle used by the engine for caching the rendered talk text.
 -- @tfield[opt=nil] PTFont talk_font Font to use for rendering talk text.
 -- @tfield[opt={ 0xff 0xff 0xff }] table talk_colour Colour to use for rendering talk text.
 -- @tfield[opt=0] integer talk_next_wait The millisecond count at which to remove the talk text.
 -- @tfield[opt=0] integer facing Direction of the actor; angle in degrees clockwise from north.
 -- @tfield[opt="stand"] string anim_stand Name of the sprite animation to use for standing.
 -- @tfield[opt="walk"] string anim_walk Name of the sprite animation to use for walking.
+-- @tfield[opt="talk"] string anim_talk Name of the sprite animation to use for talking.
 -- @table PTActor
 
 --- Create a new actor.
@@ -458,6 +459,7 @@ PTActor = function(name, x, y, z)
         walk_rate = 12,
         anim_stand = "stand",
         anim_walk = "walk",
+        anim_talk = "talk",
         walkdata_next_wait = 0,
         moving = 0,
     }
@@ -551,26 +553,37 @@ PTSetTalkCharDelay = function(delay)
 end
 
 --- Make a @{PTActor} talk.
--- By default, this will
+-- This will trigger the actor's talk animation, as defined in actor.anim_talk.
+-- By default, this will wait the thread until the actor finishes talking. You can disable this by calling @{PTSetActorWaitAfterTalk}.
 -- @tparam PTActor actor The actor.
--- @tparam string message
-PTActorTalk = function(actor, message)
+-- @tparam string message Message to show on the screen.
+-- @tparam[opt=nil] PTFont Font to use. Defaults to actor.talk_font
+-- @tparam[opt=nil] table colour Inner colour; list of 3 8-bit numbers. Defaults to actor.talk_colour.
+PTActorTalk = function(actor, message, font, colour)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorTalk: expected PTActor for first argument")
     end
-    if not actor.talk_font then
-        PTLog("PTActorTalk: no default font!!")
+    if not font then
+        font = actor.talk_font
+    end
+    if not font or font._type ~= "PTFont" then
+        PTLog("PTActorTalk: no font argument, or actor has invalid talk_font")
         return
+    end
+    if not colour then
+        colour = actor.talk_colour
     end
     if PTThreadInFastForward() then
         return
     end
-    local text = PTText(message, actor.talk_font, 200, "center", actor.talk_colour)
+    local text = PTText(message, font, 200, "center", colour)
 
     local width, height = PTGetImageDims(text)
     PTSetImageOrigin(text, width / 2, height)
-    local x = math.min(math.max(actor.x + actor.talk_x, width / 2), SCREEN_WIDTH - width / 2)
-    local y = math.min(math.max(actor.y + actor.talk_y, height), SCREEN_HEIGHT)
+    local sx, sy = PTRoomToScreen(actor.x + actor.talk_x, actor.y + actor.talk_y)
+    sx = math.min(math.max(sx, width / 2), SCREEN_WIDTH - width / 2)
+    sy = math.min(math.max(sy, height), SCREEN_HEIGHT)
+    local x, y = PTScreenToRoom(sx, sy)
 
     if not actor.talk_img then
         actor.talk_img = PTBackground(nil, 0, 0, 20)
@@ -2494,6 +2507,12 @@ PTWave = function(path)
     return { _type = "PTWave", ptr = _PTWave(path) }
 end
 
+-- PTGetWaveSampleRate
+-- PTGetWaveSampleCount
+-- PTGetWaveLength
+-- PTGetWaveChannels
+-- PTGetWaveSampleSize
+
 --- Play a square wave tone on the PC speaker.
 -- The note will play until it is stopped by a call to PTStopBeep.
 -- @tparam number freq Audio frequency of the tone.
@@ -2504,7 +2523,7 @@ end
 --- Play an audio sample through the PC speaker.
 -- This abuses the same timer-driven impulse trick that Access Software's
 -- RealSound uses, producing ~6-bit PCM audio.
--- @tparam PTWave wave PTWave to play back. Must be mono, 8-bit samples, at either 8000Hz or 16000Hz sample rate.
+-- @tparam PTWave wave PTWave to play back. Must be mono unsigned 8-bit samples, either 8000Hz or 16000Hz sample rate.
 PTPCSpeakerSample = function(wave)
     if not wave or wave._type ~= "PTWave" then
         error("PTPCSpeakerSample: expected PTWave for first argument")

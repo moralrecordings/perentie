@@ -603,7 +603,6 @@ void pcspeaker_sample_update()
     }
     if (offset > _pcspeaker.sample_len) {
         pcspeaker_stop();
-        _timer_switch(false);
     } else {
         // PIT channel 2 data port
         // outportb(0x42, _pcspeaker.sample_data[offset]);
@@ -614,6 +613,9 @@ void pcspeaker_sample_update()
 
 void pcspeaker_stop()
 {
+    if (_timer.hires) {
+        _timer_switch(false);
+    }
     _pcspeaker.mode = PCSPEAKER_OFF;
     // Disable PC speaker gate on keyboard controller
     outportb(0x61, inportb(0x61) & 0xfc);

@@ -103,9 +103,9 @@ PTOnVerb("use", "logo", function()
     -- Play an arpeggio
     for i = 0, 24 do
         local freq = 220.0 * (2 ^ (i / 12.0))
-        PTPlayBeep(freq)
+        PTPCSpeakerTone(freq)
         PTSleep(50)
-        PTStopBeep()
+        PTPCSpeakerStop()
     end
 end)
 
