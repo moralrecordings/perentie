@@ -242,6 +242,8 @@ core_src = [
   'src/main.c', 
   'src/musicrad.c', 
   'src/musicrad.h', 
+  'src/pcspeak.c',
+  'src/pcspeak.h',
   'src/point.h', 
   'src/rect.h', 
   'src/repl.c', 

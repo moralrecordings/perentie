@@ -94,15 +94,21 @@ static float _timer_freq = TIMER_DEFAULT_FREQ;
 #define PCSPEAKER_TONE 1
 #define PCSPEAKER_SAMPLE_8K 2
 #define PCSPEAKER_SAMPLE_16K 3
+#define PCSPEAKER_DATA 4
 struct pcspeaker_data_t {
     uint8_t mode;
     byte* sample_data;
     size_t sample_len;
+    uint16_t* data;
+    size_t data_count;
+    uint16_t data_rate;
+    uint16_t data_ticks;
     size_t offset;
 };
 static struct pcspeaker_data_t _pcspeaker = { 0 };
 static uint8_t pcspeaker_lut[256] = { 0 };
 void pcspeaker_sample_update();
+void pcspeaker_data_update();
 
 inline uint32_t* bios_ticks_ptr()
 {
@@ -124,6 +130,7 @@ static bool _int_8h_prot()
         _timer.hiresticks++;
         pcspeaker_sample_update();
     }
+    pcspeaker_data_update();
 
     if (!_timer.hires || (_timer.hiresticks % TIMER_HIRES_DIV == 0)) {
         _timer.ticks++;
@@ -308,7 +315,7 @@ void _timer_switch(bool hires)
         // PIT0 data register - load in our new frequency
         outportb(0x40, (TIMER_PIT_CLOCK / (hires ? TIMER_HIRES_HZ : TIMER_HZ)) & 0xff);
         outportb(0x40, (TIMER_PIT_CLOCK / (hires ? TIMER_HIRES_HZ : TIMER_HZ)) >> 8);
-        log_print("dos:_timer_switch: DOS timer hotpatched to run at %dHz\n", hires ? TIMER_HIRES_HZ : TIMER_HZ);
+        // log_print("dos:_timer_switch: DOS timer hotpatched to run at %dHz\n", hires ? TIMER_HIRES_HZ : TIMER_HZ);
         _timer.hires = hires;
         enable();
     }
@@ -507,6 +514,7 @@ pt_drv_timer dos_timer = { &timer_init, &timer_shutdown, &timer_ticks, &timer_mi
     &timer_remove_callback };
 
 void pcspeaker_play_sample(byte* data, size_t len, int rate);
+void pcspeaker_play_data(uint16_t* data, size_t len, int rate);
 void pcspeaker_stop();
 void pcspeaker_init()
 {
@@ -524,9 +532,8 @@ void pcspeaker_shutdown()
     pcspeaker_stop();
 }
 
-void pcspeaker_tone(float freq)
+void pcspeaker_tone_raw(uint16_t value)
 {
-    _pcspeaker.mode = PCSPEAKER_TONE;
     // PIT mode/command register:
     // - counter 2 (PC speaker)
     // - bits 0-7 then 8-15
@@ -537,29 +544,38 @@ void pcspeaker_tone(float freq)
     // and low. The square wave generator will cycle between high and low
     // after a specified number of ticks of the main clock (1193180Hz),
     // making a tone frequency at the loudest possible volume.
-    uint32_t units = TIMER_PIT_CLOCK / freq;
-    outportb(0x42, units & 0xff);
-    outportb(0x42, units >> 8);
+    outportb(0x42, value & 0xff);
+    outportb(0x42, value >> 8);
     // Enable PC speaker gate on keyboard controller
     outportb(0x61, inportb(0x61) | 3);
 }
 
+void pcspeaker_tone(float freq)
+{
+    _pcspeaker.mode = PCSPEAKER_TONE;
+    uint16_t units = TIMER_PIT_CLOCK / freq;
+    pcspeaker_tone_raw(units);
+}
+
 void pcspeaker_play_sample(byte* data, size_t len, int rate)
 {
+    uint8_t mode = 0;
     if (use_dpmi_yield) {
-        log_print("pcspeaker_sample: Windows detected, sample playback disabled\n");
+        log_print("pcspeaker_play_sample: Windows detected, sample playback disabled\n");
         return;
     } else if (rate == 8000) {
-        _pcspeaker.mode = PCSPEAKER_SAMPLE_8K;
+        mode = PCSPEAKER_SAMPLE_8K;
     } else if (rate == 16000) {
-        _pcspeaker.mode = PCSPEAKER_SAMPLE_16K;
+        mode = PCSPEAKER_SAMPLE_16K;
     } else {
-        log_print("pcspeaker_sample: audio must have a sample rate of 8000 or 16000\n");
+        log_print("pcspeaker_play_sample: audio must have a sample rate of 8000 or 16000\n");
         return;
     }
+    pcspeaker_stop();
     _pcspeaker.sample_data = data;
     _pcspeaker.sample_len = len;
     _pcspeaker.offset = 0;
+    _pcspeaker.mode = mode;
     _go32_dpmi_lock_data(data, len);
     _timer_switch(true);
     // PIT mode/command register:
@@ -569,6 +585,21 @@ void pcspeaker_play_sample(byte* data, size_t len, int rate)
     outportb(0x43, 0x90);
     // Enable PC speaker gate on keyboard controller
     outportb(0x61, inportb(0x61) | 0x3);
+}
+
+void pcspeaker_play_data(uint16_t* data, size_t len, int rate)
+{
+    if ((rate > 1000) || (rate <= 0)) {
+        log_print("pcspeaker_play_data: playback rate must be between 1 and 1000Hz");
+        return;
+    }
+    pcspeaker_stop();
+    _pcspeaker.mode = PCSPEAKER_DATA;
+    _go32_dpmi_lock_data(data, len * sizeof(uint16_t));
+    _pcspeaker.data = data;
+    _pcspeaker.data_count = len;
+    _pcspeaker.data_rate = TIMER_HIRES_HZ / rate;
+    _pcspeaker.data_ticks = 0;
 }
 
 void pcspeaker_sample_update()
@@ -601,7 +632,7 @@ void pcspeaker_sample_update()
     } else {
         return;
     }
-    if (offset > _pcspeaker.sample_len) {
+    if (offset >= _pcspeaker.sample_len) {
         pcspeaker_stop();
     } else {
         // PIT channel 2 data port
@@ -611,12 +642,51 @@ void pcspeaker_sample_update()
     }
 }
 
+void pcspeaker_data_update()
+{
+    if (_pcspeaker.mode != PCSPEAKER_DATA) {
+        return;
+    }
+    _pcspeaker.data_ticks += _timer.hires ? 1 : TIMER_HIRES_DIV;
+    if (_pcspeaker.data_ticks >= _pcspeaker.data_rate) {
+        _pcspeaker.offset += 1;
+        _pcspeaker.data_ticks %= _pcspeaker.data_rate;
+    }
+
+    if (_pcspeaker.offset >= _pcspeaker.data_count) {
+        pcspeaker_stop();
+    } else {
+        uint16_t value = _pcspeaker.data[_pcspeaker.offset];
+        if (value == 0) {
+            // Disable PC speaker gate on keyboard controller
+            outportb(0x61, inportb(0x61) & 0xfc);
+        } else if (value == 0xffff) {
+            pcspeaker_stop();
+        } else {
+            pcspeaker_tone_raw(value);
+        }
+    }
+}
+
 void pcspeaker_stop()
 {
     if (_timer.hires) {
         _timer_switch(false);
     }
     _pcspeaker.mode = PCSPEAKER_OFF;
+    if (_pcspeaker.sample_data) {
+        free(_pcspeaker.sample_data);
+        _pcspeaker.sample_data = NULL;
+        _pcspeaker.sample_len = 0;
+    }
+    if (_pcspeaker.data) {
+        free(_pcspeaker.data);
+        _pcspeaker.data = NULL;
+        _pcspeaker.data_count = 0;
+    }
+    _pcspeaker.data_rate = 0;
+    _pcspeaker.data_ticks = 0;
+    _pcspeaker.offset = 0;
     // Disable PC speaker gate on keyboard controller
     outportb(0x61, inportb(0x61) & 0xfc);
 }
@@ -626,6 +696,7 @@ pt_drv_beep dos_beep = {
     &pcspeaker_shutdown,
     &pcspeaker_tone,
     &pcspeaker_play_sample,
+    &pcspeaker_play_data,
     &pcspeaker_stop,
 };
 

@@ -516,13 +516,22 @@ void sdlbeep_tone(float freq)
 
 void sdlbeep_play_sample(byte* data, size_t len, int rate)
 {
+    if (data)
+        free(data);
+}
+
+void sdlbeep_play_data(uint16_t* data, size_t len, int rate)
+{
+    if (data)
+        free(data);
 }
 
 void sdlbeep_stop()
 {
 }
 
-pt_drv_beep sdl_beep = { &sdlbeep_init, &sdlbeep_shutdown, &sdlbeep_tone, &sdlbeep_play_sample, &sdlbeep_stop };
+pt_drv_beep sdl_beep
+    = { &sdlbeep_init, &sdlbeep_shutdown, &sdlbeep_tone, &sdlbeep_play_sample, &sdlbeep_play_data, &sdlbeep_stop };
 
 // For some reason you can't actually include woodyopl/opl.h, as it has a bunch of
 // player state embedded into it. Oh well!

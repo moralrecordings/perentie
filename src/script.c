@@ -12,6 +12,7 @@
 #include "image.h"
 #include "log.h"
 #include "musicrad.h"
+#include "pcspeak.h"
 #include "repl.h"
 #include "script.h"
 #include "system.h"
@@ -170,27 +171,27 @@ static int lua_pt_wave(lua_State* L)
     return 1;
 }
 
-static int lua_pt_pc_speaker_sample(lua_State* L)
+static int lua_pt_pc_speaker_play_sample(lua_State* L)
 {
     WaveFile** waveptr = (WaveFile**)lua_touserdata(L, 1);
     if (!waveptr) {
-        log_print("lua_pt_pc_speaker_sample: invalid or missing wave pointer\n");
+        log_print("lua_pt_pc_speaker_play_sample: invalid or missing wave pointer\n");
         return 0;
     }
     size_t sample_size = wave_get_sample_size(*waveptr);
     if (sample_size != 1) {
-        log_print("lua_pt_pc_speaker_sample: wave needs to be 8-bit samples\n");
+        log_print("lua_pt_pc_speaker_play_sample: wave needs to be 8-bit samples\n");
         return 0;
     }
     uint16_t channels = wave_get_num_channels(*waveptr);
     if (channels != 1) {
-        log_print("lua_pt_pc_speaker_sample: wave needs to be mono\n");
+        log_print("lua_pt_pc_speaker_play_sample: wave needs to be mono\n");
         return 0;
     }
 
     uint32_t rate = wave_get_sample_rate(*waveptr);
     if ((rate != 8000) && (rate != 16000)) {
-        log_print("lua_pt_pc_speaker_sample: wave needs to have a sample rate of 8000 or 16000\n");
+        log_print("lua_pt_pc_speaker_play_sample: wave needs to have a sample rate of 8000 or 16000\n");
         return 0;
     }
 
@@ -202,6 +203,74 @@ static int lua_pt_pc_speaker_sample(lua_State* L)
     pt_sys.beep->play_sample(buffer, sizeof(byte) * length, rate);
 
     return 0;
+}
+
+static int lua_pt_pc_speaker_play_data(lua_State* L)
+{
+    pt_pc_speaker_data** target = (pt_pc_speaker_data**)lua_touserdata(L, 1);
+    if (!target) {
+        log_print("lua_pt_pc_speaker_play_data: invalid or missing pt_pc_speaker_data pointer\n");
+        return 0;
+    }
+
+    size_t size = sizeof(uint16_t) * ((*target)->data_len);
+    uint16_t* data = (uint16_t*)malloc(size);
+    log_print("lua_pt_pc_speaker_play_data: %d, %s\n", size, (*target)->name);
+    memcpy(data, (*target)->data, size);
+
+    pt_sys.beep->play_data(data, (*target)->data_len, (*target)->playback_freq);
+    return 0;
+}
+
+static int lua_pt_pc_speaker_data_gc(lua_State* L)
+{
+    pt_pc_speaker_data** target = (pt_pc_speaker_data**)lua_touserdata(L, 1);
+    if (target && *target) {
+        destroy_pc_speaker_data(*target);
+        *target = NULL;
+    }
+    return 0;
+}
+
+static int lua_pt_pc_speaker_load_ifs(lua_State* L)
+{
+    const char* path = luaL_checklstring(L, 1, NULL);
+
+    pt_pc_speaker_ifs* ifs = load_pc_speaker_ifs(path);
+    if (!ifs) {
+        lua_pushnil(L);
+        return 1;
+    }
+
+    lua_createtable(L, ifs->sounds_len, 0);
+
+    for (int i = 0; i < ifs->sounds_len; i++) {
+        lua_createtable(L, 0, 3);
+        lua_pushstring(L, "_type");
+        lua_pushstring(L, "PTPCSpeakerData");
+        lua_settable(L, -3);
+
+        lua_pushstring(L, "name");
+        lua_pushstring(L, ifs->sounds[i]->name);
+        lua_settable(L, -3);
+
+        lua_pushstring(L, "ptr");
+        pt_pc_speaker_data** data = (pt_pc_speaker_data**)lua_newuserdatauv(L, sizeof(pt_pc_speaker_data*), 1);
+        *data = ifs->sounds[i];
+        lua_newtable(L);
+        lua_pushstring(L, "PTPCSpeakerData");
+        lua_setfield(L, -2, "__name");
+        lua_pushcfunction(L, lua_pt_pc_speaker_data_gc);
+        lua_setfield(L, -2, "__gc");
+        lua_setmetatable(L, -2);
+        lua_settable(L, -3);
+
+        lua_seti(L, -2, i + 1);
+    }
+
+    free(ifs->sounds);
+    free(ifs);
+    return 1;
 }
 
 static int lua_pt_image_gc(lua_State* L)
@@ -673,7 +742,9 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTRadGetPosition", lua_pt_rad_get_position },
     { "_PTRadSetPosition", lua_pt_rad_set_position },
     { "_PTWave", lua_pt_wave },
-    { "_PTPCSpeakerSample", lua_pt_pc_speaker_sample },
+    { "_PTPCSpeakerPlaySample", lua_pt_pc_speaker_play_sample },
+    { "_PTPCSpeakerPlayData", lua_pt_pc_speaker_play_data },
+    { "_PTPCSpeakerLoadIFS", lua_pt_pc_speaker_load_ifs },
     { "_PTImage", lua_pt_image },
     { "_PTGetImageDims", lua_pt_get_image_dims },
     { "_PTGetImageOrigin", lua_pt_get_image_origin },

@@ -83,6 +83,7 @@ struct pt_drv_beep {
     void (*shutdown)();
     void (*tone)(float freq);
     void (*play_sample)(byte* data, size_t len, int rate);
+    void (*play_data)(uint16_t* data, size_t len, int rate);
     void (*stop)();
 };
 
