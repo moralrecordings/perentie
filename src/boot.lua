@@ -99,6 +99,8 @@ end
 -- and restart.
 -- @tparam[opt=nil] string index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}.
 PTLoadState = function(index)
+    local path = PTSaveFileName(index)
+    PTLog("PTLoadState: loading state - slot: %d, path: %s", index, path)
     _PTReset(PTSaveFileName(index))
 end
 
@@ -165,6 +167,7 @@ PTSaveState = function(index, state_name)
     if _PTOnLoadStateHandler then
         _PTOnLoadStateHandler(state)
     end
+    PTLog("PTSaveState: writing state - slot: %d, path: %s, name: %s", index, path, state_name)
     file:write(cbor.encode(state)) -- version 1 is just a CBOR blob containing the state
 end
 
@@ -208,7 +211,7 @@ PTExportState = function(state_name)
         game_id = _PTGameID,
         game_version = _PTGameVersion,
         name = state_name,
-        timestamp = os.date("!%Y-%m-%dT%H:%M:%S"),
+        timestamp = os.date("%Y-%m-%dT%H:%M:%S"),
         vars = vars,
         actors = actors,
         rooms = rooms,

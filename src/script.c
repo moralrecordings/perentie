@@ -794,12 +794,14 @@ int script_exec()
 
 void script_events()
 {
+    lua_getglobal(main_thread, "_PTWhoops");
     lua_getglobal(main_thread, "_PTEvents");
-    if (lua_pcall(main_thread, 0, 0, 0) != LUA_OK) {
+    if (lua_pcall(main_thread, 0, 0, 1)) {
         const char* error = lua_tostring(main_thread, -1);
         log_print("script_events(): error: %s\n", error);
         lua_pop(main_thread, 1);
     }
+    lua_pop(main_thread, 1);
 }
 
 void script_repl()
@@ -809,12 +811,14 @@ void script_repl()
 
 void script_render()
 {
+    lua_getglobal(main_thread, "_PTWhoops");
     lua_getglobal(main_thread, "_PTRender");
-    if (lua_pcall(main_thread, 0, 0, 0) != LUA_OK) {
+    if (lua_pcall(main_thread, 0, 0, 1)) {
         const char* error = lua_tostring(main_thread, -1);
         log_print("script_render(): error: %s\n", error);
         lua_pop(main_thread, 1);
     }
+    lua_pop(main_thread, 1);
 }
 
 void script_init()
