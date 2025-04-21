@@ -273,6 +273,31 @@ static int lua_pt_pc_speaker_load_ifs(lua_State* L)
     return 1;
 }
 
+static int lua_pt_pc_speaker_data(lua_State* L)
+{
+    luaL_checktype(L, 1, LUA_TTABLE);
+    uint16_t freq = (uint16_t)luaL_checkinteger(L, 2);
+    int count = luaL_len(L, 1);
+    uint16_t* data = (uint16_t*)calloc(count, sizeof(uint16_t));
+    for (int i = 0; i < count; i++) {
+        lua_rawgeti(L, 1, i + 1);
+        data[i] = (uint16_t)luaL_checkinteger(L, -1);
+        lua_pop(L, 1);
+    }
+    pt_pc_speaker_data* spk = create_pc_speaker_data(data, count, freq, NULL);
+
+    pt_pc_speaker_data** spk_obj = (pt_pc_speaker_data**)lua_newuserdatauv(L, sizeof(pt_pc_speaker_data*), 1);
+    *spk_obj = spk;
+    lua_newtable(L);
+    lua_pushstring(L, "PTPCSpeakerData");
+    lua_setfield(L, -2, "__name");
+    lua_pushcfunction(L, lua_pt_pc_speaker_data_gc);
+    lua_setfield(L, -2, "__gc");
+    lua_setmetatable(L, -2);
+
+    return 1;
+}
+
 static int lua_pt_image_gc(lua_State* L)
 {
     pt_image** target = (pt_image**)lua_touserdata(L, 1);
@@ -745,6 +770,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTPCSpeakerPlaySample", lua_pt_pc_speaker_play_sample },
     { "_PTPCSpeakerPlayData", lua_pt_pc_speaker_play_data },
     { "_PTPCSpeakerLoadIFS", lua_pt_pc_speaker_load_ifs },
+    { "_PTPCSpeakerData", lua_pt_pc_speaker_data },
     { "_PTImage", lua_pt_image },
     { "_PTGetImageDims", lua_pt_get_image_dims },
     { "_PTGetImageOrigin", lua_pt_get_image_origin },

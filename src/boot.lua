@@ -164,9 +164,6 @@ PTSaveState = function(index, state_name)
     file:write("PERENTIE") -- magic number
     file:write(string.char(1, 0)) -- format version, little endian
     local state = PTExportState(state_name)
-    if _PTOnLoadStateHandler then
-        _PTOnLoadStateHandler(state)
-    end
     PTLog("PTSaveState: writing state - slot: %d, path: %s, name: %s", index, path, state_name)
     file:write(cbor.encode(state)) -- version 1 is just a CBOR blob containing the state
 end
