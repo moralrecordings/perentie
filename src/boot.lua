@@ -2507,16 +2507,49 @@ PTWave = function(path)
     return { _type = "PTWave", ptr = _PTWave(path) }
 end
 
-PTPCSpeakerDataRaw = function(data, playback_freq)
-    return { _type = "PTPCSpeakerData", ptr = _PTPCSpeakerData(data, playback_freq) }
+PC_TIMER_FREQ = 1193181
+
+--- Convert a tone frequency to a position on the MIDI pitch scale.
+-- The MIDI scale is linear, with an increase of 1 unit per semitone
+-- and A440 assigned to 69.
+-- Note that the output of this function is not rounded to the nearest
+-- integer, nor is it bounded to 0-127, which are required for MIDI usage.
+-- @tparam float freq Tone frequency, in Hz.
+-- @tresult float MIDI pitch.
+PTFreqToMIDI = function(freq)
+    if freq == 0 then
+        return nil
+    end
+    return (12 * math.log(freq / 440, 2)) + 69
+end
+
+--- Convert a MIDI pitch to a tone frequency.
+-- @tparam float midi MIDI pitch.
+-- @tresult float Tone frequency, in Hz.
+PTMIDIToFreq = function(midi)
+    if not midi then
+        return 0.0
+    end
+    return 440 * 2 ^ ((midi - 69) / 12)
+end
+
+PTFreqToIFS = function(freq)
+    if freq == 0 then
+        return 0
+    end
+    return math.max(1, math.min(65534, math.floor(PC_TIMER_FREQ / freq)))
 end
 
 PTPCSpeakerData = function(data, playback_freq)
+    return { _type = "PTPCSpeakerData", ptr = _PTPCSpeakerData(data, playback_freq) }
+end
+
+PTPCSpeakerDataFreq = function(data, playback_freq)
     local new_data = {}
     for i, v in ipairs(data) do
-        table.insert(new_data, math.floor(1193181 / v))
+        table.insert(new_data, PTFreqToIFS(v))
     end
-    return { _type = "PTPCSpeakerData", ptr = _PTPCSpeakerData(data, playback_freq) }
+    return { _type = "PTPCSpeakerData", ptr = _PTPCSpeakerData(new_data, playback_freq) }
 end
 
 -- PTGetWaveSampleRate

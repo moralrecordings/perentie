@@ -28,7 +28,7 @@ def transform(src_file: pathlib.Path, output_dir: pathlib.Path) -> None:
     print(f"{src_file.stem}_bg = PTBackground(PTImage(\"{str(dest_file)}\", {img_x}, {img_y}), {x_off + img_x}, {y_off + img_y})")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Room image converter.\nUse your graphics editor to export the room as one image per layer. This tool will convert them to 256 colours, crop the transparency, and give you the Lua commands to load the cropped image as part of your room definition.")
     parser.add_argument("SOURCE", type=pathlib.Path, nargs="+", help="Source images")
     parser.add_argument("DEST", type=pathlib.Path, help="Destination path")
     args = parser.parse_args()
