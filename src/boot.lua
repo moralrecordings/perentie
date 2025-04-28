@@ -502,6 +502,7 @@ PTActorUpdate = function(actor, fast_forward)
         else
             PTRoomRemoveObject(actor.room, actor.talk_img)
             actor.talk_img = nil
+            PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
         end
     end
 
@@ -598,6 +599,7 @@ PTActorTalk = function(actor, message, font, colour)
         actor.talk_next_wait = _PTGetMillis() + _PTTalkBaseDelay + #message * _PTTalkCharDelay
     end
     PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
+    PTSpriteSetAnimation(actor.sprite, actor.anim_talk, actor.facing)
     if _PTActorWaitAfterTalk then
         PTWaitForActor(actor)
     end
@@ -1201,7 +1203,11 @@ PTGetImageFromObject = function(object)
                     anim.current_frame = 1
                     anim.next_wait = PTGetMillis() + (1000 // anim.rate)
                 elseif PTGetMillis() > anim.next_wait then
-                    anim.current_frame = (anim.current_frame % #anim.frames) + 1
+                    if not anim.looping and anim.current_frame < #anim.frames then
+                        anim.current_frame = anim.current_frame + 1
+                    else
+                        anim.current_frame = (anim.current_frame % #anim.frames) + 1
+                    end
                     anim.next_wait = PTGetMillis() + (1000 // anim.rate)
                 end
                 return anim.frames[anim.current_frame], object.anim_flags
@@ -2660,6 +2666,7 @@ local _PTThreads = {}
 local _PTThreadsSleepUntil = {}
 local _PTThreadsActorWait = {}
 local _PTThreadsMoveObjectWait = {}
+local _PTThreadsAnimationWait = {}
 local _PTThreadsFastForward = {}
 
 --- Start a function in a new thread.
@@ -2713,6 +2720,7 @@ PTStopThread = function(name, ignore_self, ignore_missing)
     _PTThreadsSleepUntil[name] = nil
     _PTThreadsActorWait[name] = nil
     _PTThreadsMoveObjectWait[name] = nil
+    _PTThreadsAnimationWait[name] = nil
     _PTThreadsFastForward[name] = nil
 end
 
@@ -2818,6 +2826,18 @@ PTWaitForMoveObject = function(object)
         end
     end
     error(string.format("PTWaitForMoveObject(): thread not found"))
+end
+
+PTWaitForAnimation = function(animation)
+    local thread, _ = coroutine.running()
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            _PTThreadsAnimationWait[k] = animation
+            coroutine.yield()
+            return
+        end
+    end
+    error(string.format("PTWaitForAnimation(): thread not found"))
 end
 
 local _PTWatchdogEnabled = true
@@ -3350,6 +3370,12 @@ _PTRunThreads = function()
                 --print("MoveObjectWait", is_awake)
                 if is_awake then
                     _PTThreadsMoveObjectWait[name] = nil
+                end
+            elseif _PTThreadsAnimationWait[name] then
+                is_awake = not _PTThreadsAnimationWait[name].looping
+                    and _PTThreadsAnimationWait[name].current_frame == #_PTThreadsAnimationWait[name].frames
+                if is_awake then
+                    _PTThreadsAnimationWait[name] = nil
                 end
             elseif _PTThreadsFastForward[name] then
             -- Ignore all sleeps, go at top speed.
