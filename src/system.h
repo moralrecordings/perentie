@@ -98,9 +98,10 @@ struct pt_drv_video {
     void (*blit_line)(int16_t x0, int16_t y0, int16_t x1, int16_t y1, pt_colour_rgb* colour);
     void (*blit)();
     void (*flip)();
-    void (*update_colour)(uint8_t idx);
+    void (*update_palette_slot)(uint8_t idx);
     void (*destroy_hw_image)(void* hw_image);
     void (*set_palette_remapper)(enum pt_palette_remapper remapper);
+    void (*set_overscan_colour)(pt_colour_rgb* colour);
 };
 
 struct pt_system {
@@ -115,6 +116,7 @@ struct pt_system {
     int palette_top;
     int palette_revision;
     pt_colour_rgb palette[256];
+    uint8_t overscan;
     pt_dither dither[256];
 };
 

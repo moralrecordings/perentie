@@ -650,14 +650,16 @@ static int lua_pt_get_mouse_pos(lua_State* L)
 
 static int lua_pt_get_palette(lua_State* L)
 {
-    lua_createtable(L, 3 * 256, 0);
+    lua_createtable(L, 256, 0);
     for (int i = 0; i < pt_sys.palette_top; i++) {
+        lua_createtable(L, 3, 0);
         lua_pushinteger(L, pt_sys.palette[i].r);
-        lua_seti(L, -2, 3 * i + 1);
+        lua_seti(L, -2, 1);
         lua_pushinteger(L, pt_sys.palette[i].g);
-        lua_seti(L, -2, 3 * i + 2);
+        lua_seti(L, -2, 2);
         lua_pushinteger(L, pt_sys.palette[i].b);
-        lua_seti(L, -2, 3 * i + 3);
+        lua_seti(L, -2, 3);
+        lua_seti(L, -2, i + 1);
     }
     return 1;
 };
@@ -669,8 +671,31 @@ static int lua_pt_set_palette_remapper(lua_State* L)
     return 0;
 };
 
+static int lua_pt_set_overscan_colour(lua_State* L)
+{
+    pt_colour_rgb colour = { 0x00, 0x00, 0x00 };
+    if (lua_istable(L, 1)) {
+        lua_geti(L, 1, 1);
+        colour.r = luaL_checkinteger(L, -1);
+        lua_pop(L, 1);
+        lua_geti(L, 1, 2);
+        colour.g = luaL_checkinteger(L, -1);
+        lua_pop(L, 1);
+        lua_geti(L, 1, 3);
+        colour.b = luaL_checkinteger(L, -1);
+        lua_pop(L, 1);
+    }
+    uint8_t idx = map_colour(colour.r, colour.g, colour.b);
+    pt_sys.overscan = idx;
+    pt_sys.video->set_overscan_colour(&colour);
+    return 0;
+};
+
 static int lua_pt_set_dither_hint(lua_State* L)
 {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    luaL_checktype(L, 3, LUA_TTABLE);
+    luaL_checktype(L, 4, LUA_TTABLE);
     pt_colour_rgb src = { 0 };
     lua_geti(L, 1, 1);
     src.r = luaL_checkinteger(L, -1);
@@ -685,7 +710,6 @@ static int lua_pt_set_dither_hint(lua_State* L)
     enum pt_dither_type type = luaL_checkinteger(L, 2);
 
     pt_colour_rgb a = { 0 };
-    pt_colour_rgb b = { 0 };
     lua_geti(L, 3, 1);
     a.r = luaL_checkinteger(L, -1);
     lua_pop(L, 1);
@@ -695,13 +719,15 @@ static int lua_pt_set_dither_hint(lua_State* L)
     lua_geti(L, 3, 3);
     a.b = luaL_checkinteger(L, -1);
     lua_pop(L, 1);
-    lua_geti(L, 3, 4);
+
+    pt_colour_rgb b = { 0 };
+    lua_geti(L, 4, 1);
     b.r = luaL_checkinteger(L, -1);
     lua_pop(L, 1);
-    lua_geti(L, 3, 5);
+    lua_geti(L, 4, 2);
     b.g = luaL_checkinteger(L, -1);
     lua_pop(L, 1);
-    lua_geti(L, 3, 6);
+    lua_geti(L, 4, 3);
     b.b = luaL_checkinteger(L, -1);
     lua_pop(L, 1);
 
@@ -788,6 +814,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTGetMousePos", lua_pt_get_mouse_pos },
     { "_PTGetPalette", lua_pt_get_palette },
     { "_PTSetPaletteRemapper", lua_pt_set_palette_remapper },
+    { "_PTSetOverscanColour", lua_pt_set_overscan_colour },
     { "_PTSetDitherHint", lua_pt_set_dither_hint },
     { "_PTSetDebugConsole", lua_pt_set_debug_console },
     { "_PTSetGameInfo", lua_pt_set_game_info },

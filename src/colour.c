@@ -160,7 +160,7 @@ uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b)
         pt_sys.palette[idx].r = r;
         pt_sys.palette[idx].g = g;
         pt_sys.palette[idx].b = b;
-        pt_sys.video->update_colour(idx);
+        pt_sys.video->update_palette_slot(idx);
         pt_sys.palette_revision++;
         return idx;
     }

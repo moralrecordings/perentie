@@ -80,11 +80,14 @@ local _PTVars = {}
 -- state of the actors, as these are stored by the engine automatically.
 -- You can use a @{PTOnLoadState} or @{PTOnRoomLoad} hook to apply any
 -- settings after a game is loaded.
--- @treturn table Table
+-- @treturn table Table of variables, containing key-value pairs.
 PTVars = function()
     return _PTVars
 end
 
+--- Return the file name for a saved state.
+-- @tparam integer index Index, between 0 and 999.
+-- @treturn string The file name.
 PTSaveFileName = function(index)
     if type(index) ~= "number" then
         error("PTSaveFileName: index must be an integer")
@@ -104,7 +107,7 @@ PTLoadState = function(index)
     _PTReset(PTSaveFileName(index))
 end
 
---- Get the path for writing app-specific data (e.g. save states).
+--- Get the path for writing app-specific data.
 -- @treturn string The app data path (absolute).
 PTGetAppDataPath = function()
     return _PTGetAppDataPath()
@@ -149,7 +152,7 @@ _PTInitFromStateFile = function(filename)
 end
 
 --- Save the current game state to a file.
--- @tparam number index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}.
+-- @tparam number index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}, with the filename provided by @{PTSaveFileName}.
 -- @tparam string state_name Name of the saved state. Useful for e.g. listing saved games.
 PTSaveState = function(index, state_name)
     if not _PTGameID then
@@ -168,6 +171,9 @@ PTSaveState = function(index, state_name)
     file:write(cbor.encode(state)) -- version 1 is just a CBOR blob containing the state
 end
 
+--- Export the current game state.
+-- @tparam string state_name Name of the saved state. Useful for e.g. listing saved games.
+-- @treturn table Engine state information payload. When saving to a file with @{PTSaveState}, this data is encoded as CBOR.
 PTExportState = function(state_name)
     local room = PTCurrentRoom()
     local vars = {}
@@ -216,6 +222,9 @@ PTExportState = function(state_name)
     }
 end
 
+--- Import game state from a payload.
+-- This will overwrite variables in the game's variable store, and update the state of all @{PTRoom}s and @{PTActor}s.
+-- @tparam table state Engine state information payload. When loading state from a file with @{PTLoadState}, this data is encoded as CBOR.
 PTImportState = function(state)
     if not state or not state.pt_version then
         error("PTImportState: expected a state payload")
@@ -357,6 +366,9 @@ KEY_FLAG_SCRL = 32
 -- @table PTEvent
 
 local _PTEventConsumers = {}
+--- Set a callback for an event.
+-- @tparam string type Event type code. Options are: "null", "start", "quit", "reset", "keyDown", "keyUp", "mouseMove", "mouseDown", "mouseUp"
+-- @tparam function callback Function body to call, with the @{PTEvent} object as an argument.
 PTOnEvent = function(type, callback)
     _PTEventConsumers[type] = callback
 end
@@ -465,6 +477,9 @@ PTActor = function(name, x, y, z)
     }
 end
 
+--- Set an actor's walk box.
+-- @tparam PTActor actor The actor.
+-- @tparam PTWalkBox box Walk box to use.
 PTActorSetWalkBox = function(actor, box)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorSetWalkBox: expected PTActor for first argument")
@@ -480,10 +495,11 @@ PTActorSetWalkBox = function(actor, box)
     end
 end
 
-PTActorUpdate = function(actor, fast_forward)
+_PTActorUpdate = function(actor, fast_forward)
     if not actor or actor._type ~= "PTActor" then
-        error("PTActorUpdate: expected PTActor for first argument")
+        error("_PTActorUpdate: expected PTActor for first argument")
     end
+    local result = true
     if actor.moving > 0 and PTGetMillis() > actor.walkdata_next_wait then
         PTActorWalk(actor)
         PTSpriteIncrementFrame(actor.sprite)
@@ -492,13 +508,14 @@ PTActorUpdate = function(actor, fast_forward)
         if room and room._type == "PTRoom" and actor == room.camera_actor then
             room.x, room.y = actor.x, actor.y
         end
+        result = false
     end
     if actor.talk_img and actor.talk_next_wait then
         if actor.talk_next_wait < 0 then
             -- negative talk wait time means wait until click
-            return false
+            result = false
         elseif not fast_forward and _PTGetMillis() < actor.talk_next_wait then
-            return false
+            result = false
         else
             PTRoomRemoveObject(actor.room, actor.talk_img)
             actor.talk_img = nil
@@ -506,13 +523,13 @@ PTActorUpdate = function(actor, fast_forward)
         end
     end
 
-    return true
+    return result
 end
 
 local _PTActorWaitAfterTalk = true
 --- Set whether to automatically wait after a PTActor starts talking.
--- If enabled, this means action scripts can make successive calls to
--- @{PTActorTalk} and the engine will treat them as a conversation; i.e.
+-- If enabled, this means threads can make successive calls to
+-- @{PTActorTalk} and the engine will treat them as a conversation;
 -- you don't need to explicitly call @{PTWaitForActor} after each one.
 -- If you want to do manual conversation timing, disable this feature.
 -- Defaults to true.
@@ -553,12 +570,12 @@ PTSetTalkCharDelay = function(delay)
     _PTTalkCharDelay = delay
 end
 
---- Make a @{PTActor} talk.
+--- Make an actor talk.
 -- This will trigger the actor's talk animation, as defined in actor.anim_talk.
 -- By default, this will wait the thread until the actor finishes talking. You can disable this by calling @{PTSetActorWaitAfterTalk}.
 -- @tparam PTActor actor The actor.
 -- @tparam string message Message to show on the screen.
--- @tparam[opt=nil] PTFont Font to use. Defaults to actor.talk_font
+-- @tparam[opt=nil] PTFont font Font to use. Defaults to actor.talk_font
 -- @tparam[opt=nil] table colour Inner colour; list of 3 8-bit numbers. Defaults to actor.talk_colour.
 PTActorTalk = function(actor, message, font, colour)
     if not actor or actor._type ~= "PTActor" then
@@ -600,6 +617,7 @@ PTActorTalk = function(actor, message, font, colour)
     end
     PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
     PTSpriteSetAnimation(actor.sprite, actor.anim_talk, actor.facing)
+    actor.current_frame = 1
     if _PTActorWaitAfterTalk then
         PTWaitForActor(actor)
     end
@@ -764,7 +782,7 @@ PTSetImageOrigin = function(image, x, y)
     if not image or image._type ~= "PTImage" then
         return
     end
-    return _PTSetImageOrigin(image.ptr, x, y)
+    _PTSetImageOrigin(image.ptr, x, y)
 end
 
 --- Blit a @{PTImage}/@{PT9Slice} to the screen.
@@ -796,6 +814,12 @@ PTDrawImage = function(image, x, y, flags)
     end
 end
 
+--- Perform a collision test for an image.
+-- @tparam table image @{PTImage}/@{PT9Slice} to test.
+-- @tparam integer x X coordinate in image space.
+-- @tparam integer y Y coordinate in image space.
+-- @tparam integer flags Flags for rendering the image.
+-- @tparam boolean collision_mask If true, test the masked image (i.e. excluding transparent areas), else use the image's bounding box.
 PTTestImageCollision = function(image, x, y, flags, collision_mask)
     if not image then
         return false
@@ -819,6 +843,49 @@ PTTestImageCollision = function(image, x, y, flags, collision_mask)
         )
     end
     return false
+end
+
+--- Return the current palette.
+-- @treturn table A table containing colours from the current palette. Each colour is a table containing three 8-bit numbers.
+PTGetPalette = function()
+    return _PTGetPalette()
+end
+
+REMAPPER_NONE = 0
+REMAPPER_EGA = 1
+REMAPPER_CGA0A = 2
+REMAPPER_CGA0B = 3
+REMAPPER_CGA1A = 4
+REMAPPER_CGA1B = 5
+REMAPPER_CGA2A = 6
+REMAPPER_CGA2B = 7
+
+--- Set the automatic palette remapper to use.
+-- This will remove any of the current dithering hints and replace them with the output of the remapper. Subsequent hints can be added.
+-- @tparam integer remapper Remapper to use.
+PTSetPaletteRemapper = function(remapper)
+    return _PTSetPaletteRemapper(remapper)
+end
+
+--- Set the overscan colour.
+-- For DOS, this is the colour used for the non-drawable area on a CRT/LCD monitor. For SDL, this is the colour used for filling the spare area around the viewport.
+-- @tparam table colour Table containing three 8-bit numbers.
+PTSetOverscanColour = function(colour)
+    return _PTSetOverscanColour(colour)
+end
+
+DITHER_NONE = 0
+DITHER_FILL_A = 1
+DITHER_D50 = 2
+DITHER_FILL_B = 3
+
+--- Set a dithering hint. Used for remapping a VGA-style palette to a smaller colour range such as EGA or CGA.
+-- @tparam table src Source colour, table containing three 8-bit numbers.
+-- @tparam integer dither_type Type of dithering algorithm to use.
+-- @tparam table dest_a Destination mixing colour A, table containing three 8-bit numbers.
+-- @tparam table dest_b Destination mixing colour B, table containing three 8-bit numbers.
+PTSetDitherHint = function(src, dither_type, dest_a, dest_b)
+    return _PTSetDitherHint(src, dither_type, dest_a, dest_b)
 end
 
 --- Calculate the delta angle between two directions.
@@ -875,7 +942,7 @@ PTBackground = function(image, x, y, z, collision)
         x = x,
         y = y,
         z = z,
-        prallax_x = 1,
+        parallax_x = 1,
         parallax_y = 1,
         collision = collision,
         visible = true,
@@ -1037,12 +1104,17 @@ PTSpriteSetAnimation = function(sprite, name, facing)
     return false
 end
 
+--- Increment a sprite's current animation frame.
+-- This does not take into account the playback rate.
+-- @tparam PTSprite object Sprite to update.
 PTSpriteIncrementFrame = function(object)
     if object and object._type == "PTSprite" then
         local anim = object.animations[object.anim_index]
         if anim then
             if anim.current_frame == 0 then
                 anim.current_frame = 1
+            elseif not anim.looping and anim.current_frame < #anim.frames then
+                anim.current_frame = anim.current_frame + 1
             else
                 anim.current_frame = (anim.current_frame % #anim.frames) + 1
             end
@@ -1115,6 +1187,9 @@ PTGroupAddObject = function(group, object)
     end)
 end
 
+--- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object from a group rendering list.
+-- @tparam PTGroup group Group to remove object from.
+-- @tparam table object Object to remove.
 PTGroupRemoveObject = function(group, object)
     if object then
         _PTRemoveFromList(group.objects, object)
@@ -1412,6 +1487,28 @@ PTTimingFunction = function(timing)
     return timing
 end
 
+--- Movement reference structure.
+-- @tfield string _type "PTMoveRef"
+-- @tfield function timing Timing function, such as returned from @{PTTimingFunction}.
+-- @tfield integer start_time Movement start time, in milliseconds.
+-- @tfield integer duration Movement duration, in milliseconds.
+-- @tfield table object Any object with "x" and "y" parameters to move.
+-- @tfield integer x_a Start X coordinate of the object in room space.
+-- @tfield integer y_a Start Y coordinate of the object in room space.
+-- @tfield integer x_b Finish X coordinate of the object in room space.
+-- @tfield integer y_b Finish Y coordinate of the object in room space.
+-- @tfield boolean while_paused Whether to move the object while the game is paused.
+-- @table PTMoveRef
+
+--- Create a new movement reference.
+-- @tparam table object Any object with "x" and "y" parameters to move.
+-- @tparam integer x Finish X coordinate of the object in room space.
+-- @tparam integer y Finish Y coordinate of the object in room space.
+-- @tparam integer start_time Movement start time, in milliseconds.
+-- @tparam integer duration Movement duration, in milliseconds.
+-- @tparam function timing Timing function, such as returned from @{PTTimingFunction}.
+-- @tparam boolean while_paused Whether to move the object while the game is paused.
+-- @treturn PTMoveRef The new movement refrence.
 PTMoveRef = function(object, x, y, start_time, duration, timing, while_paused)
     -- timing functions nicked from the CSS animation-timing-function spec
     timing = PTTimingFunction(timing)
@@ -1478,6 +1575,9 @@ local _PTObjectIsMoving = function(object, fast_forward)
     return false
 end
 
+--- Check if an object is moving.
+-- @tparam table object Any object with "x" and "y" parameters
+-- @treturn boolean Whether the object is moving.
 PTObjectIsMoving = function(object)
     return _PTObjectIsMoving(object)
 end
@@ -2521,7 +2621,7 @@ PC_TIMER_FREQ = 1193181
 -- Note that the output of this function is not rounded to the nearest
 -- integer, nor is it bounded to 0-127, which are required for MIDI usage.
 -- @tparam float freq Tone frequency, in Hz.
--- @tresult float MIDI pitch.
+-- @treturn float MIDI pitch.
 PTFreqToMIDI = function(freq)
     if freq == 0 then
         return nil
@@ -2531,7 +2631,7 @@ end
 
 --- Convert a MIDI pitch to a tone frequency.
 -- @tparam float midi MIDI pitch.
--- @tresult float Tone frequency, in Hz.
+-- @treturn float Tone frequency, in Hz.
 PTMIDIToFreq = function(midi)
     if not midi then
         return 0.0
@@ -3145,7 +3245,7 @@ local _PTUpdateRoom = function(force)
         end
     end
     for i, actor in ipairs(room.actors) do
-        PTActorUpdate(actor, false)
+        _PTActorUpdate(actor, false)
         --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
     end
     -- constrain camera to room bounds
@@ -3197,7 +3297,10 @@ end
 _PTVerbCallbacks = {}
 _PTVerb2Callbacks = {}
 
---- Set a callback for a single-noun verb action.
+--- Set a callback for a single-subject verb action.
+-- @tparam string verb Verb to use.
+-- @tparam string subject Subject of the verb.
+-- @tparam function callback Function body to call, with the verb and subject as arguments.
 PTOnVerb = function(verb, subject, callback)
     if not _PTVerbCallbacks[verb] then
         _PTVerbCallbacks[verb] = {}
@@ -3228,6 +3331,12 @@ PTSetVerbReadyCheck = function(callback)
     _PTVerbReadyCallback = callback
 end
 
+--- Set a callback for a two-subject verb action.
+-- @tparam string verb Verb to use.
+-- @tparam string subject_a Subject A of the verb.
+-- @tparam string subject_b Subject B of the verb.
+-- @tparam function callback Function body to call, with the verb and the two subjects as arguments.
+-- @tparam[opt=false] boolean directional Whether to invoke this callback only in a single direction; i.e. on @{PTDoVerb2}("verb", "a", "b") but not on @{PTDoVerb2}("verb", "b", "a").
 PTOnVerb2 = function(verb, subject_a, subject_b, callback, directional)
     if directional == nil then
         directional = false
@@ -3249,6 +3358,15 @@ PTOnVerb2 = function(verb, subject_a, subject_b, callback, directional)
     end
 end
 
+--- Run a two-subject verb action in the verb thread.
+-- This will asynchronously run the callback set by @{PTOnVerb2}.
+-- Ideally your game's input code would call this - so e.g. on a
+-- mouseDown event, if your game's UI had the "give" verb enabled,
+-- and an inventory item selected, you could fetch the current
+-- moused-over object ID and make a call like PTDoVerb2("give", "pinking shears", "rock wallaby").
+-- @tparam string verb Verb to use.
+-- @tparam string subject_a First subject of the verb.
+-- @tparam string subject_b Second subject of the verb.
 PTDoVerb2 = function(verb, subject_a, subject_b)
     PTLog("PTDoVerb2: %s %s %s\n", tostring(verb), tostring(subject_a), tostring(subject_b))
     _PTCurrentVerb = verb
@@ -3361,7 +3479,7 @@ _PTRunThreads = function()
             -- Check if the thread is supposed to be asleep
             local is_awake = true
             if _PTThreadsActorWait[name] then
-                is_awake = PTActorUpdate(_PTThreadsActorWait[name], _PTThreadsFastForward[name])
+                is_awake = _PTActorUpdate(_PTThreadsActorWait[name], _PTThreadsFastForward[name])
                 if is_awake then
                     _PTThreadsActorWait[name] = nil
                 end
@@ -3507,7 +3625,16 @@ local _PTUpdateMouseOver = function()
     for obj, x, y in PTIterObjects(_PTGlobalRenderList, true) do
         if obj.collision then
             local frame, flags = PTGetImageFromObject(obj)
-            if frame and PTTestImageCollision(frame, mouse_x - x, mouse_y - y, flags, frame.collision_mask) then
+            if
+                frame
+                and PTTestImageCollision(
+                    frame,
+                    math.floor(mouse_x - x),
+                    math.floor(mouse_y - y),
+                    flags,
+                    frame.collision_mask
+                )
+            then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
@@ -3521,7 +3648,16 @@ local _PTUpdateMouseOver = function()
     for obj, x, y in PTIterObjects(room.render_list, true) do
         if obj.collision then
             frame, flags = PTGetImageFromObject(obj)
-            if frame and PTTestImageCollision(frame, room_x - x, room_y - y, flags, frame.collision_mask) then
+            if
+                frame
+                and PTTestImageCollision(
+                    frame,
+                    math.floor(room_x - x),
+                    math.floor(room_y - y),
+                    flags,
+                    frame.collision_mask
+                )
+            then
                 if _PTMouseOver ~= obj then
                     _PTMouseOver = obj
                     if _PTMouseOverConsumer then
@@ -3549,8 +3685,8 @@ local _PTUpdateMoveObject = function()
             local at = (t - moveref.start_time) / moveref.duration
             local a = moveref.timing(at)
 
-            moveref.object.x = math.floor(moveref.x_a + (moveref.x_b - moveref.x_a) * a)
-            moveref.object.y = math.floor(moveref.y_a + (moveref.y_b - moveref.y_a) * a)
+            moveref.object.x = moveref.x_a + (moveref.x_b - moveref.x_a) * a
+            moveref.object.y = moveref.y_a + (moveref.y_b - moveref.y_a) * a
             --print(string.format("%f,%f", at, a))
             if at >= 1.0 then
                 table.insert(done, 1, i)
@@ -3562,8 +3698,6 @@ local _PTUpdateMoveObject = function()
     end
 end
 
---- Process all input and room events.
--- @local
 _PTEvents = function()
     local ev = _PTPumpEvent()
     while ev do
@@ -3613,6 +3747,7 @@ _PTRender = function()
     local debugBuffer = {}
 
     local blit = function(img, x, y, flags)
+        x, y = math.floor(x), math.floor(y)
         if img then
             PTDrawImage(img, x, y, flags)
             if _PTImageDebug then

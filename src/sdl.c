@@ -262,7 +262,7 @@ void sdlvideo_flip()
     SDL_SetRenderTarget(renderer, framebuffer);
 }
 
-void sdlvideo_update_colour(uint8_t idx)
+void sdlvideo_update_palette_slot(uint8_t idx)
 {
     // Game is actually rendering in 32-bit colour,
     // we don't need to update state
@@ -273,9 +273,13 @@ void sdlvideo_set_palette_remapper(enum pt_palette_remapper remapper)
 {
 }
 
-pt_drv_video sdl_video
-    = { &sdlvideo_init, &sdlvideo_shutdown, &sdlvideo_clear, &sdlvideo_blit_image, &sdlvideo_blit_line, &sdlvideo_blit,
-          &sdlvideo_flip, &sdlvideo_update_colour, &sdlvideo_destroy_hw_image, &sdlvideo_set_palette_remapper };
+void sdlvideo_set_overscan_colour(pt_colour_rgb* colour)
+{
+}
+
+pt_drv_video sdl_video = { &sdlvideo_init, &sdlvideo_shutdown, &sdlvideo_clear, &sdlvideo_blit_image,
+    &sdlvideo_blit_line, &sdlvideo_blit, &sdlvideo_flip, &sdlvideo_update_palette_slot, &sdlvideo_destroy_hw_image,
+    &sdlvideo_set_palette_remapper, &sdlvideo_set_overscan_colour };
 
 void sdltimer_init()
 {

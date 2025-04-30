@@ -40,6 +40,7 @@ inline byte* vga_ptr()
     return (byte*)0xA0000 + __djgpp_conventional_base;
 }
 
+#define VGA_ATC_INDEX 0x3c0
 #define VGA_SC_INDEX 0x3c4
 #define VGA_SC_DATA 0x3c5
 #define VGA_GC_INDEX 0x3ce
@@ -317,7 +318,7 @@ void vga_load_palette_colour(int idx)
     enable();
 }
 
-void vga_update_colour(uint8_t idx)
+void vga_update_palette_slot(uint8_t idx)
 {
     byte r = pt_sys.palette[idx].r;
     byte g = pt_sys.palette[idx].g;
@@ -330,8 +331,8 @@ void vga_update_colour(uint8_t idx)
     vga_palette[3 * idx + 2] = b_v;
     vga_load_palette_colour(idx);
     set_dither_from_remapper(idx, &pt_sys.dither[idx]);
-    log_print("vga_update_colour: vga_palette[%d] = %d, %d, %d -> %d, %d, %d (dither %d %d)\n", idx, r, g, b, r_v, g_v,
-        b_v, pt_sys.dither[idx].idx_a, pt_sys.dither[idx].idx_b);
+    log_print("vga_update_palette_slot: vga_palette[%d] = %d, %d, %d -> %d, %d, %d (dither %d %d)\n", idx, r, g, b, r_v,
+        g_v, b_v, pt_sys.dither[idx].idx_a, pt_sys.dither[idx].idx_b);
 }
 
 void vga_plot(int16_t x, int16_t y, uint8_t value)
@@ -400,12 +401,6 @@ bool vga_is_vblank()
     return inportb(VGA_INPUT_STATUS_1) & 8;
 }
 
-bool vga_is_not_drawing()
-{
-    // CRT mode and status = CGA/EGA/VGA input status 1 register - display disabled
-    return inportb(VGA_INPUT_STATUS_1) & 1;
-}
-
 void vga_blit()
 {
     // copy the framebuffer to VGA memory
@@ -438,26 +433,22 @@ void vga_flip()
     if (!vga_framebuffer)
         return;
 
-    uint32_t ticks = pt_sys.timer->ticks();
-    // Do not yield in the busy-loop.
+    // Do not yield in the busy-loops.
     // Yielding here causes massive lag under Windows 98,
     // and no other games seem to do it.
 
-    // Confirm that the screen is in the middle of being drawn.
+    // Flipping the screen page in DOS is a big ordeal.
     // Why? Well, the start address gets latched exactly once,
     // at the start of the vblank interval.
     // Which means as soon as we detect a vblank it's too late,
-    // the screen will tear.
+    // the screen will have already torn.
 
-    // On testing on real hardware, this causes a lot more frameskips.
-    // Don't bother.
-    // do {
-    //} while (vga_is_not_drawing());
-    // uint32_t draw_wait = pt_sys.timer->ticks() - ticks;
+    // The below has been fleshed out through trial and error on
+    // real hardware. DOSBox will not show you screen tearing.
 
     // Flip page by setting the CRTC data address to the
     // area of VGA memory we just wrote to with vga_blit()
-    // ticks = pt_sys.timer->ticks();
+    // uint32_t ticks = pt_sys.timer->ticks();
     disable();
     outportb(VGA_CRTC_INDEX, 0x0c);
     outportb(VGA_CRTC_DATA, 0xff & (vga_page_offset >> 8));
@@ -469,6 +460,8 @@ void vga_flip()
     // Swap the VGA offset used for writes to the other
     // region of memory
     vga_page_offset = (vga_page_offset > 0) ? 0 : SCREEN_PLANE;
+
+    // Now that the page is flipped, resynchronise to after the vblank.
 
     // Wait until the start of the vertical blanking interval
     // ticks = pt_sys.timer->ticks();
@@ -487,7 +480,7 @@ void vga_flip()
 
     frame_count += 1;
     // if ((frame_count % 100) == 0)
-    //     log_print("vga_blit: draw %d flip %d vblankstart %d vblankend %d\n", draw_wait, flip_wait, vblankstart,
+    //     log_print("vga_blit: flip %d vblankstart %d vblankend %d\n", flip_wait, vblankstart,
     //     vblankend);
 }
 
@@ -559,6 +552,25 @@ void vga_set_palette_remapper(enum pt_palette_remapper remapper)
     pt_sys.palette_revision++;
 }
 
+void vga_set_overscan_colour(pt_colour_rgb* colour)
+{
+    pt_colour_rgb target = { 0x00, 0x00, 0x00 };
+    if (colour) {
+        target.r = colour->r;
+        target.g = colour->g;
+        target.b = colour->b;
+    }
+    uint8_t idx = map_colour(target.r, target.g, target.b);
+
+    // CRT mode and status - CGA/EGA/VGA input status 1 register
+    // Reading from this resets the attribute controller flipflop
+    inportb(VGA_INPUT_STATUS_1);
+
+    // EGA/VGA attribute controller - set overscan colour register
+    outportb(VGA_ATC_INDEX, 0x11);
+    outportb(VGA_ATC_INDEX, idx);
+}
+
 void vga_shutdown()
 {
     // Mode 3h - text, 16 colours, 80x25
@@ -580,15 +592,5 @@ void vga_shutdown()
     }
 }
 
-pt_drv_video dos_vga = {
-    &vga_init,
-    &vga_shutdown,
-    &vga_clear,
-    &vga_blit_image,
-    &vga_blit_line,
-    &vga_blit,
-    &vga_flip,
-    &vga_update_colour,
-    &vga_destroy_hw_image,
-    &vga_set_palette_remapper,
-};
+pt_drv_video dos_vga = { &vga_init, &vga_shutdown, &vga_clear, &vga_blit_image, &vga_blit_line, &vga_blit, &vga_flip,
+    &vga_update_palette_slot, &vga_destroy_hw_image, &vga_set_palette_remapper, &vga_set_overscan_colour };
