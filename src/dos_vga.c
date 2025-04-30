@@ -18,22 +18,6 @@
 // VGA blitter
 
 static byte vga_palette[256 * 3] = { 0 };
-static pt_colour_oklab* ega_dither_list = NULL;
-static enum pt_palette_remapper vga_remapper = REMAPPER_NONE;
-
-void set_dither_from_remapper(uint8_t idx, pt_dither* dest)
-{
-    switch (vga_remapper) {
-    case REMAPPER_EGA:
-        get_ega_dither_for_color(ega_dither_list, 256, &pt_sys.palette[idx], dest);
-        break;
-    case REMAPPER_NONE:
-    default:
-        // Don't auto change the dither.
-        // Can be manually overridden.
-        break;
-    }
-}
 
 inline byte* vga_ptr()
 {
@@ -154,11 +138,6 @@ void vga_init()
         vga_palette[3 * i + 1] = vga_remap[pt_sys.palette[i].g];
         vga_palette[3 * i + 2] = vga_remap[pt_sys.palette[i].b];
     }
-
-    // Generate the EGA dither table.
-    // Move this to the EGA driver later on.
-
-    ega_dither_list = generate_ega_dither_list();
 
     atexit(vga_shutdown);
     vga_available = true;
@@ -330,7 +309,6 @@ void vga_update_palette_slot(uint8_t idx)
     vga_palette[3 * idx + 1] = g_v;
     vga_palette[3 * idx + 2] = b_v;
     vga_load_palette_colour(idx);
-    set_dither_from_remapper(idx, &pt_sys.dither[idx]);
     log_print("vga_update_palette_slot: vga_palette[%d] = %d, %d, %d -> %d, %d, %d (dither %d %d)\n", idx, r, g, b, r_v,
         g_v, b_v, pt_sys.dither[idx].idx_a, pt_sys.dither[idx].idx_b);
 }
@@ -535,17 +513,9 @@ void vga_destroy_hw_image(void* hw_image)
 
 void vga_set_palette_remapper(enum pt_palette_remapper remapper)
 {
-    vga_remapper = remapper;
+    pt_sys.remapper = remapper;
     for (int i = 0; i < pt_sys.palette_top; i++) {
-        if (remapper == REMAPPER_NONE) {
-            // If we're explicitly setting the mapper to be NONE,
-            // clear the dither table.
-            pt_sys.dither[i].type = DITHER_NONE;
-            pt_sys.dither[i].idx_a = 0;
-            pt_sys.dither[i].idx_b = 0;
-        } else {
-            set_dither_from_remapper(i, &pt_sys.dither[i]);
-        }
+        set_dither_from_remapper(remapper, i, &pt_sys.dither[i]);
     }
 
     // Force all hardware images to be recalculated
@@ -581,10 +551,6 @@ void vga_shutdown()
     if (vga_framebuffer) {
         free(vga_framebuffer);
         vga_framebuffer = NULL;
-    }
-    if (ega_dither_list) {
-        free(ega_dither_list);
-        ega_dither_list = NULL;
     }
     char* crash = script_crash_message();
     if (crash) {

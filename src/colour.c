@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "colour.h"
+#include "log.h"
 #include "system.h"
 
 pt_colour_rgb ega_palette[] = {
@@ -23,6 +24,9 @@ pt_colour_rgb ega_palette[] = {
     { 0xff, 0xff, 0x55 },
     { 0xff, 0xff, 0xff },
 };
+
+static bool dither_tables_init = false;
+static pt_colour_oklab ega_dither_list[256] = { 0 };
 
 float clampf(float d, float min, float max)
 {
@@ -89,52 +93,57 @@ float oklab_distance(pt_colour_oklab* a, pt_colour_oklab* b)
     return (b->L - a->L) * (b->L - a->L) + (b->a - a->a) * (b->a - a->a) + (b->b - a->b) * (b->b - a->b);
 }
 
-pt_colour_oklab* generate_ega_dither_list()
+void generate_dither_tables()
 {
-    pt_colour_oklab* ega_oklab = (pt_colour_oklab*)calloc(16, sizeof(pt_colour_oklab));
+    if (dither_tables_init)
+        return;
+
+    pt_colour_oklab ega_oklab[16];
     for (int i = 0; i < 16; i++) {
         rgb8_to_oklab(&ega_palette[i], &ega_oklab[i]);
     }
-    pt_colour_oklab* ega_halftone_oklab = (pt_colour_oklab*)calloc(256, sizeof(pt_colour_oklab));
     for (int i = 0; i < 256; i++) {
-        oklab_colour_blend(&ega_oklab[i / 16], &ega_oklab[i % 16], 0.5f, &ega_halftone_oklab[i]);
+        oklab_colour_blend(&ega_oklab[i / 16], &ega_oklab[i % 16], 0.5f, &ega_dither_list[i]);
     }
     // erase a bunch of combinations which look bad.
     // black should only be mixed with dark-range colours
     int light[] = { 7, 9, 10, 11, 12, 13, 14, 15 };
     for (int i = 0; i < 8; i++) {
         int j = light[i];
-        ega_halftone_oklab[0 + j].L = ega_oklab[0].L;
-        ega_halftone_oklab[0 + j].a = ega_oklab[0].a;
-        ega_halftone_oklab[0 + j].b = ega_oklab[0].b;
-        ega_halftone_oklab[j * 16 + 0].L = ega_oklab[0].L;
-        ega_halftone_oklab[j * 16 + 0].a = ega_oklab[0].a;
-        ega_halftone_oklab[j * 16 + 0].b = ega_oklab[0].b;
+        ega_dither_list[0 + j].L = ega_oklab[0].L;
+        ega_dither_list[0 + j].a = ega_oklab[0].a;
+        ega_dither_list[0 + j].b = ega_oklab[0].b;
+        ega_dither_list[j * 16 + 0].L = ega_oklab[0].L;
+        ega_dither_list[j * 16 + 0].a = ega_oklab[0].a;
+        ega_dither_list[j * 16 + 0].b = ega_oklab[0].b;
     }
 
     // white should only be mixed with light-range colours
     int dark[] = { 0, 1, 2, 3, 4, 5, 6, 8 };
     for (int i = 0; i < 8; i++) {
         int j = dark[i];
-        ega_halftone_oklab[15 + j].L = ega_oklab[0].L;
-        ega_halftone_oklab[15 + j].a = ega_oklab[0].a;
-        ega_halftone_oklab[15 + j].b = ega_oklab[0].b;
-        ega_halftone_oklab[j * 16 + 15].L = ega_oklab[0].L;
-        ega_halftone_oklab[j * 16 + 15].a = ega_oklab[0].a;
-        ega_halftone_oklab[j * 16 + 15].b = ega_oklab[0].b;
+        ega_dither_list[15 + j].L = ega_oklab[0].L;
+        ega_dither_list[15 + j].a = ega_oklab[0].a;
+        ega_dither_list[15 + j].b = ega_oklab[0].b;
+        ega_dither_list[j * 16 + 15].L = ega_oklab[0].L;
+        ega_dither_list[j * 16 + 15].a = ega_oklab[0].a;
+        ega_dither_list[j * 16 + 15].b = ega_oklab[0].b;
     }
 
-    free(ega_oklab);
-    return ega_halftone_oklab;
+    dither_tables_init = true;
+    return;
 }
 
-void get_ega_dither_for_color(pt_colour_oklab* ega_dither_list, size_t n, pt_colour_rgb* src, pt_dither* dest)
+void get_ega_dither_for_color(pt_colour_rgb* src, pt_dither* dest)
 {
+    if (!dither_tables_init) {
+        generate_dither_tables();
+    }
     pt_colour_oklab src_oklab = { 0 };
     rgb8_to_oklab(src, &src_oklab);
     int nearest = 0;
     float nearest_val = oklab_distance(&src_oklab, &ega_dither_list[0]);
-    for (int i = 1; i < n; i++) {
+    for (int i = 1; i < 256; i++) {
         float new_val = oklab_distance(&src_oklab, &ega_dither_list[i]);
         if (new_val < nearest_val) {
             nearest_val = new_val;
@@ -147,6 +156,28 @@ void get_ega_dither_for_color(pt_colour_oklab* ega_dither_list, size_t n, pt_col
     dest->idx_b = nearest % 16;
 }
 
+void set_dither_from_remapper(enum pt_palette_remapper remapper, uint8_t idx, pt_dither* dest)
+{
+    switch (remapper) {
+    case REMAPPER_EGA:
+        get_ega_dither_for_color(&pt_sys.palette[idx], dest);
+        break;
+    case REMAPPER_NONE:
+        // If we're explicitly setting the mapper to be NONE,
+        // clear the dither table.
+        dest->type = DITHER_NONE;
+        dest->idx_a = 0;
+        dest->idx_b = 0;
+        break;
+    default:
+        // Don't auto change the dither.
+        // Can be manually overridden.
+        break;
+    }
+    log_print("set_dither_from_remapper: %d (%02x %02x %02x) -> %d %02x %02x\n", idx, pt_sys.palette[idx].r,
+        pt_sys.palette[idx].g, pt_sys.palette[idx].b, dest->type, dest->idx_a, dest->idx_b);
+}
+
 uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b)
 {
     for (int i = 0; i < pt_sys.palette_top; i++) {
@@ -154,12 +185,13 @@ uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b)
             return i;
     }
     // add a new colour
-    if (pt_sys.palette_top < 256) {
+    if (pt_sys.palette_top < 255) {
         int idx = pt_sys.palette_top;
         pt_sys.palette_top++;
         pt_sys.palette[idx].r = r;
         pt_sys.palette[idx].g = g;
         pt_sys.palette[idx].b = b;
+        set_dither_from_remapper(pt_sys.remapper, idx, &pt_sys.dither[idx]);
         pt_sys.video->update_palette_slot(idx);
         pt_sys.palette_revision++;
         return idx;
@@ -168,7 +200,7 @@ uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b)
     // Formula borrowed from ScummVM's palette code.
     uint8_t best_color = 0;
     uint32_t min = 0xffffffff;
-    for (int i = 0; i < 256; ++i) {
+    for (int i = 0; i < 255; ++i) {
         int rmean = (pt_sys.palette[i].r + r) / 2;
         int dr = pt_sys.palette[i].r - r;
         int dg = pt_sys.palette[i].g - g;

@@ -48,8 +48,8 @@ enum pt_palette_remapper {
 
 extern pt_colour_rgb ega_palette[16];
 
-pt_colour_oklab* generate_ega_dither_list();
-void get_ega_dither_for_color(pt_colour_oklab* ega_dither_list, size_t n, pt_colour_rgb* src, pt_dither* dest);
+void set_dither_from_remapper(enum pt_palette_remapper remapper, uint8_t idx, pt_dither* dest);
+void get_ega_dither_for_color(pt_colour_rgb* src, pt_dither* dest);
 uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b);
 void dither_set_hint(pt_colour_rgb* src, enum pt_dither_type type, pt_colour_rgb* a, pt_colour_rgb* b);
 uint8_t dither_calc(uint8_t src, int16_t x, int16_t y);

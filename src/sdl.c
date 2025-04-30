@@ -131,23 +131,43 @@ pt_image_sdl* sdlvideo_convert_image(pt_image* image)
 {
     pt_image_sdl* result = (pt_image_sdl*)calloc(1, sizeof(pt_image_sdl));
     SDL_Surface* draw = SDL_CreateSurface(image->width, image->height, SDL_PIXELFORMAT_INDEX8);
-    SDL_Palette* pal = SDL_CreatePalette(256);
+
+    // Create a mapping between image colours and global palette
     byte palette_map[256];
+    byte palette_inv[256];
     for (int i = 0; i < 256; i++) {
-        palette_map[i] = map_colour(image->palette[3 * i], image->palette[3 * i + 1], image->palette[3 * i + 2]);
-        pal->colors[i].r = pt_sys.palette[palette_map[i]].r;
-        pal->colors[i].g = pt_sys.palette[palette_map[i]].g;
-        pal->colors[i].b = pt_sys.palette[palette_map[i]].b;
-        pal->colors[i].a = ((i == image->colourkey) || (image->palette_alpha[i] == 0x00)) ? SDL_ALPHA_TRANSPARENT
-                                                                                          : image->palette_alpha[i];
+        uint8_t src = (image->palette_alpha[i] == 0)
+            ? 0xff
+            : map_colour(image->palette[3 * i], image->palette[3 * i + 1], image->palette[3 * i + 2]);
+        palette_map[i] = src;
+        palette_inv[src] = i;
     }
+
+    // Create an image palette based on the global palette.
+    SDL_Palette* pal = SDL_CreatePalette(256);
+    for (int i = 0; i < 255; i++) {
+        pal->colors[i].r = pt_sys.palette[i].r;
+        pal->colors[i].g = pt_sys.palette[i].g;
+        pal->colors[i].b = pt_sys.palette[i].b;
+        pal->colors[i].a = 0xff;
+    }
+    // The 256th colour is used to indicate transparency, as that's how SDL rolls.
+    // This may be an issue if we completely deplete the palette space.
+    pal->colors[255].r = 0x00;
+    pal->colors[255].g = 0x00;
+    pal->colors[255].b = 0x00;
+    pal->colors[255].a = 0x00;
 
     SDL_SetSurfacePalette(draw, pal);
     result->revision = pt_sys.palette_revision;
     for (int y = 0; y < draw->h; y++) {
         for (int x = 0; x < draw->w; x++) {
             byte pixel = image->data[y * image->pitch + x];
-            ((uint8_t*)draw->pixels)[y * draw->pitch + x] = dither_calc(pixel, x, y);
+            if (palette_map[pixel] == 0xff || (pixel == image->colourkey)) {
+                ((uint8_t*)draw->pixels)[y * draw->pitch + x] = 0xff;
+            } else {
+                ((uint8_t*)draw->pixels)[y * draw->pitch + x] = dither_calc(palette_map[pixel], x, y);
+            }
         }
     }
 
@@ -271,6 +291,13 @@ void sdlvideo_update_palette_slot(uint8_t idx)
 
 void sdlvideo_set_palette_remapper(enum pt_palette_remapper remapper)
 {
+    pt_sys.remapper = remapper;
+    for (int i = 0; i < pt_sys.palette_top; i++) {
+        set_dither_from_remapper(remapper, i, &pt_sys.dither[i]);
+    }
+
+    // Force all hardware images to be recalculated
+    pt_sys.palette_revision++;
 }
 
 void sdlvideo_set_overscan_colour(pt_colour_rgb* colour)

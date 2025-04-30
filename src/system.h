@@ -116,6 +116,7 @@ struct pt_system {
     int palette_top;
     int palette_revision;
     pt_colour_rgb palette[256];
+    enum pt_palette_remapper remapper;
     uint8_t overscan;
     pt_dither dither[256];
 };
