@@ -25,8 +25,10 @@ struct pt_colour_oklab {
 enum pt_dither_type {
     DITHER_NONE = 0,
     DITHER_FILL_A,
-    DITHER_D50,
     DITHER_FILL_B,
+    DITHER_QUARTER,
+    DITHER_QUARTER_ALT,
+    DITHER_HALF,
 };
 
 struct pt_dither {

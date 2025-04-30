@@ -26,7 +26,9 @@ pt_colour_rgb ega_palette[] = {
 };
 
 static bool dither_tables_init = false;
-static pt_colour_oklab ega_dither_list[256] = { 0 };
+static pt_colour_oklab ega_oklab[16] = { 0 };
+static pt_colour_oklab ega_dither_half[256] = { 0 };
+static pt_colour_oklab ega_dither_quarter[256] = { 0 };
 
 float clampf(float d, float min, float max)
 {
@@ -98,36 +100,48 @@ void generate_dither_tables()
     if (dither_tables_init)
         return;
 
-    pt_colour_oklab ega_oklab[16];
     for (int i = 0; i < 16; i++) {
         rgb8_to_oklab(&ega_palette[i], &ega_oklab[i]);
     }
     for (int i = 0; i < 256; i++) {
-        oklab_colour_blend(&ega_oklab[i / 16], &ega_oklab[i % 16], 0.5f, &ega_dither_list[i]);
+        oklab_colour_blend(&ega_oklab[i / 16], &ega_oklab[i % 16], 0.5f, &ega_dither_half[i]);
+        oklab_colour_blend(&ega_oklab[i / 16], &ega_oklab[i % 16], 0.25f, &ega_dither_quarter[i]);
     }
     // erase a bunch of combinations which look bad.
     // black should only be mixed with dark-range colours
     int light[] = { 7, 9, 10, 11, 12, 13, 14, 15 };
     for (int i = 0; i < 8; i++) {
         int j = light[i];
-        ega_dither_list[0 + j].L = ega_oklab[0].L;
-        ega_dither_list[0 + j].a = ega_oklab[0].a;
-        ega_dither_list[0 + j].b = ega_oklab[0].b;
-        ega_dither_list[j * 16 + 0].L = ega_oklab[0].L;
-        ega_dither_list[j * 16 + 0].a = ega_oklab[0].a;
-        ega_dither_list[j * 16 + 0].b = ega_oklab[0].b;
+        ega_dither_half[0 + j].L = ega_oklab[0].L;
+        ega_dither_half[0 + j].a = ega_oklab[0].a;
+        ega_dither_half[0 + j].b = ega_oklab[0].b;
+        ega_dither_half[j * 16 + 0].L = ega_oklab[0].L;
+        ega_dither_half[j * 16 + 0].a = ega_oklab[0].a;
+        ega_dither_half[j * 16 + 0].b = ega_oklab[0].b;
+        ega_dither_quarter[0 + j].L = ega_oklab[0].L;
+        ega_dither_quarter[0 + j].a = ega_oklab[0].a;
+        ega_dither_quarter[0 + j].b = ega_oklab[0].b;
+        ega_dither_quarter[j * 16 + 0].L = ega_oklab[0].L;
+        ega_dither_quarter[j * 16 + 0].a = ega_oklab[0].a;
+        ega_dither_quarter[j * 16 + 0].b = ega_oklab[0].b;
     }
 
     // white should only be mixed with light-range colours
     int dark[] = { 0, 1, 2, 3, 4, 5, 6, 8 };
     for (int i = 0; i < 8; i++) {
         int j = dark[i];
-        ega_dither_list[15 + j].L = ega_oklab[0].L;
-        ega_dither_list[15 + j].a = ega_oklab[0].a;
-        ega_dither_list[15 + j].b = ega_oklab[0].b;
-        ega_dither_list[j * 16 + 15].L = ega_oklab[0].L;
-        ega_dither_list[j * 16 + 15].a = ega_oklab[0].a;
-        ega_dither_list[j * 16 + 15].b = ega_oklab[0].b;
+        ega_dither_half[15 + j].L = ega_oklab[0].L;
+        ega_dither_half[15 + j].a = ega_oklab[0].a;
+        ega_dither_half[15 + j].b = ega_oklab[0].b;
+        ega_dither_half[j * 16 + 15].L = ega_oklab[0].L;
+        ega_dither_half[j * 16 + 15].a = ega_oklab[0].a;
+        ega_dither_half[j * 16 + 15].b = ega_oklab[0].b;
+        ega_dither_quarter[15 + j].L = ega_oklab[0].L;
+        ega_dither_quarter[15 + j].a = ega_oklab[0].a;
+        ega_dither_quarter[15 + j].b = ega_oklab[0].b;
+        ega_dither_quarter[j * 16 + 15].L = ega_oklab[0].L;
+        ega_dither_quarter[j * 16 + 15].a = ega_oklab[0].a;
+        ega_dither_quarter[j * 16 + 15].b = ega_oklab[0].b;
     }
 
     dither_tables_init = true;
@@ -139,21 +153,56 @@ void get_ega_dither_for_color(pt_colour_rgb* src, pt_dither* dest)
     if (!dither_tables_init) {
         generate_dither_tables();
     }
+    uint8_t src_col = map_colour(src->r, src->g, src->b);
+    if (src_col < 16) {
+        dest->type = DITHER_NONE;
+        return;
+    }
+
     pt_colour_oklab src_oklab = { 0 };
     rgb8_to_oklab(src, &src_oklab);
+
     int nearest = 0;
-    float nearest_val = oklab_distance(&src_oklab, &ega_dither_list[0]);
-    for (int i = 1; i < 256; i++) {
-        float new_val = oklab_distance(&src_oklab, &ega_dither_list[i]);
+    float nearest_val = oklab_distance(&src_oklab, &ega_oklab[0]);
+    for (int i = 1; i < 16; i++) {
+        float new_val = oklab_distance(&src_oklab, &ega_oklab[i]);
         if (new_val < nearest_val) {
             nearest_val = new_val;
             nearest = i;
         }
     }
+    dest->type = DITHER_FILL_A;
+    dest->idx_a = nearest;
+    dest->idx_b = 0;
 
-    dest->type = DITHER_D50;
-    dest->idx_a = nearest / 16;
-    dest->idx_b = nearest % 16;
+    /*int half_nearest = 0;
+    float half_nearest_val = oklab_distance(&src_oklab, &ega_dither_half[0]);
+    for (int i = 1; i < 256; i++) {
+        float new_val = oklab_distance(&src_oklab, &ega_dither_half[i]);
+        if (new_val < half_nearest_val) {
+            half_nearest_val = new_val;
+            half_nearest = i;
+        }
+    }
+    int quarter_nearest = 0;
+    float quarter_nearest_val = oklab_distance(&src_oklab, &ega_dither_quarter[0]);
+    for (int i = 1; i < 256; i++) {
+        float new_val = oklab_distance(&src_oklab, &ega_dither_quarter[i]);
+        if (new_val < quarter_nearest_val) {
+            quarter_nearest_val = new_val;
+            quarter_nearest = i;
+        }
+    }
+
+    if (quarter_nearest_val < half_nearest_val) {
+        dest->type = DITHER_QUARTER_ALT;
+        dest->idx_a = quarter_nearest / 16;
+        dest->idx_b = quarter_nearest % 16;
+    } else {
+        dest->type = DITHER_HALF;
+        dest->idx_a = half_nearest / 16;
+        dest->idx_b = half_nearest % 16;
+    }*/
 }
 
 void set_dither_from_remapper(enum pt_palette_remapper remapper, uint8_t idx, pt_dither* dest)
@@ -230,8 +279,12 @@ uint8_t dither_calc(uint8_t src, int16_t x, int16_t y)
 {
     pt_dither* dither = &pt_sys.dither[src];
     switch (dither->type) {
-    case DITHER_D50:
-        return x + y % 2 ? dither->idx_b : dither->idx_a;
+    case DITHER_QUARTER:
+        return (y % 2) ? dither->idx_a : ((x % 2) ? dither->idx_a : dither->idx_b);
+    case DITHER_QUARTER_ALT:
+        return ((2 * (y % 2) + x) % 4 == 3) ? dither->idx_a : dither->idx_b;
+    case DITHER_HALF:
+        return ((x + y) % 2) ? dither->idx_b : dither->idx_a;
     case DITHER_FILL_A:
         return dither->idx_a;
     case DITHER_FILL_B:

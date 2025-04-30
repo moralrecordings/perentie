@@ -874,11 +874,6 @@ PTSetOverscanColour = function(colour)
     return _PTSetOverscanColour(colour)
 end
 
-DITHER_NONE = 0
-DITHER_FILL_A = 1
-DITHER_D50 = 2
-DITHER_FILL_B = 3
-
 --- Set a dithering hint. Used for remapping a VGA-style palette to a smaller colour range such as EGA or CGA.
 -- @tparam table src Source colour, table containing three 8-bit numbers.
 -- @tparam integer dither_type Type of dithering algorithm to use.
