@@ -48,10 +48,20 @@ enum pt_palette_remapper {
     REMAPPER_CGA2B = 7,
 };
 
+enum pt_palette_remapper_mode {
+    REMAPPER_MODE_NEAREST = 0,
+    REMAPPER_MODE_HALF = 1,
+    REMAPPER_MODE_QUARTER = 2,
+    REMAPPER_MODE_QUARTER_ALT = 3,
+    REMAPPER_MODE_HALF_NEAREST = 4,
+    REMAPPER_MODE_QUARTER_NEAREST = 5,
+};
+
 extern pt_colour_rgb ega_palette[16];
 
-void set_dither_from_remapper(enum pt_palette_remapper remapper, uint8_t idx, pt_dither* dest);
-void get_ega_dither_for_color(pt_colour_rgb* src, pt_dither* dest);
+void set_dither_from_remapper(
+    enum pt_palette_remapper remapper, enum pt_palette_remapper_mode mode, uint8_t idx, pt_dither* dest);
+void get_ega_dither_for_colour(enum pt_palette_remapper_mode mode, pt_colour_rgb* src, pt_dither* dest);
 uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b);
 void dither_set_hint(pt_colour_rgb* src, enum pt_dither_type type, pt_colour_rgb* a, pt_colour_rgb* b);
 uint8_t dither_calc(uint8_t src, int16_t x, int16_t y);

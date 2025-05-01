@@ -134,13 +134,11 @@ pt_image_sdl* sdlvideo_convert_image(pt_image* image)
 
     // Create a mapping between image colours and global palette
     byte palette_map[256];
-    byte palette_inv[256];
     for (int i = 0; i < 256; i++) {
         uint8_t src = (image->palette_alpha[i] == 0)
             ? 0xff
             : map_colour(image->palette[3 * i], image->palette[3 * i + 1], image->palette[3 * i + 2]);
         palette_map[i] = src;
-        palette_inv[src] = i;
     }
 
     // Create an image palette based on the global palette.
@@ -289,11 +287,12 @@ void sdlvideo_update_palette_slot(uint8_t idx)
     // set_dither_from_remapper(idx, &pt_sys.dither[idx]);
 }
 
-void sdlvideo_set_palette_remapper(enum pt_palette_remapper remapper)
+void sdlvideo_set_palette_remapper(enum pt_palette_remapper remapper, enum pt_palette_remapper_mode mode)
 {
     pt_sys.remapper = remapper;
+    pt_sys.remapper_mode = mode;
     for (int i = 0; i < pt_sys.palette_top; i++) {
-        set_dither_from_remapper(remapper, i, &pt_sys.dither[i]);
+        set_dither_from_remapper(remapper, mode, i, &pt_sys.dither[i]);
     }
 
     // Force all hardware images to be recalculated

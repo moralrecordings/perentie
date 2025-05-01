@@ -863,8 +863,8 @@ REMAPPER_CGA2B = 7
 --- Set the automatic palette remapper to use.
 -- This will remove any of the current dithering hints and replace them with the output of the remapper. Subsequent hints can be added.
 -- @tparam integer remapper Remapper to use.
-PTSetPaletteRemapper = function(remapper)
-    return _PTSetPaletteRemapper(remapper)
+PTSetPaletteRemapper = function(remapper, mode)
+    return _PTSetPaletteRemapper(remapper, mode)
 end
 
 --- Set the overscan colour.
@@ -1346,7 +1346,9 @@ PTLinear = function(points)
         end
         local prog = (#points - 1) * progress
         local lower = math.floor(prog)
-        return points[1 + lower] + (points[2 + lower] - points[1 + lower]) * (prog - lower)
+        local upper = math.min(#points, lower + 2)
+        --PTLog("PTLinear: %s %d %f\n", inspect(points), lower, prog)
+        return points[1 + lower] + (points[upper] - points[1 + lower]) * (prog - lower)
     end
 end
 

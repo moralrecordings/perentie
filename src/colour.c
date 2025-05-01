@@ -25,6 +25,71 @@ pt_colour_rgb ega_palette[] = {
     { 0xff, 0xff, 0xff },
 };
 
+// clang-format off
+// Block a bunch of auto-dithering combinations which look bad.
+uint8_t ega_banned_dithering[] = {
+    // Black should only be mixed with dark-range colours
+    0, 7,
+    0, 9,
+    0, 10,
+    0, 11,
+    0, 12,
+    0, 13,
+    0, 14,
+    // White should only be mixed with light-range colours
+    0, 15,
+    1, 15,
+    2, 15,
+    3, 15,
+    4, 15,
+    5, 15,
+    6, 15,
+    8, 15,
+    // Dark blue
+    1, 2,
+    1, 4,
+    1, 10,
+    1, 12,
+    1, 14,
+    // Dark green
+    2, 4,
+    2, 5,
+    2, 12,
+    2, 13,
+    // Dark cyan
+    3, 4,
+    3, 5,
+    3, 6,
+    3, 12,
+    3, 13,
+    3, 14,
+    // Dark red
+    4, 9,
+    4, 10,
+    4, 11,
+    // Dark magenta
+    5, 6,
+    5, 10,
+    5, 11,
+    5, 14,
+    // Brown
+    6, 9,
+    6, 10,
+    6, 11,
+    6, 13,
+    // Bright blue
+    9, 10,
+    9, 12,
+    9, 14,
+    // Bright green
+    10, 12,
+    10, 13,
+    // Bright cyan
+    11, 12,
+    11, 13,
+};
+// clang-format on
+
 static bool dither_tables_init = false;
 static pt_colour_oklab ega_oklab[16] = { 0 };
 static pt_colour_oklab ega_dither_half[256] = { 0 };
@@ -90,9 +155,34 @@ void oklab_colour_blend(pt_colour_oklab* a, pt_colour_oklab* b, float alpha, pt_
     return;
 }
 
+float oklab_luma_distance(pt_colour_oklab* a, pt_colour_oklab* b)
+{
+    return (b->L - a->L) * (b->L - a->L);
+}
+
+float oklab_chroma_distance(pt_colour_oklab* a, pt_colour_oklab* b)
+{
+    return (b->a - a->a) * (b->a - a->a) + (b->b - a->b) * (b->b - a->b);
+}
+
 float oklab_distance(pt_colour_oklab* a, pt_colour_oklab* b)
 {
-    return (b->L - a->L) * (b->L - a->L) + (b->a - a->a) * (b->a - a->a) + (b->b - a->b) * (b->b - a->b);
+    return oklab_luma_distance(a, b) + oklab_chroma_distance(a, b);
+}
+
+pt_colour_oklab* oklab_nearest(pt_colour_oklab* src, pt_colour_oklab* a, pt_colour_oklab* b)
+{
+    return oklab_distance(src, a) < oklab_distance(src, b) ? a : b;
+}
+
+pt_colour_oklab* oklab_nearest_luma(pt_colour_oklab* src, pt_colour_oklab* a, pt_colour_oklab* b)
+{
+    return oklab_luma_distance(src, a) < oklab_luma_distance(src, b) ? a : b;
+}
+
+pt_colour_oklab* oklab_nearest_chroma(pt_colour_oklab* src, pt_colour_oklab* a, pt_colour_oklab* b)
+{
+    return oklab_chroma_distance(src, a) < oklab_chroma_distance(src, b) ? a : b;
 }
 
 void generate_dither_tables()
@@ -105,50 +195,31 @@ void generate_dither_tables()
     }
     for (int i = 0; i < 256; i++) {
         oklab_colour_blend(&ega_oklab[i / 16], &ega_oklab[i % 16], 0.5f, &ega_dither_half[i]);
-        oklab_colour_blend(&ega_oklab[i / 16], &ega_oklab[i % 16], 0.25f, &ega_dither_quarter[i]);
+        oklab_colour_blend(&ega_oklab[i / 16], &ega_oklab[i % 16], 0.75f, &ega_dither_quarter[i]);
     }
     // erase a bunch of combinations which look bad.
-    // black should only be mixed with dark-range colours
-    int light[] = { 7, 9, 10, 11, 12, 13, 14, 15 };
-    for (int i = 0; i < 8; i++) {
-        int j = light[i];
-        ega_dither_half[0 + j].L = ega_oklab[0].L;
-        ega_dither_half[0 + j].a = ega_oklab[0].a;
-        ega_dither_half[0 + j].b = ega_oklab[0].b;
-        ega_dither_half[j * 16 + 0].L = ega_oklab[0].L;
-        ega_dither_half[j * 16 + 0].a = ega_oklab[0].a;
-        ega_dither_half[j * 16 + 0].b = ega_oklab[0].b;
-        ega_dither_quarter[0 + j].L = ega_oklab[0].L;
-        ega_dither_quarter[0 + j].a = ega_oklab[0].a;
-        ega_dither_quarter[0 + j].b = ega_oklab[0].b;
-        ega_dither_quarter[j * 16 + 0].L = ega_oklab[0].L;
-        ega_dither_quarter[j * 16 + 0].a = ega_oklab[0].a;
-        ega_dither_quarter[j * 16 + 0].b = ega_oklab[0].b;
-    }
-
-    // white should only be mixed with light-range colours
-    int dark[] = { 0, 1, 2, 3, 4, 5, 6, 8 };
-    for (int i = 0; i < 8; i++) {
-        int j = dark[i];
-        ega_dither_half[15 + j].L = ega_oklab[0].L;
-        ega_dither_half[15 + j].a = ega_oklab[0].a;
-        ega_dither_half[15 + j].b = ega_oklab[0].b;
-        ega_dither_half[j * 16 + 15].L = ega_oklab[0].L;
-        ega_dither_half[j * 16 + 15].a = ega_oklab[0].a;
-        ega_dither_half[j * 16 + 15].b = ega_oklab[0].b;
-        ega_dither_quarter[15 + j].L = ega_oklab[0].L;
-        ega_dither_quarter[15 + j].a = ega_oklab[0].a;
-        ega_dither_quarter[15 + j].b = ega_oklab[0].b;
-        ega_dither_quarter[j * 16 + 15].L = ega_oklab[0].L;
-        ega_dither_quarter[j * 16 + 15].a = ega_oklab[0].a;
-        ega_dither_quarter[j * 16 + 15].b = ega_oklab[0].b;
+    for (int i = 0; i < (sizeof(ega_banned_dithering) >> 1); i++) {
+        int a = ega_banned_dithering[i << 1];
+        int b = ega_banned_dithering[(i << 1) + 1];
+        ega_dither_half[b * 16 + a].L = ega_oklab[0].L;
+        ega_dither_half[b * 16 + a].a = ega_oklab[0].a;
+        ega_dither_half[b * 16 + a].b = ega_oklab[0].b;
+        ega_dither_half[a * 16 + b].L = ega_oklab[0].L;
+        ega_dither_half[a * 16 + b].a = ega_oklab[0].a;
+        ega_dither_half[a * 16 + b].b = ega_oklab[0].b;
+        ega_dither_quarter[b * 16 + a].L = ega_oklab[0].L;
+        ega_dither_quarter[b * 16 + a].a = ega_oklab[0].a;
+        ega_dither_quarter[b * 16 + a].b = ega_oklab[0].b;
+        ega_dither_quarter[a * 16 + b].L = ega_oklab[0].L;
+        ega_dither_quarter[a * 16 + b].a = ega_oklab[0].a;
+        ega_dither_quarter[a * 16 + b].b = ega_oklab[0].b;
     }
 
     dither_tables_init = true;
     return;
 }
 
-void get_ega_dither_for_color(pt_colour_rgb* src, pt_dither* dest)
+void get_ega_dither_for_colour(enum pt_palette_remapper_mode mode, pt_colour_rgb* src, pt_dither* dest)
 {
     if (!dither_tables_init) {
         generate_dither_tables();
@@ -162,20 +233,23 @@ void get_ega_dither_for_color(pt_colour_rgb* src, pt_dither* dest)
     pt_colour_oklab src_oklab = { 0 };
     rgb8_to_oklab(src, &src_oklab);
 
-    int nearest = 0;
-    float nearest_val = oklab_distance(&src_oklab, &ega_oklab[0]);
-    for (int i = 1; i < 16; i++) {
-        float new_val = oklab_distance(&src_oklab, &ega_oklab[i]);
-        if (new_val < nearest_val) {
-            nearest_val = new_val;
-            nearest = i;
+    if (mode == REMAPPER_MODE_NEAREST) {
+        int nearest = 0;
+        float nearest_val = oklab_distance(&src_oklab, &ega_oklab[0]);
+        for (int i = 1; i < 16; i++) {
+            float new_val = oklab_distance(&src_oklab, &ega_oklab[i]);
+            if (new_val < nearest_val) {
+                nearest_val = new_val;
+                nearest = i;
+            }
         }
+        dest->type = DITHER_FILL_A;
+        dest->idx_a = nearest;
+        dest->idx_b = 0;
+        return;
     }
-    dest->type = DITHER_FILL_A;
-    dest->idx_a = nearest;
-    dest->idx_b = 0;
 
-    /*int half_nearest = 0;
+    int half_nearest = 0;
     float half_nearest_val = oklab_distance(&src_oklab, &ega_dither_half[0]);
     for (int i = 1; i < 256; i++) {
         float new_val = oklab_distance(&src_oklab, &ega_dither_half[i]);
@@ -184,6 +258,21 @@ void get_ega_dither_for_color(pt_colour_rgb* src, pt_dither* dest)
             half_nearest = i;
         }
     }
+    if (mode == REMAPPER_MODE_HALF) {
+        dest->type = DITHER_HALF;
+        dest->idx_a = half_nearest / 16;
+        dest->idx_b = half_nearest % 16;
+        return;
+    } else if (mode == REMAPPER_MODE_HALF_NEAREST) {
+        dest->type = oklab_nearest(&src_oklab, &ega_dither_half[dest->idx_a], &ega_dither_half[dest->idx_b])
+                == &ega_dither_half[dest->idx_a]
+            ? DITHER_FILL_A
+            : DITHER_FILL_B;
+        dest->idx_a = half_nearest / 16;
+        dest->idx_b = half_nearest % 16;
+        return;
+    }
+
     int quarter_nearest = 0;
     float quarter_nearest_val = oklab_distance(&src_oklab, &ega_dither_quarter[0]);
     for (int i = 1; i < 256; i++) {
@@ -195,21 +284,39 @@ void get_ega_dither_for_color(pt_colour_rgb* src, pt_dither* dest)
     }
 
     if (quarter_nearest_val < half_nearest_val) {
-        dest->type = DITHER_QUARTER_ALT;
         dest->idx_a = quarter_nearest / 16;
         dest->idx_b = quarter_nearest % 16;
+        if (mode == REMAPPER_MODE_QUARTER) {
+            dest->type = DITHER_QUARTER;
+        } else if (mode == REMAPPER_MODE_QUARTER_ALT) {
+            dest->type = DITHER_QUARTER_ALT;
+        } else if (mode == REMAPPER_MODE_QUARTER_NEAREST) {
+            dest->type = oklab_nearest(&src_oklab, &ega_dither_quarter[dest->idx_a], &ega_dither_quarter[dest->idx_b])
+                    == &ega_dither_quarter[dest->idx_a]
+                ? DITHER_FILL_A
+                : DITHER_FILL_B;
+        }
+
     } else {
-        dest->type = DITHER_HALF;
         dest->idx_a = half_nearest / 16;
         dest->idx_b = half_nearest % 16;
-    }*/
+        if (mode == REMAPPER_MODE_QUARTER || mode == REMAPPER_MODE_QUARTER_ALT) {
+            dest->type = DITHER_HALF;
+        } else if (mode == REMAPPER_MODE_QUARTER_NEAREST) {
+            dest->type = oklab_nearest(&src_oklab, &ega_dither_half[dest->idx_a], &ega_dither_half[dest->idx_b])
+                    == &ega_dither_half[dest->idx_a]
+                ? DITHER_FILL_A
+                : DITHER_FILL_B;
+        }
+    }
 }
 
-void set_dither_from_remapper(enum pt_palette_remapper remapper, uint8_t idx, pt_dither* dest)
+void set_dither_from_remapper(
+    enum pt_palette_remapper remapper, enum pt_palette_remapper_mode mode, uint8_t idx, pt_dither* dest)
 {
     switch (remapper) {
     case REMAPPER_EGA:
-        get_ega_dither_for_color(&pt_sys.palette[idx], dest);
+        get_ega_dither_for_colour(mode, &pt_sys.palette[idx], dest);
         break;
     case REMAPPER_NONE:
         // If we're explicitly setting the mapper to be NONE,
@@ -240,14 +347,14 @@ uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b)
         pt_sys.palette[idx].r = r;
         pt_sys.palette[idx].g = g;
         pt_sys.palette[idx].b = b;
-        set_dither_from_remapper(pt_sys.remapper, idx, &pt_sys.dither[idx]);
+        set_dither_from_remapper(pt_sys.remapper, pt_sys.remapper_mode, idx, &pt_sys.dither[idx]);
         pt_sys.video->update_palette_slot(idx);
         pt_sys.palette_revision++;
         return idx;
     }
     // Out of palette slots; need to macguyver the nearest colour.
     // Formula borrowed from ScummVM's palette code.
-    uint8_t best_color = 0;
+    uint8_t best_colour = 0;
     uint32_t min = 0xffffffff;
     for (int i = 0; i < 255; ++i) {
         int rmean = (pt_sys.palette[i].r + r) / 2;
@@ -257,11 +364,11 @@ uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b)
 
         uint32_t dist_squared = (((512 + rmean) * dr * dr) >> 8) + 4 * dg * dg + (((767 - rmean) * db * db) >> 8);
         if (dist_squared < min) {
-            best_color = i;
+            best_colour = i;
             min = dist_squared;
         }
     }
-    return best_color;
+    return best_colour;
 }
 
 void dither_set_hint(pt_colour_rgb* src, enum pt_dither_type type, pt_colour_rgb* a, pt_colour_rgb* b)
@@ -280,7 +387,7 @@ uint8_t dither_calc(uint8_t src, int16_t x, int16_t y)
     pt_dither* dither = &pt_sys.dither[src];
     switch (dither->type) {
     case DITHER_QUARTER:
-        return (y % 2) ? dither->idx_a : ((x % 2) ? dither->idx_a : dither->idx_b);
+        return (y % 2) ? dither->idx_b : ((x % 2) ? dither->idx_b : dither->idx_a);
     case DITHER_QUARTER_ALT:
         return ((2 * (y % 2) + x) % 4 == 3) ? dither->idx_a : dither->idx_b;
     case DITHER_HALF:

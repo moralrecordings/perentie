@@ -100,7 +100,7 @@ struct pt_drv_video {
     void (*flip)();
     void (*update_palette_slot)(uint8_t idx);
     void (*destroy_hw_image)(void* hw_image);
-    void (*set_palette_remapper)(enum pt_palette_remapper remapper);
+    void (*set_palette_remapper)(enum pt_palette_remapper remapper, enum pt_palette_remapper_mode mode);
     void (*set_overscan_colour)(pt_colour_rgb* colour);
 };
 
@@ -117,6 +117,7 @@ struct pt_system {
     int palette_revision;
     pt_colour_rgb palette[256];
     enum pt_palette_remapper remapper;
+    enum pt_palette_remapper_mode remapper_mode;
     uint8_t overscan;
     pt_dither dither[256];
 };

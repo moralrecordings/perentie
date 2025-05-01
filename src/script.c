@@ -667,7 +667,8 @@ static int lua_pt_get_palette(lua_State* L)
 static int lua_pt_set_palette_remapper(lua_State* L)
 {
     enum pt_palette_remapper remapper = luaL_checkinteger(L, 1);
-    pt_sys.video->set_palette_remapper(remapper);
+    enum pt_palette_remapper_mode mode = luaL_checkinteger(L, 2);
+    pt_sys.video->set_palette_remapper(remapper, mode);
     return 0;
 };
 

@@ -511,11 +511,12 @@ void vga_destroy_hw_image(void* hw_image)
     free(image);
 }
 
-void vga_set_palette_remapper(enum pt_palette_remapper remapper)
+void vga_set_palette_remapper(enum pt_palette_remapper remapper, enum pt_palette_remapper_mode mode)
 {
     pt_sys.remapper = remapper;
+    pt_sys.remapper_mode = mode;
     for (int i = 0; i < pt_sys.palette_top; i++) {
-        set_dither_from_remapper(remapper, i, &pt_sys.dither[i]);
+        set_dither_from_remapper(remapper, mode, i, &pt_sys.dither[i]);
     }
 
     // Force all hardware images to be recalculated
