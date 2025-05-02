@@ -73,6 +73,13 @@ uint32_t iter_utf8(const byte** str)
     return result;
 }
 
+pt_text_word* create_newline()
+{
+    pt_text_word* word = (pt_text_word*)calloc(1, sizeof(pt_text_word));
+    word->newline = true;
+    return word;
+}
+
 pt_text_word* create_text_word(const byte* string, size_t length, pt_font* font)
 {
     if (!string || !font)
@@ -82,6 +89,7 @@ pt_text_word* create_text_word(const byte* string, size_t length, pt_font* font)
     // add bodge for outline
     word->width = font->outline;
     word->height = font->common.line_height + (font->outline * 2);
+    word->newline = false;
     const byte* ptr = string;
     const byte* end = string + length;
 
@@ -116,6 +124,11 @@ static inline bool is_whitespace(byte c)
     return ((c == ' ') || (c == '\t') || (c == '\n') || (c == '\r'));
 }
 
+static inline bool is_whitespace_except_newline(byte c)
+{
+    return ((c == ' ') || (c == '\t') || (c == '\r'));
+}
+
 pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t width, enum pt_text_align align)
 {
     pt_text* text = (pt_text*)calloc(1, sizeof(pt_text));
@@ -130,6 +143,14 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
     pt_text_word** words = NULL;
     size_t word_count = 0;
     while (ptr < end) {
+        if (*ptr == '\n') {
+            pt_text_word* word = create_newline();
+            words = (pt_text_word**)realloc(words, sizeof(pt_text_word*) * (word_count + 1));
+            words[word_count] = word;
+            word_count++;
+            ptr++;
+            continue;
+        }
         const byte* test = ptr;
         while ((test < end) && !is_whitespace(*test)) {
             test++;
@@ -142,7 +163,7 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
         words[word_count] = word;
         word_count++;
         ptr = test;
-        while ((ptr < end) && is_whitespace(*ptr)) {
+        while ((ptr < end) && is_whitespace_except_newline(*ptr)) {
             ptr++;
         }
     }
@@ -181,8 +202,8 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
             text->width = words[i]->width;
         }
 
-        // If we run out of horizontal space
-        if (words[i]->width + x_cursor > text->width) {
+        // If we run out of horizontal space, or hit a newline
+        if (words[i]->newline || (words[i]->width + x_cursor > text->width)) {
 
             // For words other than the first word, set the final dims of the line.
             if (line_ptr->word_count > 0) {
@@ -202,6 +223,14 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
             line_ptr->y = y_cursor;
             line_ptr->height = font->common.line_height + font->outline * 2;
             text->line_count++;
+        }
+
+        // Newlines don't count as a word.
+        // We don't transfer ownership, so destroy it here.
+        if (words[i]->newline) {
+            destroy_text_word(words[i]);
+            words[i] = NULL;
+            continue;
         }
 
         words[i]->x = x_cursor;

@@ -25,6 +25,7 @@ struct pt_text_word {
     uint16_t height;
     pt_text_glyph* glyphs;
     size_t glyph_count;
+    bool newline;
 };
 
 struct pt_text_line {

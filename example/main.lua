@@ -48,6 +48,7 @@ description_txt = PTText(
 You can open up a Lua debug shell inside the engine by connecting to COM4 with a null modem cable.
 DOSBox users using the included dosbox.conf can connect with a Telnet client to TCP port 42424.
 
+Press R to hot reload.
 Press Q to exit.]],
     font,
     288,
@@ -57,10 +58,21 @@ Press Q to exit.]],
 description = PTBackground(description_txt, 16, 64, 0)
 PTRoomAddObject(test_room, description)
 
--- Add a key handler callback to quit the engine
+-- Add a key handler callback
 PTOnEvent("keyDown", function(ev)
     if ev.key == "q" then
+        -- Quit the engine
         PTQuit()
+    elseif ev.key == "r" then
+        -- Hot reload the engine.
+        -- This will save the current engine state to slot 0,
+        -- then load the engine state.
+        -- In practice, loading triggers a reset (much like PTReset):
+        -- - the Lua environment is cleared
+        -- - the game's Lua code is reloaded from the disk
+        -- - variables and attributes from the state file are overlayed
+        PTSaveState(0)
+        PTLoadState(0)
     end
 end)
 
