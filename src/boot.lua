@@ -2214,6 +2214,9 @@ local _PTAdjustPointToBeInBox = function(point, boxes)
             end
         end
     end
+    if not best_box then
+        best_point = PTPoint(point.x, point.y)
+    end
     --print(string.format("PTAdjustPointToBeInBox(): point: (%d, %d), best_point: (%d, %d), best_box: %d", point.x, point.y, best_point.x, best_point.y, best_box.id))
     return best_point, best_box
 end
@@ -2372,7 +2375,11 @@ end
 
 local _PTActorWalkStep = function(actor)
     -- update the walkbox if necessary
-    if actor.walkbox.id ~= actor.walkdata_curbox.id and _PTCheckPointInBoxBounds(actor, actor.walkdata_curbox) then
+    if
+        actor.walkdata_curbox
+        and actor.walkbox.id ~= actor.walkdata_curbox.id
+        and _PTCheckPointInBoxBounds(actor, actor.walkdata_curbox)
+    then
         PTActorSetWalkBox(actor, actor.walkdata_curbox)
     end
     local dist_x = math.abs(actor.walkdata_next.x - actor.walkdata_cur.x)
@@ -2501,55 +2508,67 @@ PTActorWalk = function(actor)
     actor.moving = MF_NEW_LEG
 
     while true do
-        if not actor.walkbox then
+        if not actor.walkbox and actor.walkdata_destbox then
             PTActorSetWalkBox(actor, actor.walkdata_destbox)
             actor.walkdata_curbox = actor.walkdata_destbox
             break
         end
 
-        if actor.walkbox.id == actor.walkdata_destbox.id then
-            break
-        end
+        local result = true
+        local found_path = PTPoint(actor.walkdata_dest.x, actor.walkdata_dest.y)
+        if actor.walkbox then
+            if actor.walkbox.id == actor.walkdata_destbox.id then
+                break
+            end
 
-        local next_box = PTRoomGetNextBox(actor.room, actor.walkbox.id, actor.walkdata_destbox.id)
-        if not next_box then
-            actor.moving = 0
-            PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
-            return
-        end
-        actor.walkdata_curbox = next_box
-        --print(string.format(
-        --    "PTFindPathTowards: (%d, %d) (%d, %d) %d %d %d",
-        --    actor.x,
-        --    actor.y,
-        --    actor.walkdata_dest.x,
-        --    actor.walkdata_dest.y,
-        --    actor.walkbox.id,
-        --    next_box.id,
-        --    actor.walkdata_destbox.id
-        --    ))
+            local next_box = PTRoomGetNextBox(actor.room, actor.walkbox.id, actor.walkdata_destbox.id)
+            if not next_box then
+                actor.moving = 0
+                PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
+                return
+            end
+            actor.walkdata_curbox = next_box
+            --print(string.format(
+            --    "PTFindPathTowards: (%d, %d) (%d, %d) %d %d %d",
+            --    actor.x,
+            --    actor.y,
+            --    actor.walkdata_dest.x,
+            --    actor.walkdata_dest.y,
+            --    actor.walkbox.id,
+            --    next_box.id,
+            --    actor.walkdata_destbox.id
+            --    ))
 
-        local result, found_path = _PTFindPathTowards(
-            actor.x,
-            actor.y,
+            result, found_path = _PTFindPathTowards(
+                actor.x,
+                actor.y,
+                actor.walkdata_dest.x,
+                actor.walkdata_dest.y,
+                actor.walkbox,
+                next_box,
+                actor.walkdata_destbox
+            )
+            --print(string.format(
+            --    "PTFindPathTowards: -> %s, (%d, %d)",
+            --    inspect(result),
+            --    found_path.x,
+            --    found_path.y))
+
+            -- If there's no path to the destination, stop walking.
+            -- This feels a bit jank; ideally all walk paths
+            -- should terminate at closest spot?
+            if actor.walkbox.id == next_box.id then
+                break
+            end
+        end
+        PTLog(
+            "PTActorWalk: (%d, %d) (%d, %d) %s",
+            found_path.x,
+            found_path.y,
             actor.walkdata_dest.x,
             actor.walkdata_dest.y,
-            actor.walkbox,
-            next_box,
-            actor.walkdata_destbox
+            tostring(result)
         )
-        --print(string.format(
-        --    "PTFindPathTowards: -> %s, (%d, %d)",
-        --    inspect(result),
-        --    found_path.x,
-        --    found_path.y))
-
-        -- If there's no path to the destination, stop walking.
-        -- This feels a bit jank; ideally all walk paths
-        -- should terminate at closest spot?
-        if actor.walkbox.id == next_box.id then
-            break
-        end
         if result then
             break
         end
@@ -2557,7 +2576,9 @@ PTActorWalk = function(actor)
             return
         end
 
-        PTActorSetWalkBox(actor, actor.walkdata_curbox)
+        if actor.walkdata_curbox then
+            PTActorSetWalkBox(actor, actor.walkdata_curbox)
+        end
     end
 
     actor.moving = MF_LAST_LEG
@@ -2600,6 +2621,8 @@ PTActorSetRoom = function(actor, room, x, y)
         PTActorSetWalkBox(actor, near_box)
     else
         actor.x, actor.y = x, y
+        actor.walkbox = nil
+        actor.walkdata_curbox = nil
     end
 end
 
