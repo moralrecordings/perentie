@@ -5,7 +5,7 @@ Perentie
 
 Perentie is a Lua-based graphical adventure game engine for DOS. The design takes several cues from LucasArts' SCUMM and GrimE adventure game engines.
 
-The design is still work-in-progress, however a lot of the base functionality has been implemented. Try it and see!
+The engine is still work-in-progress, however a lot of the base functionality has been implemented. Try it and see!
 
 Featuring:
 
@@ -13,6 +13,7 @@ Featuring:
 - Co-operative threading
 - 320x200 256 colour VGA graphics
 - Bitmap text rendering with support for UTF-8
+- PC speaker tone/sample playback
 - OPL2/OPL3 music playback
 - Debug shell over null modem/Telnet connection
 

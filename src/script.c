@@ -215,7 +215,11 @@ static int lua_pt_pc_speaker_play_data(lua_State* L)
 
     size_t size = sizeof(uint16_t) * ((*target)->data_len);
     uint16_t* data = (uint16_t*)malloc(size);
-    log_print("lua_pt_pc_speaker_play_data: %d, %s\n", size, (*target)->name);
+    log_print("lua_pt_pc_speaker_play_data: %d, %s, [", size, (*target)->name);
+    for (int i = 0; i < (*target)->data_len; i++) {
+        log_print("%d, ", (*target)->data[i]);
+    }
+    log_print("]\n");
     memcpy(data, (*target)->data, size);
 
     pt_sys.beep->play_data(data, (*target)->data_len, (*target)->playback_freq);
