@@ -6,6 +6,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "utils.h"
+
 struct rect {
     int16_t left, top;
     int16_t right, bottom;
@@ -108,6 +110,7 @@ static inline bool rect_blit_clip(int16_t* x, int16_t* y, struct rect* src, stru
 {
     if (!x || !y || !src || !clip)
         return false;
+    struct rect prev = { src->left, src->top, src->right, src->bottom };
     if (*x < clip->left) {
         src->left += clip->left - *x;
         *x = clip->left;
@@ -123,6 +126,12 @@ static inline bool rect_blit_clip(int16_t* x, int16_t* y, struct rect* src, stru
     int bottom = *y + src->bottom;
     if (bottom > clip->bottom)
         src->bottom = clip->bottom + src->top - *y;
+
+    src->left = MIN(prev.right, MAX(prev.left, src->left));
+    src->top = MIN(prev.bottom, MAX(prev.top, src->top));
+    src->right = MIN(prev.right, MAX(prev.left, src->right));
+    src->bottom = MIN(prev.bottom, MAX(prev.top, src->bottom));
+
     return !rect_is_empty(src);
 }
 

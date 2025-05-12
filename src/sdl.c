@@ -217,7 +217,9 @@ void sdlvideo_blit_image(
         MIN(image->width, MAX(0, right)), MIN(image->height, MAX(0, bottom)) };
 
     struct rect crop = { 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT };
-    // log_print("Blitting %s to (%d,%d) %dx%d ->", image->path, x, y, image->width, image->height);
+
+    // if (image->path && strcmp(image->path, "assets/bridge/bridge.png") == 0)
+    //     log_print("Blitting %s to (%d,%d) %dx%d ->", image->path, x, y, image->width, image->height);
 
     // Constrain x and y to be an absolute start offset in screen space.
     // Crop the image rectangle, based on its location in screen space.
@@ -247,6 +249,10 @@ void sdlvideo_blit_image(
 
     SDL_FRect srcrect = { ir.left, ir.top, rect_width(&ir), rect_height(&ir) };
     SDL_FRect dstrect = { x, y, rect_width(&ir), rect_height(&ir) };
+
+    // if (image->path && strcmp(image->path, "assets/bridge/bridge.png") == 0)
+    //     log_print("(%d,%d) (%d,%d) %dx%d l=%d, r=%d\n", ir.left, ir.top, x, y, rect_width(&ir), rect_height(&ir),
+    //     left, right);
 
     SDL_RenderTextureRotated(renderer, hw_image->texture, &srcrect, &dstrect, 0.0, NULL, flip);
 }

@@ -1,3 +1,6 @@
+#ifndef PERENTIE_UTILS_H
+#define PERENTIE_UTILS_H
+
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,3 +45,5 @@ FREAD_TYPE_BE(int16_t, __builtin_bswap16, i16be)
 FREAD_TYPE_BE(uint16_t, __builtin_bswap16, u16be)
 FREAD_TYPE_BE(int32_t, __builtin_bswap32, i32be)
 FREAD_TYPE_BE(uint32_t, __builtin_bswap32, u32be)
+
+#endif
