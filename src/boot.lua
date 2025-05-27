@@ -487,7 +487,12 @@ PTActorSetWalkBox = function(actor, box)
     if not box or box._type ~= "PTWalkBox" then
         error("PTActorSetWalkBox: expected PTWalkBox for second argument")
     end
-    actor.walkbox = box
+    if actor.walkbox ~= box then
+        actor.walkbox = box
+        if box.on_enter then
+            box.on_enter(box, actor)
+        end
+    end
     if box.z and box.z ~= actor.z then
         actor.z = box.z
         -- update the render list order
@@ -860,11 +865,42 @@ REMAPPER_CGA1B = 5
 REMAPPER_CGA2A = 6
 REMAPPER_CGA2B = 7
 
+REMAPPER_MODE_NEAREST = 0
+REMAPPER_MODE_HALF = 1
+REMAPPER_MODE_QUARTER = 2
+REMAPPER_MODE_QUARTER_ALT = 3
+REMAPPER_MODE_HALF_NEAREST = 4
+REMAPPER_MODE_QUARTER_NEAREST = 5
+
 --- Set the automatic palette remapper to use.
 -- This will remove any of the current dithering hints and replace them with the output of the remapper. Subsequent hints can be added.
--- @tparam integer remapper Remapper to use.
+-- @tparam[opt="none"] string remapper Remapper to use. Choices are: "none", "ega"
+-- @tparam[opt="nearest"] string mode Default dither mode to use. Choices are: "nearest", "half", "quarter", "quarter-alt", "half-nearest", "quarter-nearest".
 PTSetPaletteRemapper = function(remapper, mode)
-    return _PTSetPaletteRemapper(remapper, mode)
+    local rm, md = REMAPPER_NONE, REMAPPER_MODE_NEAREST
+    if remapper == "none" then
+        rm = REMAPPER_NONE
+    elseif remapper == "ega" then
+        rm = REMAPPER_EGA
+    end
+
+    if mode == "nearest" then
+        md = REMAPPER_MODE_NEAREST
+    elseif mode == "half" then
+        md = REMAPPER_MODE_HALF
+    elseif mode == "quarter" then
+        md = REMAPPER_MODE_QUARTER
+    elseif mode == "quarter-alt" then
+        md = REMAPPER_MODE_QUARTER_ALT
+    elseif mode == "half-nearest" then
+        md = REMAPPER_MODE_HALF_NEAREST
+    elseif mode == "quarter-nearest" then
+        md = REMAPPER_MODE_QUARTER_NEAREST
+    end
+
+    if rm ~= -1 then
+        _PTSetPaletteRemapper(rm, md)
+    end
 end
 
 --- Set the overscan colour.
@@ -874,13 +910,52 @@ PTSetOverscanColour = function(colour)
     return _PTSetOverscanColour(colour)
 end
 
+DITHER_NONE = 0
+DITHER_FILL_A = 1
+DITHER_FILL_B = 2
+DITHER_QUARTER = 3
+DITHER_QUARTER_ALT = 4
+DITHER_HALF = 5
+
+EGA_BLACK = { 0x00, 0x00, 0x00 }
+EGA_BLUE = { 0x00, 0x00, 0xaa }
+EGA_GREEN = { 0x00, 0xaa, 0x00 }
+EGA_CYAN = { 0x00, 0xaa, 0xaa }
+EGA_RED = { 0xaa, 0x00, 0x00 }
+EGA_MAGENTA = { 0xaa, 0x00, 0xaa }
+EGA_BROWN = { 0xaa, 0x55, 0x00 }
+EGA_LGRAY = { 0xaa, 0xaa, 0xaa }
+EGA_DGRAY = { 0x55, 0x55, 0x55 }
+EGA_BRBLUE = { 0x55, 0x55, 0xff }
+EGA_BRGREEN = { 0x55, 0xff, 0x55 }
+EGA_BRCYAN = { 0x55, 0xff, 0xff }
+EGA_BRRED = { 0xff, 0x55, 0x55 }
+EGA_BRMAGENTA = { 0xff, 0x55, 0xff }
+EGA_BRYELLOW = { 0xff, 0xff, 0x55 }
+EGA_WHITE = { 0xff, 0xff, 0xff }
+
 --- Set a dithering hint. Used for remapping a VGA-style palette to a smaller colour range such as EGA or CGA.
 -- @tparam table src Source colour, table containing three 8-bit numbers.
--- @tparam integer dither_type Type of dithering algorithm to use.
+-- @tparam string dither_type Type of dithering algorithm to use. Choices are: "none", "fill-a", "fill-b", "quarter", "quarter-alt", "half"
 -- @tparam table dest_a Destination mixing colour A, table containing three 8-bit numbers.
 -- @tparam table dest_b Destination mixing colour B, table containing three 8-bit numbers.
 PTSetDitherHint = function(src, dither_type, dest_a, dest_b)
-    return _PTSetDitherHint(src, dither_type, dest_a, dest_b)
+    local dt = DITHER_NONE
+    if dither_type == "none" then
+        dt = DITHER_NONE
+    elseif dither_type == "fill-a" then
+        dt = DITHER_FILL_A
+    elseif dither_type == "fill-b" then
+        dt = DITHER_FILL_B
+    elseif dither_type == "quarter" then
+        dt = DITHER_QUARTER
+    elseif dither_type == "quarter-alt" then
+        dt = DITHER_QUARTER_ALT
+    elseif dither_type == "half" then
+        dt = DITHER_HALF
+    end
+
+    return _PTSetDitherHint(src, dt, dest_a, dest_b)
 end
 
 --- Calculate the delta angle between two directions.
@@ -1938,7 +2013,9 @@ end
 -- @tfield PTPoint ur Coordinates of upper-right corner.
 -- @tfield PTPoint lr Coordinates of lower-right corner.
 -- @tfield PTPoint ll Coordinates of lower-left corner.
--- @tfield integer id Internal ID of the walk box. Used internally by the box matrix.
+-- @tfield integer z Depth coordinate; a higher number renders to the front. Used for setting the depth of PTActors.
+-- @tfield[opt=nil] integer id Internal ID of the walk box. Used internally by the box matrix.
+-- @tfield[opt=nil] function on_enter Callback for when an actor enters a walkbox, with the walk box and actor as arguments.
 -- @table PTWalkBox
 
 --- Create a new walk box.
@@ -1949,7 +2026,17 @@ end
 -- @tparam integer z Depth coordinate; a higher number renders to the front. Used for setting the depth of PTActors.
 -- @treturn PTWalkBox The new walk box.
 PTWalkBox = function(ul, ur, lr, ll, z)
-    return { _type = "PTWalkBox", ul = ul, ur = ur, lr = lr, ll = ll, z = z, id = nil }
+    return { _type = "PTWalkBox", ul = ul, ur = ur, lr = lr, ll = ll, z = z, id = nil, on_enter = nil }
+end
+
+--- Set a callback for when an actor enters a walk box.
+-- @tparam PTWalkBox walkbox Walk box to use.
+-- @tparam function callback Function body to call, with the walk box and actor as arguments.
+PTOnEnterWalkBox = function(walkbox, callback)
+    if not walkbox or walkbox._type ~= "PTWalkBox" then
+        error("PTOnEnterWalkBox: expected PTWalkBox for first argument")
+    end
+    walkbox.on_enter = callback
 end
 
 local _PTStraightLinesOverlap = function(a1, a2, b1, b2)
