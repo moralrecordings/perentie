@@ -305,6 +305,16 @@ PTOnSaveState = function(callback)
     _PTOnSaveStateHandler = callback
 end
 
+--- Return a unique 32-bit hash for a string.
+-- @taparam string src String to process.
+-- @treturn integer 32-bit hash, encoded as an integer.
+PTHash = function(src)
+    if type(src) ~= "string" then
+        error("PTHash: expected a string")
+    end
+    return _PTHash(src)
+end
+
 -- PTListSavedStates
 -- {{ filename = "SAVE.001", "name" = "A great saved game", "timestamp" = "2025-01-01T00:00:00" }, ...}
 

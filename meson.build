@@ -171,6 +171,14 @@ woodyopl = static_library(
   include_directories : ['src/woodyopl'],
 )
 
+siphash = static_library(
+  'siphash',
+  [
+    'src/siphash/halfsip.c',
+  ],
+)
+
+
 if host_machine.system() == 'msdos'
   platform_libs = []
 else
@@ -267,6 +275,7 @@ libs = [
   libminiz,
   libspng,
   libwave,
+  siphash 
 ]
 
 exe = executable(

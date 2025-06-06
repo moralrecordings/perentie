@@ -5,6 +5,8 @@
 #include "lua/lua.h"
 #include "lua/lualib.h"
 
+#include "siphash/halfsip.h"
+
 #include "wave/wave.h"
 
 #include "event.h"
@@ -769,6 +771,19 @@ static int lua_pt_get_app_data_path(lua_State* L)
     return 1;
 }
 
+// Default key is the ASCII for "PERENTIE"
+static uint8_t hash_key[8] = { 0x50, 0x45, 0x52, 0x45, 0x4e, 0x54, 0x49, 0x45 };
+
+static int lua_pt_hash(lua_State* L)
+{
+    size_t input_size = 0;
+    const char* input = luaL_checklstring(L, 1, &input_size);
+    uint32_t result = 0;
+    halfsiphash(input, input_size, hash_key, (uint8_t*)&result, 4);
+    lua_pushinteger(L, result);
+    return 1;
+};
+
 static int lua_pt_reset(lua_State* L)
 {
     pt_event* ev = event_push(EVENT_RESET);
@@ -824,6 +839,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTSetDebugConsole", lua_pt_set_debug_console },
     { "_PTSetGameInfo", lua_pt_set_game_info },
     { "_PTGetAppDataPath", lua_pt_get_app_data_path },
+    { "_PTHash", lua_pt_hash },
     { "_PTReset", lua_pt_reset },
     { "_PTQuit", lua_pt_quit },
     { NULL, NULL },

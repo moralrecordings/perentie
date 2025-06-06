@@ -8,6 +8,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifdef SYSTEM_SDL
@@ -51,6 +52,9 @@ void perentie_init()
 #else
     exit(1);
 #endif
+    // seed the RNG in the most basic way
+    srand(time(NULL));
+
     radplayer_init();
     log_init();
     event_init();
