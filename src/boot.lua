@@ -527,13 +527,15 @@ _PTActorUpdate = function(actor, fast_forward)
         error("_PTActorUpdate: expected PTActor for first argument")
     end
     local result = true
-    if actor.moving > 0 and PTGetMillis() > actor.walkdata_next_wait then
-        PTActorWalk(actor)
-        PTSpriteIncrementFrame(actor.sprite)
-        actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
-        local room = PTCurrentRoom()
-        if room and room._type == "PTRoom" and actor == room.camera_actor then
-            room.x, room.y = actor.x, actor.y
+    if actor.moving > 0 then
+        if PTGetMillis() > actor.walkdata_next_wait then
+            PTActorWalk(actor)
+            PTSpriteIncrementFrame(actor.sprite)
+            actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
+            local room = PTCurrentRoom()
+            if room and room._type == "PTRoom" and actor == room.camera_actor then
+                room.x, room.y = actor.x, actor.y
+            end
         end
         result = false
     end
