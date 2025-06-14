@@ -261,7 +261,7 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
     return text;
 }
 
-pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b)
+pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b, uint8_t brd_r, uint8_t brd_g, uint8_t brd_b)
 {
     if (!text)
         return NULL;
@@ -270,6 +270,9 @@ pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b)
     image->height = text->height;
     image->pitch = get_pitch(text->width);
     image->data = (byte*)calloc(image->pitch * image->height, sizeof(byte));
+    image->palette[0x7f * 3] = brd_r;
+    image->palette[0x7f * 3 + 1] = brd_g;
+    image->palette[0x7f * 3 + 2] = brd_b;
     image->palette[0xff * 3] = r;
     image->palette[0xff * 3 + 1] = g;
     image->palette[0xff * 3 + 2] = b;

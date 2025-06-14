@@ -5,6 +5,7 @@
 #include "lua/lua.h"
 #include "lua/lualib.h"
 
+#include "simplex/simplex.h"
 #include "siphash/halfsip.h"
 
 #include "wave/wave.h"
@@ -428,9 +429,12 @@ static int lua_pt_text(lua_State* L)
     uint8_t r = (uint8_t)luaL_checkinteger(L, 5);
     uint8_t g = (uint8_t)luaL_checkinteger(L, 6);
     uint8_t b = (uint8_t)luaL_checkinteger(L, 7);
+    uint8_t brd_r = (uint8_t)luaL_checkinteger(L, 8);
+    uint8_t brd_g = (uint8_t)luaL_checkinteger(L, 9);
+    uint8_t brd_b = (uint8_t)luaL_checkinteger(L, 10);
 
     pt_text* text = create_text(string, len, *fontptr, width, align);
-    pt_image* image = text_to_image(text, r, g, b);
+    pt_image* image = text_to_image(text, r, g, b, brd_r, brd_g, brd_b);
     destroy_text(text);
 
     // same as the lua_pt_image code
@@ -784,6 +788,30 @@ static int lua_pt_hash(lua_State* L)
     return 1;
 };
 
+static int lua_pt_simplex_noise_1d(lua_State* L)
+{
+    float x = luaL_checknumber(L, 1);
+    lua_pushnumber(L, simplex_noise_1d(x));
+    return 1;
+};
+
+static int lua_pt_simplex_noise_2d(lua_State* L)
+{
+    float x = luaL_checknumber(L, 1);
+    float y = luaL_checknumber(L, 2);
+    lua_pushnumber(L, simplex_noise_2d(x, y));
+    return 1;
+};
+
+static int lua_pt_simplex_noise_3d(lua_State* L)
+{
+    float x = luaL_checknumber(L, 1);
+    float y = luaL_checknumber(L, 2);
+    float z = luaL_checknumber(L, 3);
+    lua_pushnumber(L, simplex_noise_3d(x, y, z));
+    return 1;
+};
+
 static int lua_pt_reset(lua_State* L)
 {
     pt_event* ev = event_push(EVENT_RESET);
@@ -840,6 +868,9 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTSetGameInfo", lua_pt_set_game_info },
     { "_PTGetAppDataPath", lua_pt_get_app_data_path },
     { "_PTHash", lua_pt_hash },
+    { "_PTSimplexNoise1D", lua_pt_simplex_noise_1d },
+    { "_PTSimplexNoise2D", lua_pt_simplex_noise_2d },
+    { "_PTSimplexNoise3D", lua_pt_simplex_noise_3d },
     { "_PTReset", lua_pt_reset },
     { "_PTQuit", lua_pt_quit },
     { NULL, NULL },

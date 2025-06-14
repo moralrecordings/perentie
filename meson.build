@@ -178,6 +178,13 @@ siphash = static_library(
   ],
 )
 
+simplex = static_library(
+  'simplex',
+  [
+    'src/simplex/simplex.c',
+  ],
+)
+
 
 if host_machine.system() == 'msdos'
   platform_libs = []
@@ -275,7 +282,8 @@ libs = [
   libminiz,
   libspng,
   libwave,
-  siphash 
+  siphash,
+  simplex
 ]
 
 exe = executable(

@@ -315,6 +315,18 @@ PTHash = function(src)
     return _PTHash(src)
 end
 
+PTSimplexNoise1D = function(x)
+    return _PTSimplexNoise1D(x)
+end
+
+PTSimplexNoise2D = function(x, y)
+    return _PTSimplexNoise2D(x, y)
+end
+
+PTSimplexNoise3D = function(x, y, z)
+    return _PTSimplexNoise1D(x, y, z)
+end
+
 -- PTListSavedStates
 -- {{ filename = "SAVE.001", "name" = "A great saved game", "timestamp" = "2025-01-01T00:00:00" }, ...}
 
@@ -1968,8 +1980,9 @@ end
 -- @tparam[opt=200] integer width Width of bounding area in pixels.
 -- @tparam[opt="left"] string align Text alignment; one of "left", "center" or "right".
 -- @tparam[opt={ 0xff 0xff 0xff }] table colour Inner colour; list of 3 8-bit numbers.
+-- @tparam[opt={ 0x00 0x00 0x00 }] table border Border colour; list of 3 8-bit numbers.
 -- @treturn PTImage The new image.
-PTText = function(text, font, width, align, colour)
+PTText = function(text, font, width, align, colour, border)
     if not width then
         width = 200
     end
@@ -1991,8 +2004,20 @@ PTText = function(text, font, width, align, colour)
     if colour and colour[3] then
         b = colour[3]
     end
+    local brd_r = 0x00
+    local brd_g = 0x00
+    local brd_b = 0x00
+    if border and border[1] then
+        brd_r = border[1]
+    end
+    if border and border[2] then
+        brd_g = border[2]
+    end
+    if border and border[3] then
+        brd_b = border[3]
+    end
 
-    return { _type = "PTImage", ptr = _PTText(text, font.ptr, width, align_enum, r, g, b) }
+    return { _type = "PTImage", ptr = _PTText(text, font.ptr, width, align_enum, r, g, b, brd_r, brd_g, brd_b) }
 end
 
 --- Walk box

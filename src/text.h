@@ -53,7 +53,7 @@ enum pt_text_align {
 
 pt_text_word* create_text_word(const byte* string, size_t length, pt_font* font);
 pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t width, enum pt_text_align align);
-pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b);
+pt_image* text_to_image(pt_text* text, uint8_t r, uint8_t g, uint8_t b, uint8_t brd_r, uint8_t brd_g, uint8_t brd_b);
 void destroy_text_word(pt_text_word* word);
 void destroy_text(pt_text* text);
 

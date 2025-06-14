@@ -159,6 +159,7 @@ Perentie wouldn't be possible without the following third-party components:
 - `Lua-CBOR <https://www.zash.se/lua-cbor.html>`_ - Lua data serialisation library
 - `WoodyOPL <https://github.com/rofl0r/woody-opl>`_ - OPL2/OPL3 emulator by the DOSBox team, originally based on Ken Silverman's ADLIBEMU.
 - `SipHash <https://github.com/veorq/SipHash>`_ - fast cryptographic hash function
+- `SimplexNoise <https://github.com/SRombauts/SimplexNoise>`_ - Simplex noise generator
 
 In addition, Perentie incorporates code and algorithms from the following projects:
 
