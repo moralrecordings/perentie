@@ -1282,6 +1282,7 @@ end
 -- @tfield integer z Depth coordinate; a higher number renders to the front.
 -- @tfield integer origin_x Origin x coordinate, relative to top-left corner..
 -- @tfield integer origin_y Origin y coordinate, relative to top-left corner.
+-- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
 -- @table PTGroup
 
 --- Create a new group.
@@ -1323,6 +1324,7 @@ PTGroup = function(objects, x, y, z, origin_x, origin_y)
         z = z,
         origin_x = origin_x,
         origin_y = origin_y,
+        visible = true,
     }
 end
 
@@ -1353,10 +1355,14 @@ end
 --- Iterate through a list of renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) objects. PTGroups will be flattened, leaving only PTActor/PTBackground/PTSprite objects with adjusted positions.
 -- @tparam table objects List of objects.
 -- @tparam[opt=false] boolean reverse Whether to iterate in reverse.
+-- @tparam[opt=true] boolean visible_only Whether to only output visible objects.
 -- @treturn function An iterator function that returns an object, a x coordinate and a y coordinate.
-PTIterObjects = function(objects, reverse)
-    if not reverse then
+PTIterObjects = function(objects, reverse, visible_only)
+    if reverse == nil then
         reverse = false
+    end
+    if visible_only == nil then
+        visible_only = true
     end
     local i = 1
     local group_iter = nil
@@ -1382,29 +1388,31 @@ PTIterObjects = function(objects, reverse)
             else
                 obj = objects[i]
             end
-            if obj._type == "PTGroup" and #obj.objects > 0 then
-                group_iter = PTIterObjects(obj.objects, reverse)
+            if obj._type == "PTGroup" and (not visible_only or obj.visible) and #obj.objects > 0 then
+                group_iter = PTIterObjects(obj.objects, reverse, visible_only)
                 local inner, inner_x, inner_y = group_iter()
                 if inner then
                     return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
                 end
                 group_iter = nil
-            elseif obj._type == "PTPanel" then
+            elseif obj._type == "PTPanel" and (not visible_only or obj.visible) then
                 if #obj.objects > 0 then
-                    group_iter = PTIterObjects(obj.objects, reverse)
+                    group_iter = PTIterObjects(obj.objects, reverse, visible_only)
                 end
                 return obj, obj.x, obj.y
-            elseif obj._type == "PTButton" then
+            elseif obj._type == "PTButton" and (not visible_only or obj.visible) then
                 if #obj.objects > 0 then
-                    group_iter = PTIterObjects(obj.objects, reverse)
+                    group_iter = PTIterObjects(obj.objects, reverse, visible_only)
                 end
                 return obj, obj.x, obj.y
-            elseif obj._type == "PTHorizSlider" and #obj.objects > 0 then
-                group_iter = PTIterObjects(obj.objects, reverse)
+            elseif obj._type == "PTHorizSlider" and (not visible_only or obj.visible) and #obj.objects > 0 then
+                group_iter = PTIterObjects(obj.objects, reverse, visible_only)
                 return obj, obj.x, obj.y
             elseif obj._type == "PTActor" or obj._type == "PTBackground" or obj._type == "PTSprite" then
-                i = i + 1
-                return obj, obj.x, obj.y
+                if not visible_only or obj.visible then
+                    i = i + 1
+                    return obj, obj.x, obj.y
+                end
             end
             i = i + 1
         end
@@ -3962,12 +3970,10 @@ _PTRender = function()
     end
 
     for obj, x, y in PTIterObjects(room.render_list) do
-        if obj.visible then
-            local frame, flags = PTGetImageFromObject(obj)
-            if frame then
-                local tmp_x, tmp_y = PTRoomToScreen(x, y, obj.parallax_x, obj.parallax_y)
-                blit(frame, tmp_x, tmp_y, flags)
-            end
+        local frame, flags = PTGetImageFromObject(obj)
+        if frame then
+            local tmp_x, tmp_y = PTRoomToScreen(x, y, obj.parallax_x, obj.parallax_y)
+            blit(frame, tmp_x, tmp_y, flags)
         end
     end
     if _PTWalkBoxDebug then
@@ -3983,21 +3989,17 @@ _PTRender = function()
         end
     end
     for obj, x, y in PTIterObjects(_PTGlobalRenderList) do
-        if obj.visible then
-            local frame, flags = PTGetImageFromObject(obj)
-            if frame then
-                blit(frame, x, y, flags)
-            end
+        local frame, flags = PTGetImageFromObject(obj)
+        if frame then
+            blit(frame, x, y, flags)
         end
     end
     for _, panel in ipairs(_PTPanelList) do
         if panel.visible then
             for obj, x, y in PTIterObjects({ panel }) do
-                if obj.visible then
-                    local frame, flags = PTGetImageFromObject(obj)
-                    if frame then
-                        blit(frame, x, y, flags)
-                    end
+                local frame, flags = PTGetImageFromObject(obj)
+                if frame then
+                    blit(frame, x, y, flags)
                 end
             end
         end
@@ -4018,11 +4020,9 @@ _PTRender = function()
     if _PTMouseSprite and not _PTInputGrabbed then
         local mouse_x, mouse_y = _PTGetMousePos()
         for obj, x, y in PTIterObjects({ _PTMouseSprite }) do
-            if obj.visible then
-                local frame, flags = PTGetImageFromObject(obj)
-                if frame then
-                    _PTDrawImage(frame.ptr, mouse_x, mouse_y, flags)
-                end
+            local frame, flags = PTGetImageFromObject(obj)
+            if frame then
+                _PTDrawImage(frame.ptr, mouse_x, mouse_y, flags)
             end
         end
     end
