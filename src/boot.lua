@@ -90,7 +90,7 @@ end
 -- @treturn string The file name.
 PTSaveFileName = function(index)
     if type(index) ~= "number" then
-        error("PTSaveFileName: index must be an integer")
+        error(string.format("PTSaveFileName: index must be an integer, not %s", type(index)))
     elseif index < 0 or index > 999 then
         error("PTSaveFileName: index must be between 0 and 999")
     end
@@ -103,8 +103,12 @@ end
 -- @tparam[opt=nil] string index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}.
 PTLoadState = function(index)
     local path = PTSaveFileName(index)
-    PTLog("PTLoadState: loading state - slot: %d, path: %s", index, path)
-    _PTReset(PTSaveFileName(index))
+    if not PTGetSaveStateSummary(index) then
+        PTLog("PTLoadState: failed to read %s, aborting", path)
+    else
+        PTLog("PTLoadState: loading state - slot: %d, path: %s", index, path)
+        _PTReset(PTSaveFileName(index))
+    end
 end
 
 --- Get the path for writing app-specific data.
@@ -283,6 +287,38 @@ PTImportState = function(state)
     end
 end
 
+PTGetSaveStateSummary = function(index)
+    local result = nil
+    local path = PTGetAppDataPath() .. PTSaveFileName(index)
+    local f, err = io.open(path, "rb")
+    if f then
+        local magic = f:read(8)
+        local version = f:read(2)
+        if magic == "PERENTIE" and version == string.char(1, 0) then
+            local content = f:read("a")
+            if #content > 0 then
+                local state = cbor.decode(content)
+                if type(state) == "table" and state.game_id == _PTGameID then
+                    result = { index = index, name = state.name, timestamp = state.timestamp }
+                end
+            end
+        end
+        io.close(f)
+    end
+    return result
+end
+
+PTListSavedStates = function()
+    local results = {}
+    for i = 0, 999 do
+        local result = PTGetSaveStateSummary(i)
+        if result then
+            table.insert(results, result)
+        end
+    end
+    return results
+end
+
 _PTOnLoadStateHandler = nil
 _PTOnSaveStateHandler = nil
 --- Set the callback to run when loading a game state.
@@ -326,9 +362,6 @@ end
 PTSimplexNoise3D = function(x, y, z)
     return _PTSimplexNoise1D(x, y, z)
 end
-
--- PTListSavedStates
--- {{ filename = "SAVE.001", "name" = "A great saved game", "timestamp" = "2025-01-01T00:00:00" }, ...}
 
 _PTWhoops = function(err)
     return debug.traceback(
@@ -3042,6 +3075,8 @@ PTSleep = function(millis)
     end
     error(string.format("PTSleep(): thread not found"))
 end
+
+--PTDefer = function
 
 --- Sleep the current thread until an actor finishes the action in progress.
 -- @tparam PTActor actor The PTActor to wait for.
