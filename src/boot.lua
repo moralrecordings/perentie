@@ -120,19 +120,22 @@ end
 _PTInitFromStateFile = function(filename)
     PTLog("PTInitFromStateFile: %s", filename)
     local path = PTGetAppDataPath() .. filename
-    local file = io.open(path, "rb")
+    local file, err = io.open(path, "rb")
     if not file then
-        error(string.format('PTInitFromStateFile: Unable to open path "%s" for reading', path))
+        error(string.format('PTInitFromStateFile: Unable to open path "%s" for reading: %s', path, tostring(err)))
     end
     local magic = file:read(8)
     if magic ~= "PERENTIE" then
+        file:close()
         error(string.format('PTInitFromStateFile: Unrecognised format for file "%s"', path))
     end
     local version = file:read(2)
     if version ~= string.char(1, 0) then
+        file:close()
         error(string.format('PTInitFromStateFile: Unsupported format version for file "%s"', path))
     end
     local state = cbor.decode(file:read("a"))
+    file:close()
     if type(state) ~= "table" then
         error(string.format('PTInitFromStateFile: Expected table from file "%s"', path))
     end
@@ -173,6 +176,7 @@ PTSaveState = function(index, state_name)
     local state = PTExportState(state_name)
     PTLog("PTSaveState: writing state - slot: %d, path: %s, name: %s", index, path, state_name)
     file:write(cbor.encode(state)) -- version 1 is just a CBOR blob containing the state
+    file:close()
 end
 
 --- Export the current game state.
@@ -300,10 +304,18 @@ PTGetSaveStateSummary = function(index)
                 local state = cbor.decode(content)
                 if type(state) == "table" and state.game_id == _PTGameID then
                     result = { index = index, name = state.name, timestamp = state.timestamp }
+                else
+                    PTLog("PTGetSaveStateSummary: failed to open %s: payload is wrong", path)
                 end
+            else
+                PTLog("PTGetSaveStateSummary: failed to open %s: no content", path)
             end
+        else
+            PTLog("PTGetSaveStateSummary: failed to open %s: couldn't find header %s", path, magic)
         end
-        io.close(f)
+        f:close()
+    else
+        PTLog("PTGetSaveStateSummary: failed to open %s: %s", path, tostring(err))
     end
     return result
 end
@@ -3164,7 +3176,7 @@ end
 --- Room structure.
 -- @table PTRoom
 -- @tfield string type "PTRoom"
--- @tfield string name Name of the table.
+-- @tfield string name Name of the room.
 -- @tfield integer width Width of the room in pixels.
 -- @tfield integer height Height of the room in pixels.
 -- @tfield integer x X coordinate of camera in room space.
