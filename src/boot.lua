@@ -939,6 +939,18 @@ PTSetPaletteRemapper = function(remapper, mode)
         rm = REMAPPER_NONE
     elseif remapper == "ega" then
         rm = REMAPPER_EGA
+    elseif remapper == "cga0a" then
+        rm = REMAPPER_CGA0A
+    elseif remapper == "cga0b" then
+        rm = REMAPPER_CGA0B
+    elseif remapper == "cga1a" then
+        rm = REMAPPER_CGA1A
+    elseif remapper == "cga1b" then
+        rm = REMAPPER_CGA1B
+    elseif remapper == "cga2a" then
+        rm = REMAPPER_CGA2A
+    elseif remapper == "cga2b" then
+        rm = REMAPPER_CGA2B
     end
 
     if mode == "nearest" then

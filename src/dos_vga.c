@@ -147,7 +147,7 @@ void vga_clear()
 {
     if (!vga_framebuffer)
         return;
-    memset(vga_framebuffer, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
+    memset(vga_framebuffer, pt_sys.overscan, SCREEN_WIDTH * SCREEN_HEIGHT);
 }
 
 pt_image_vga* vga_convert_image(pt_image* image);

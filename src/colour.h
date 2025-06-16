@@ -57,6 +57,25 @@ enum pt_palette_remapper_mode {
     REMAPPER_MODE_QUARTER_NEAREST = 5,
 };
 
+enum pt_ega {
+    EGA_BLACK = 0,
+    EGA_BLUE = 1,
+    EGA_GREEN = 2,
+    EGA_CYAN = 3,
+    EGA_RED = 4,
+    EGA_MAGENTA = 5,
+    EGA_BROWN = 6,
+    EGA_LGRAY = 7,
+    EGA_DGRAY = 8,
+    EGA_BRBLUE = 9,
+    EGA_BRGREEN = 10,
+    EGA_BRCYAN = 11,
+    EGA_BRRED = 12,
+    EGA_BRMAGENTA = 13,
+    EGA_BRYELLOW = 14,
+    EGA_WHITE = 15
+};
+
 extern pt_colour_rgb ega_palette[16];
 
 void set_dither_from_remapper(

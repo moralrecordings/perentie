@@ -29,64 +29,182 @@ pt_colour_rgb ega_palette[] = {
 // Block a bunch of auto-dithering combinations which look bad.
 uint8_t ega_banned_dithering[] = {
     // Black should only be mixed with dark-range colours
-    0, 7,
-    0, 9,
-    0, 10,
-    0, 11,
-    0, 12,
-    0, 13,
-    0, 14,
+    EGA_BLACK, EGA_LGRAY,
+    EGA_BLACK, EGA_BRBLUE,
+    EGA_BLACK, EGA_BRGREEN,
+    EGA_BLACK, EGA_BRCYAN,
+    EGA_BLACK, EGA_BRRED,
+    EGA_BLACK, EGA_BRMAGENTA,
+    EGA_BLACK, EGA_BRYELLOW,
     // White should only be mixed with light-range colours
-    0, 15,
-    1, 15,
-    2, 15,
-    3, 15,
-    4, 15,
-    5, 15,
-    6, 15,
-    8, 15,
+    EGA_BLACK, EGA_WHITE,
+    EGA_BLUE, EGA_WHITE,
+    EGA_GREEN, EGA_WHITE,
+    EGA_CYAN, EGA_WHITE,
+    EGA_RED, EGA_WHITE,
+    EGA_MAGENTA, EGA_WHITE,
+    EGA_BROWN, EGA_WHITE,
+    EGA_DGRAY, EGA_WHITE,
     // Dark blue
-    1, 2,
-    1, 4,
-    1, 10,
-    1, 12,
-    1, 14,
+    EGA_BLUE, EGA_GREEN,
+    EGA_BLUE, EGA_RED,
+    EGA_BLUE, EGA_BRGREEN,
+    EGA_BLUE, EGA_BRRED,
+    EGA_BLUE, EGA_BRYELLOW,
     // Dark green
-    2, 4,
-    2, 5,
-    2, 12,
-    2, 13,
+    EGA_GREEN, EGA_RED,
+    EGA_GREEN, EGA_MAGENTA,
+    EGA_GREEN, EGA_BRRED,
+    EGA_GREEN, EGA_BRMAGENTA,
     // Dark cyan
-    3, 4,
-    3, 5,
-    3, 6,
-    3, 12,
-    3, 13,
-    3, 14,
+    EGA_CYAN, EGA_RED,
+    EGA_CYAN, EGA_MAGENTA,
+    EGA_CYAN, EGA_BROWN,
+    EGA_CYAN, EGA_BRRED,
+    EGA_CYAN, EGA_BRMAGENTA,
+    EGA_CYAN, EGA_BRYELLOW,
     // Dark red
-    4, 9,
-    4, 10,
-    4, 11,
+    EGA_RED, EGA_BRBLUE,
+    EGA_RED, EGA_BRGREEN,
+    EGA_RED, EGA_BRCYAN,
     // Dark magenta
-    5, 6,
-    5, 10,
-    5, 11,
-    5, 14,
+    EGA_MAGENTA, EGA_BROWN,
+    EGA_MAGENTA, EGA_BRGREEN,
+    EGA_MAGENTA, EGA_BRCYAN,
+    //EGA_MAGENTA, EGA_BRYELLOW,
     // Brown
-    6, 9,
-    6, 10,
-    6, 11,
-    6, 13,
+    EGA_BROWN, EGA_BRBLUE,
+    EGA_BROWN, EGA_BRGREEN,
+    EGA_BROWN, EGA_BRCYAN,
+    EGA_BROWN, EGA_BRMAGENTA,
     // Bright blue
-    9, 10,
-    9, 12,
-    9, 14,
+    //EGA_BRBLUE, EGA_BRGREEN,
+    EGA_BRBLUE, EGA_BRRED,
+    EGA_BRBLUE, EGA_BRYELLOW,
     // Bright green
-    10, 12,
-    10, 13,
+    EGA_BRGREEN, EGA_BRRED,
+    EGA_BRGREEN, EGA_BRMAGENTA,
     // Bright cyan
-    11, 12,
-    11, 13,
+    EGA_BRCYAN, EGA_BRRED,
+    EGA_BRCYAN, EGA_BRMAGENTA,
+};
+
+// CGA autodithering is very basic. For each of the six modes,
+// we have a lookup table that converts EGA to one of the CGA colours.
+// This allows people to write one set of hints for EGA and recycle
+// them for CGA.
+uint8_t cga0a_from_ega[] = {
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_BRGREEN,
+    EGA_BRGREEN,
+    EGA_BRRED,
+    EGA_BRRED,
+    EGA_BRRED,
+    EGA_BRYELLOW,
+    EGA_BLACK,
+    EGA_BRGREEN,
+    EGA_BRGREEN,
+    EGA_BRGREEN,
+    EGA_BRRED,
+    EGA_BRRED,
+    EGA_BRYELLOW,
+    EGA_BRYELLOW,
+};
+
+uint8_t cga0b_from_ega[] = {
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_GREEN,
+    EGA_GREEN,
+    EGA_RED,
+    EGA_RED,
+    EGA_RED,
+    EGA_BROWN,
+    EGA_BLACK,
+    EGA_GREEN,
+    EGA_GREEN,
+    EGA_GREEN,
+    EGA_RED,
+    EGA_RED,
+    EGA_BROWN,
+    EGA_BROWN,
+};
+
+uint8_t cga1a_from_ega[] = { 
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_BRCYAN,
+    EGA_BRMAGENTA,
+    EGA_BLACK,
+    EGA_WHITE,
+    EGA_BLACK,
+    EGA_BRCYAN,
+    EGA_BRCYAN,
+    EGA_BRCYAN,
+    EGA_BRCYAN,
+    EGA_BRMAGENTA,
+    EGA_BRMAGENTA,
+    EGA_BRCYAN,
+    EGA_WHITE
+};
+
+uint8_t cga1b_from_ega[] = {
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_CYAN,
+    EGA_MAGENTA,
+    EGA_BLACK,
+    EGA_LGRAY,
+    EGA_BLACK,
+    EGA_CYAN,
+    EGA_CYAN,
+    EGA_CYAN,
+    EGA_CYAN,
+    EGA_MAGENTA,
+    EGA_MAGENTA,
+    EGA_CYAN,
+    EGA_LGRAY
+};
+
+uint8_t cga2a_from_ega[] = {
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_BRCYAN,
+    EGA_BRRED,
+    EGA_BRRED,
+    EGA_BLACK,
+    EGA_WHITE,
+    EGA_BLACK,
+    EGA_BRCYAN,
+    EGA_BRCYAN,
+    EGA_BRCYAN,
+    EGA_BRRED,
+    EGA_BRRED,
+    EGA_BRCYAN,
+    EGA_WHITE
+};
+
+uint8_t cga2b_from_ega[] = {
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_BLACK,
+    EGA_CYAN,
+    EGA_RED,
+    EGA_RED,
+    EGA_BLACK,
+    EGA_LGRAY,
+    EGA_BLACK,
+    EGA_CYAN,
+    EGA_CYAN,
+    EGA_CYAN,
+    EGA_RED,
+    EGA_RED,
+    EGA_CYAN,
+    EGA_LGRAY
 };
 // clang-format on
 
@@ -226,7 +344,9 @@ void get_ega_dither_for_colour(enum pt_palette_remapper_mode mode, pt_colour_rgb
     }
     uint8_t src_col = map_colour(src->r, src->g, src->b);
     if (src_col < 16) {
-        dest->type = DITHER_NONE;
+        dest->type = DITHER_FILL_A;
+        dest->idx_a = src_col;
+        dest->idx_b = src_col;
         return;
     }
 
@@ -318,6 +438,36 @@ void set_dither_from_remapper(
     case REMAPPER_EGA:
         get_ega_dither_for_colour(mode, &pt_sys.palette[idx], dest);
         break;
+    case REMAPPER_CGA0A:
+        get_ega_dither_for_colour(mode, &pt_sys.palette[idx], dest);
+        dest->idx_a = cga0a_from_ega[dest->idx_a % 16] ? cga0a_from_ega[dest->idx_a % 16] : pt_sys.overscan;
+        dest->idx_b = cga0a_from_ega[dest->idx_b % 16] ? cga0a_from_ega[dest->idx_b % 16] : pt_sys.overscan;
+        break;
+    case REMAPPER_CGA0B:
+        get_ega_dither_for_colour(mode, &pt_sys.palette[idx], dest);
+        dest->idx_a = cga0b_from_ega[dest->idx_a % 16] ? cga0b_from_ega[dest->idx_a % 16] : pt_sys.overscan;
+        dest->idx_b = cga0b_from_ega[dest->idx_b % 16] ? cga0b_from_ega[dest->idx_b % 16] : pt_sys.overscan;
+        break;
+    case REMAPPER_CGA1A:
+        get_ega_dither_for_colour(mode, &pt_sys.palette[idx], dest);
+        dest->idx_a = cga1a_from_ega[dest->idx_a % 16] ? cga1a_from_ega[dest->idx_a % 16] : pt_sys.overscan;
+        dest->idx_b = cga1a_from_ega[dest->idx_b % 16] ? cga1a_from_ega[dest->idx_b % 16] : pt_sys.overscan;
+        break;
+    case REMAPPER_CGA1B:
+        get_ega_dither_for_colour(mode, &pt_sys.palette[idx], dest);
+        dest->idx_a = cga1b_from_ega[dest->idx_a % 16] ? cga1b_from_ega[dest->idx_a % 16] : pt_sys.overscan;
+        dest->idx_b = cga1b_from_ega[dest->idx_b % 16] ? cga1b_from_ega[dest->idx_b % 16] : pt_sys.overscan;
+        break;
+    case REMAPPER_CGA2A:
+        get_ega_dither_for_colour(mode, &pt_sys.palette[idx], dest);
+        dest->idx_a = cga2a_from_ega[dest->idx_a % 16] ? cga2a_from_ega[dest->idx_a % 16] : pt_sys.overscan;
+        dest->idx_b = cga2a_from_ega[dest->idx_b % 16] ? cga2a_from_ega[dest->idx_b % 16] : pt_sys.overscan;
+        break;
+    case REMAPPER_CGA2B:
+        get_ega_dither_for_colour(mode, &pt_sys.palette[idx], dest);
+        dest->idx_a = cga2b_from_ega[dest->idx_a % 16] ? cga2b_from_ega[dest->idx_a % 16] : pt_sys.overscan;
+        dest->idx_b = cga2b_from_ega[dest->idx_b % 16] ? cga2b_from_ega[dest->idx_b % 16] : pt_sys.overscan;
+        break;
     case REMAPPER_NONE:
         // If we're explicitly setting the mapper to be NONE,
         // clear the dither table.
@@ -376,9 +526,48 @@ void dither_set_hint(pt_colour_rgb* src, enum pt_dither_type type, pt_colour_rgb
     uint8_t idx_src = map_colour(src->r, src->g, src->b);
     uint8_t idx_a = map_colour(a->r, a->g, a->b);
     uint8_t idx_b = map_colour(b->r, b->g, b->b);
+    if (pt_sys.remapper != REMAPPER_NONE) {
+        pt_dither ega_a;
+        pt_dither ega_b;
+        get_ega_dither_for_colour(REMAPPER_MODE_NEAREST, &pt_sys.palette[idx_a], &ega_a);
+        get_ega_dither_for_colour(REMAPPER_MODE_NEAREST, &pt_sys.palette[idx_b], &ega_b);
+        switch (pt_sys.remapper) {
+        case REMAPPER_EGA:
+            idx_a = ega_a.idx_a;
+            idx_b = ega_b.idx_b;
+            break;
+        case REMAPPER_CGA0A:
+            idx_a = cga0a_from_ega[ega_a.idx_a % 16] ? cga0a_from_ega[ega_a.idx_a % 16] : pt_sys.overscan;
+            idx_b = cga0a_from_ega[ega_b.idx_b % 16] ? cga0a_from_ega[ega_b.idx_b % 16] : pt_sys.overscan;
+            break;
+        case REMAPPER_CGA0B:
+            idx_a = cga0b_from_ega[ega_a.idx_a % 16] ? cga0b_from_ega[ega_a.idx_a % 16] : pt_sys.overscan;
+            idx_b = cga0b_from_ega[ega_b.idx_b % 16] ? cga0b_from_ega[ega_b.idx_b % 16] : pt_sys.overscan;
+            break;
+        case REMAPPER_CGA1A:
+            idx_a = cga1a_from_ega[ega_a.idx_a % 16] ? cga1a_from_ega[ega_a.idx_a % 16] : pt_sys.overscan;
+            idx_b = cga1a_from_ega[ega_b.idx_b % 16] ? cga1a_from_ega[ega_b.idx_b % 16] : pt_sys.overscan;
+            break;
+        case REMAPPER_CGA1B:
+            idx_a = cga1b_from_ega[ega_a.idx_a % 16] ? cga1b_from_ega[ega_a.idx_a % 16] : pt_sys.overscan;
+            idx_b = cga1b_from_ega[ega_b.idx_b % 16] ? cga1b_from_ega[ega_b.idx_b % 16] : pt_sys.overscan;
+            break;
+        case REMAPPER_CGA2A:
+            idx_a = cga2a_from_ega[ega_a.idx_a % 16] ? cga2a_from_ega[ega_a.idx_a % 16] : pt_sys.overscan;
+            idx_b = cga2a_from_ega[ega_b.idx_b % 16] ? cga2a_from_ega[ega_b.idx_b % 16] : pt_sys.overscan;
+            break;
+        case REMAPPER_CGA2B:
+            idx_a = cga2b_from_ega[ega_a.idx_a % 16] ? cga2b_from_ega[ega_a.idx_a % 16] : pt_sys.overscan;
+            idx_b = cga2b_from_ega[ega_b.idx_b % 16] ? cga2b_from_ega[ega_b.idx_b % 16] : pt_sys.overscan;
+            break;
+        default:
+            break;
+        }
+    }
     pt_sys.dither[idx_src].type = type;
     pt_sys.dither[idx_src].idx_a = idx_a;
     pt_sys.dither[idx_src].idx_b = idx_b;
+
     pt_sys.palette_revision++;
 }
 
