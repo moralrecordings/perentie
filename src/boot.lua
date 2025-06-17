@@ -117,6 +117,8 @@ PTGetAppDataPath = function()
     return _PTGetAppDataPath()
 end
 
+--- Load a saved state as part of the initial engine setup.
+-- @local
 _PTInitFromStateFile = function(filename)
     PTLog("PTInitFromStateFile: %s", filename)
     local path = PTGetAppDataPath() .. filename
@@ -331,8 +333,8 @@ PTListSavedStates = function()
     return results
 end
 
-_PTOnLoadStateHandler = nil
-_PTOnSaveStateHandler = nil
+local _PTOnLoadStateHandler = nil
+local _PTOnSaveStateHandler = nil
 --- Set the callback to run when loading a game state.
 -- Perentie will first load all of your game's code, then read the
 -- save file, then call this callback with the state contents, then
@@ -375,20 +377,7 @@ PTSimplexNoise3D = function(x, y, z)
     return _PTSimplexNoise1D(x, y, z)
 end
 
-_PTWhoops = function(err)
-    return debug.traceback(
-        string.format(
-            "Unhandled script error!\nPlease send this info to the game author so they can fix the problem.\n\nPerentie version: %s, Game: %s (%s) ver. %s\nError: %s",
-            _PTVersion(),
-            tostring(_PTGameID),
-            tostring(_PTGameName),
-            tostring(_PTGameVersion),
-            tostring(err)
-        )
-    )
-end
-
-_PTAddToList = function(list, object)
+local _PTAddToList = function(list, object)
     local exists = false
     for i, obj in ipairs(list) do
         if object == obj then
@@ -401,7 +390,7 @@ _PTAddToList = function(list, object)
     end
 end
 
-_PTRemoveFromList = function(list, object)
+local _PTRemoveFromList = function(list, object)
     for i, obj in ipairs(list) do
         if object == obj then
             table.remove(list, i)
@@ -567,7 +556,7 @@ PTActorSetWalkBox = function(actor, box)
     end
 end
 
-_PTActorUpdate = function(actor, fast_forward)
+local _PTActorUpdate = function(actor, fast_forward)
     if not actor or actor._type ~= "PTActor" then
         error("_PTActorUpdate: expected PTActor for first argument")
     end
@@ -1467,7 +1456,7 @@ PTGetImageFromObject = function(object)
     return nil, 0
 end
 
-_PTGlobalRenderList = {}
+local _PTGlobalRenderList = {}
 --- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object to the global rendering list.
 -- @tparam table object Object to add.
 PTGlobalAddObject = function(object)
@@ -1687,7 +1676,7 @@ PTMoveRef = function(object, x, y, start_time, duration, timing, while_paused)
     }
 end
 
-_PTMoveRefList = {}
+local _PTMoveRefList = {}
 --- Move an object smoothly to a destination point.
 -- On every rendered frame, Perentie will adjust the "x" and "y" parameters on the target object
 -- to move it to the destination, with the speed determined by a duration and a timing function.
@@ -1803,6 +1792,7 @@ PTPanel = function(image, x, y, width, height, visible)
         image = image,
         x = x,
         y = y,
+        z = 0,
         width = width,
         height = height,
         objects = {},
@@ -1931,11 +1921,14 @@ PTButton = function(images, x, y, width, height, objects, callback)
     }
 end
 
-_PTPanelList = {}
+local _PTPanelList = {}
 PTAddPanel = function(panel)
     if panel and panel._type == "PTPanel" then
         _PTAddToList(_PTPanelList, panel)
     end
+    table.sort(_PTPanelList, function(a, b)
+        return a.z < b.z
+    end)
 end
 
 PTRemovePanel = function(panel)
@@ -1943,6 +1936,9 @@ PTRemovePanel = function(panel)
         error("PTRemovePanel: expected PTPanel for first argument")
     end
     _PTRemoveFromList(_PTPanelList, panel)
+    table.sort(_PTPanelList, function(a, b)
+        return a.z < b.z
+    end)
 end
 
 PTPanelAddObject = function(panel, object)
@@ -1965,20 +1961,20 @@ PTPanelRemoveObject = function(panel, object)
     end)
 end
 
-_PTTestRect = function(x, y, width, height, test_x, test_y)
+local _PTWithinRect = function(x, y, width, height, test_x, test_y)
     return (test_x >= x) and (test_x < (x + width)) and (test_y >= y) and (test_y < (y + height))
 end
 
-_PTGUIActiveObject = nil
-_PTGUIMouseOver = nil
-_PTUpdateGUI = function()
+local _PTGUIActiveObject = nil
+local _PTGUIMouseOver = nil
+local _PTUpdateGUI = function()
     local has_changed = false
     local mouse_x, mouse_y = PTGetMousePos()
     for _, panel in ipairs(_PTPanelList) do
         if panel.visible then
             for obj, x, y in PTIterObjects({ panel }) do
                 if obj._type == "PTButton" then
-                    local test = _PTTestRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
+                    local test = _PTWithinRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
                     obj.hover = test
                     if test then
                         _PTGUIMouseOver = obj
@@ -1986,7 +1982,7 @@ _PTUpdateGUI = function()
                     end
                     obj.active = test and (obj == _PTGUIActiveObject)
                 elseif obj._type == "PTHorizSlider" then
-                    local test = _PTTestRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
+                    local test = _PTWithinRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
                     obj.hover = test
                     if test then
                         _PTGUIMouseOver = obj
@@ -2011,7 +2007,7 @@ _PTUpdateGUI = function()
     end
 end
 
-_PTGUIEvent = function(ev)
+local _PTGUIEvent = function(ev)
     if ev.type == "mouseDown" and _PTGUIMouseOver then
         if _PTGUIMouseOver._type == "PTButton" or _PTGUIMouseOver._type == "PTHorizSlider" then
             _PTGUIActiveObject = _PTGUIMouseOver
@@ -3505,8 +3501,8 @@ end
 --- Verbs
 -- @section verb
 
-_PTVerbCallbacks = {}
-_PTVerb2Callbacks = {}
+local _PTVerbCallbacks = {}
+local _PTVerb2Callbacks = {}
 
 --- Set a callback for a single-subject verb action.
 -- @tparam string verb Verb to use.
@@ -3519,9 +3515,9 @@ PTOnVerb = function(verb, subject, callback)
     _PTVerbCallbacks[verb][subject] = callback
 end
 
-_PTCurrentVerb = nil
-_PTCurrentSubjectA = nil
-_PTCurrentSubjectB = nil
+local _PTCurrentVerb = nil
+local _PTCurrentSubjectA = nil
+local _PTCurrentSubjectB = nil
 --- Run a single-subject verb action in the verb thread.
 -- This will asynchronously run the callback set by @{PTOnVerb}.
 -- Ideally your game's input code would call this - so e.g. on a
@@ -3626,7 +3622,7 @@ end
 
 --- Process any outstanding verb action.
 -- @local
-_PTRunVerb = function()
+local _PTRunVerb = function()
     if PTVerbReady() then
         if PTThreadExists("__verb") then
             -- don't allow for interrupting another verb
@@ -3909,6 +3905,8 @@ local _PTUpdateMoveObject = function()
     end
 end
 
+--- Process the main event loop. Called from C.
+-- @local
 _PTEvents = function()
     local ev = _PTPumpEvent()
     while ev do
@@ -3944,6 +3942,8 @@ _PTEvents = function()
     _PTUpdateGUI()
 end
 
+--- Process the main rendering loop. Called from C.
+-- @local
 _PTRender = function()
     local room = PTCurrentRoom()
     if not room or room._type ~= "PTRoom" then
@@ -4026,4 +4026,19 @@ _PTRender = function()
             end
         end
     end
+end
+
+--- Error handler. Called from C.
+-- @local
+_PTWhoops = function(err)
+    return debug.traceback(
+        string.format(
+            "Unhandled script error!\nPlease send this info to the game author so they can fix the problem.\n\nPerentie version: %s, Game: %s (%s) ver. %s\nError: %s",
+            _PTVersion(),
+            tostring(_PTGameID),
+            tostring(_PTGameName),
+            tostring(_PTGameVersion),
+            tostring(err)
+        )
+    )
 end
