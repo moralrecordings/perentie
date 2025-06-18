@@ -11,7 +11,6 @@
 #include <fcntl.h>
 #include <go32.h>
 #include <signal.h>
-#include <sys/nearptr.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -109,11 +108,6 @@ static struct pcspeaker_data_t _pcspeaker = { 0 };
 static uint8_t pcspeaker_lut[256] = { 0 };
 void pcspeaker_sample_update();
 void pcspeaker_data_update();
-
-inline uint32_t* bios_ticks_ptr()
-{
-    return (uint32_t*)(0x46c + __djgpp_conventional_base);
-}
 
 static bool _int_8h_prot()
 {
@@ -339,11 +333,6 @@ void timer_init()
 
     log_print("dos:timer_init: DOS version %d.%02d\n", r.h.al, r.h.ah);
     log_print("dos:timer_init: %s DPMI server detected\n", use_dpmi_yield ? "Windows" : "Bare metal");
-
-    if (__djgpp_nearptr_enable() == 0) {
-        log_print("Couldn't access the first 640K of memory. Boourns.\n");
-        exit(-1);
-    }
 
     if (!_timer.installed) {
         log_print("dos:timer_init: Replacing DOS timer interrupt...\n");

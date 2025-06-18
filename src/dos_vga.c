@@ -84,7 +84,8 @@ void vga_init()
 {
     // Memory protection is for chumps
     if (__djgpp_nearptr_enable() == 0) {
-        log_print("Couldn't access the first 640K of memory. Boourns.\n");
+        log_print("dos_vga:vga_init: Failed to enable near pointers.\n");
+        printf("Sorry pal, Perentie needs near pointers.\n");
         exit(-1);
     }
     union REGS regs;
@@ -94,9 +95,10 @@ void vga_init()
     regs.h.bh = 0x00;
     regs.h.bl = 0x00;
     int86(0x10, &regs, &regs);
-    if (regs.h.bl == 0x00) {
-        log_print("VGA not found, aborting");
-        return;
+    if (regs.h.al != 0x1a || (regs.h.bl != 0x07 && regs.h.bl != 0x08)) {
+        log_print("dos_vga:vga_init: Failed VGA BIOS check, exiting");
+        printf("Sorry pal, Perentie needs a VGA card.\n");
+        exit(-1);
     }
 
     // Mode 13h - raster, 256 colours, 320x200
@@ -143,6 +145,7 @@ void vga_init()
 
     atexit(vga_shutdown);
     vga_available = true;
+    __djgpp_nearptr_disable();
 }
 
 void vga_clear()
@@ -386,6 +389,7 @@ void vga_blit()
     // copy the framebuffer to VGA memory
     if (!vga_framebuffer)
         return;
+    __djgpp_nearptr_enable();
     byte* vga = vga_ptr() + vga_page_offset;
     byte* buf = vga_framebuffer;
     // Set map mask to plane 0
@@ -404,6 +408,7 @@ void vga_blit()
     outportb(VGA_SC_DATA, 0x08);
     buf += SCREEN_PLANE;
     memcpy(vga, buf, SCREEN_PLANE);
+    __djgpp_nearptr_disable();
 }
 
 void vga_update_overscan()
@@ -556,6 +561,8 @@ void vga_set_overscan_colour(pt_colour_rgb* colour)
 
 void vga_shutdown()
 {
+    // On the offchance that we quit during drawing
+    __djgpp_nearptr_disable();
     // Mode 3h - text, 16 colours, 80x25
     union REGS regs;
     regs.h.ah = 0x00;
