@@ -24,7 +24,6 @@ inline byte* vga_ptr()
     return (byte*)0xA0000 + __djgpp_conventional_base;
 }
 
-#define VGA_ATC_INDEX 0x3c0
 #define VGA_SC_INDEX 0x3c4
 #define VGA_SC_DATA 0x3c5
 #define VGA_GC_INDEX 0x3ce
@@ -75,6 +74,9 @@ static byte* vga_framebuffer = NULL;
 static bool vga_available = false;
 
 static int vga_page_offset = 0;
+
+static bool vga_overscan_update = false;
+static uint8_t vga_overscan = 0x00;
 
 void vga_shutdown();
 
@@ -404,6 +406,16 @@ void vga_blit()
     memcpy(vga, buf, SCREEN_PLANE);
 }
 
+void vga_update_overscan()
+{
+    union REGS regs;
+    regs.h.ah = 0x10;
+    regs.h.al = 0x01;
+    regs.h.bh = vga_overscan;
+    // INT 10 - Video - Set Overscan Color
+    int86(0x10, &regs, &regs);
+}
+
 static int frame_count = 0;
 
 void vga_flip()
@@ -452,6 +464,11 @@ void vga_flip()
     do {
     } while (vga_is_vblank());
     // uint32_t vblankend = pt_sys.timer->ticks() - ticks;
+
+    if (vga_overscan_update) {
+        vga_update_overscan();
+        vga_overscan_update = false;
+    }
 
     // A little yield as a treat
     dos_yield();
@@ -531,15 +548,10 @@ void vga_set_overscan_colour(pt_colour_rgb* colour)
         target.g = colour->g;
         target.b = colour->b;
     }
-    uint8_t idx = map_colour(target.r, target.g, target.b);
-
-    // CRT mode and status - CGA/EGA/VGA input status 1 register
-    // Reading from this resets the attribute controller flipflop
-    inportb(VGA_INPUT_STATUS_1);
-
-    // EGA/VGA attribute controller - set overscan colour register
-    outportb(VGA_ATC_INDEX, 0x11);
-    outportb(VGA_ATC_INDEX, idx);
+    vga_overscan = map_colour(target.r, target.g, target.b);
+    // Defer actual command so there isn't a gap between the
+    // page flip and the border change.
+    vga_overscan_update = true;
 }
 
 void vga_shutdown()
