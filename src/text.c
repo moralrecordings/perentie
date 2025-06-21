@@ -158,7 +158,7 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
         size_t word_len = test - ptr;
         // log_print("create_text: found %d char word\n", word_len);
         pt_text_word* word = create_text_word(ptr, word_len, font);
-        log_print("create_text: word size: %dx%d\n", word->width, word->height);
+        // log_print("create_text: word size: %dx%d\n", word->width, word->height);
         words = (pt_text_word**)realloc(words, sizeof(pt_text_word*) * (word_count + 1));
         words[word_count] = word;
         word_count++;
@@ -198,7 +198,7 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
     for (int i = 0; i < word_count; i++) {
         // Words that are bigger than the bounding width should overflow.
         if (words[i]->width > text->width) {
-            log_print("create_text: resizing width from %d to %d\n", text->width, words[i]->width);
+            // log_print("create_text: resizing width from %d to %d\n", text->width, words[i]->width);
             text->width = words[i]->width;
         }
 
@@ -244,14 +244,14 @@ pt_text* create_text(const byte* string, size_t length, pt_font* font, uint16_t 
         line_ptr->width = last_word->x + last_word->width;
     }
 
-    log_print("create_text: resizing height from %d to %d + %d\n", text->height, line_ptr->y, line_ptr->height);
+    // log_print("create_text: resizing height from %d to %d + %d\n", text->height, line_ptr->y, line_ptr->height);
     text->height = line_ptr->y + line_ptr->height;
 
     if ((align == ALIGN_CENTER) || (align == ALIGN_RIGHT)) {
         for (int i = 0; i < text->line_count; i++) {
             pt_text_line* line = text->lines[i];
             uint16_t nudge = align == ALIGN_CENTER ? (text->width - line->width) / 2 : text->width - line->width - 1;
-            log_print("create_text: nudging line %d (width %d) by %d px\n", i, line->width, nudge);
+            // log_print("create_text: nudging line %d (width %d) by %d px\n", i, line->width, nudge);
             for (int j = 0; j < line->word_count; j++) {
                 line->words[j]->x += nudge;
             }

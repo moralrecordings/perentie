@@ -218,11 +218,13 @@ static int lua_pt_pc_speaker_play_data(lua_State* L)
 
     size_t size = sizeof(uint16_t) * ((*target)->data_len);
     uint16_t* data = (uint16_t*)malloc(size);
+    /*
     log_print("lua_pt_pc_speaker_play_data: %d, %s, [", size, (*target)->name);
     for (int i = 0; i < (*target)->data_len; i++) {
         log_print("%d, ", (*target)->data[i]);
     }
     log_print("]\n");
+    */
     memcpy(data, (*target)->data, size);
 
     pcspeaker_play_data(data, (*target)->data_len, (*target)->playback_freq);
@@ -330,8 +332,8 @@ static int lua_pt_image(lua_State* L)
     }
 
     pt_image* image = create_image(path, origin_x, origin_y, colourkey);
-    log_print("lua_pt_create_image: %p %d %d %d\n", image, image->width, image->height, image->colourkey);
-    // create a table
+    // log_print("lua_pt_create_image: %p %d %d %d\n", image, image->width, image->height, image->colourkey);
+    //  create a table
     pt_image** target = lua_newuserdatauv(L, sizeof(pt_image*), 1);
     *target = image;
     lua_newtable(L);
@@ -380,8 +382,8 @@ static int lua_pt_set_image_origin(lua_State* L)
     }
     (*imageptr)->origin_x = (int16_t)luaL_checkinteger(L, 2);
     (*imageptr)->origin_y = (int16_t)luaL_checkinteger(L, 3);
-    log_print("lua_pt_set_image_origin: setting %p origin to %d, %d\n", (*imageptr), (*imageptr)->origin_x,
-        (*imageptr)->origin_y);
+    // log_print("lua_pt_set_image_origin: setting %p origin to %d, %d\n", (*imageptr), (*imageptr)->origin_x,
+    //     (*imageptr)->origin_y);
     return 0;
 }
 

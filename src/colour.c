@@ -480,8 +480,8 @@ void set_dither_from_remapper(
         // Can be manually overridden.
         break;
     }
-    log_print("set_dither_from_remapper: %d (%02x %02x %02x) -> %d %02x %02x\n", idx, pt_sys.palette[idx].r,
-        pt_sys.palette[idx].g, pt_sys.palette[idx].b, dest->type, dest->idx_a, dest->idx_b);
+    // log_print("set_dither_from_remapper: %d (%02x %02x %02x) -> %d %02x %02x\n", idx, pt_sys.palette[idx].r,
+    //     pt_sys.palette[idx].g, pt_sys.palette[idx].b, dest->type, dest->idx_a, dest->idx_b);
 }
 
 uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b)

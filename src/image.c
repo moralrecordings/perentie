@@ -63,12 +63,13 @@ bool image_load(pt_image* image)
         return false;
     }
 
-    log_print("image_load: path: %s\nwidth: %u\nheight: %u\nbit depth: %u\ncolor type: %u:\n", image->path, ihdr.width,
-        ihdr.height, ihdr.bit_depth, ihdr.color_type);
+    // log_print("image_load: path: %s\nwidth: %u\nheight: %u\nbit depth: %u\ncolor type: %u:\n", image->path,
+    // ihdr.width,
+    //     ihdr.height, ihdr.bit_depth, ihdr.color_type);
 
     result = spng_decode_image(ctx, NULL, 0, SPNG_FMT_PNG, SPNG_DECODE_PROGRESSIVE);
     if (result) {
-        log_print("Error decoding image: %d", result);
+        log_print("image_load: Error decoding image: %d\n", result);
         spng_ctx_free(ctx);
         fclose(fp);
         return false;
@@ -190,13 +191,13 @@ bool image_load(pt_image* image)
             }
             break;
         default:
-            log_print("image_load: How the hell do you have a %d bit image", ihdr.bit_depth);
+            log_print("image_load: How the hell do you have a %d bit image\n", ihdr.bit_depth);
             break;
         }
     } while (!result);
     free(row_buffer);
     if (result != SPNG_EOI) {
-        log_print("image_load: Expected EOI, got %d", result);
+        log_print("image_load: Expected EOI, got %d\n", result);
         spng_ctx_free(ctx);
         fclose(fp);
         return false;

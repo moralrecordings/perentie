@@ -275,7 +275,7 @@ pt_pc_speaker_ifs* load_pc_speaker_ifs(const char* path)
         uint16_t* data = (uint16_t*)malloc(sizeof(uint16_t) * data_len);
         fread(data, sizeof(uint16_t), data_len, fp);
         result->sounds[i] = create_pc_speaker_data(data, data_len, 140, name);
-        log_print("load_pc_speaker_ifs: %d - name: %s, len: %d\n", i, name, data_len);
+        // log_print("load_pc_speaker_ifs: %d - name: %s, len: %d\n", i, name, data_len);
     }
     result->sounds_len = sfx_count;
 
