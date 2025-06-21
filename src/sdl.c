@@ -15,11 +15,13 @@
 #include "event.h"
 #include "image.h"
 #include "log.h"
+#include "pcspeak.h"
 #include "rect.h"
 #include "script.h"
 #include "sdl.h"
 #include "system.h"
 #include "utils.h"
+#include "woodypc/pcspeak.h"
 
 static SDL_AudioDeviceID audio_out = 0;
 static SDL_Window* window = NULL;
@@ -340,8 +342,19 @@ bool sdltimer_remove_callback(uint32_t id)
     return SDL_RemoveTimer(id);
 }
 
-pt_drv_timer sdl_timer = { &sdltimer_init, &sdltimer_shutdown, &sdltimer_ticks, &sdltimer_millis, &sdltimer_sleep,
-    &sdltimer_add_callback, &sdltimer_remove_callback };
+bool sdltimer_supports_hires()
+{
+    return true;
+}
+bool sdltimer_get_hires()
+{
+    return true;
+}
+void sdltimer_set_hires(bool enabled) { };
+
+pt_drv_timer sdl_timer
+    = { &sdltimer_init, &sdltimer_shutdown, &sdltimer_ticks, &sdltimer_millis, &sdltimer_sleep, &sdltimer_add_callback,
+          &sdltimer_remove_callback, &sdltimer_supports_hires, &sdltimer_get_hires, &sdltimer_set_hires };
 
 bool sdl_input_system = false;
 int mouse_x = 0;
@@ -538,36 +551,112 @@ pt_drv_serial sdl_serial
     = { &sdlserial_init, &sdlserial_shutdown, &sdlserial_open_device, &sdlserial_close_device, &sdlserial_rx_ready,
           &sdlserial_tx_ready, &sdlserial_getc, &sdlserial_gets, &sdlserial_putc, &sdlserial_write, &sdlserial_printf };
 
+#define PCSPEAKER_RATE 48000
+#define PCSPEAKER_1MS 48
+#define PCSPEAKER_16K 3
+static SDL_AudioStream* beep_output = NULL;
+static bool beep_inited = false;
+static uint16_t beep_mode = 0;
+static bool beep_word = false;
+static uint32_t beep_ticks = 0;
+
+void sdlbeep_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount)
+{
+    // Normally the PC speaker is played live by sending commands to the
+    // PIT, which creates a plethora of timing problems (especially if you're
+    // doing RealSound, which requires doing so at exactly 16kHz).
+    // We have the luxury of buffering the commands ahead of time, so we don't need
+    // to worry about exact timing. The WoodyPC driver will aggregate 1ms worth
+    // of PIT commands, at which point it can be rendered as audio.
+    int samples_needed = additional_amount > 0 ? ((additional_amount + PCSPEAKER_1MS * 8) >> 1) : 0;
+    int bytes_given = 0;
+    if (samples_needed > 0) {
+        int16_t samples[PCSPEAKER_1MS];
+        while (samples_needed > 0) {
+            for (beep_ticks = 0; beep_ticks < PCSPEAKER_1MS; beep_ticks += PCSPEAKER_16K) {
+                pcspeaker_sample_update();
+                pcspeaker_data_update();
+            }
+            PCSPEAKER_CallBack(samples, PCSPEAKER_1MS);
+            SDL_PutAudioStreamData(stream, samples, sizeof(int16_t) * PCSPEAKER_1MS);
+            samples_needed -= PCSPEAKER_1MS;
+            bytes_given += sizeof(int16_t) * PCSPEAKER_1MS;
+            beep_ticks = 0;
+        }
+    }
+    // printf("sdlbeep_callback: %d additional, %d total, %d given\n", additional_amount, total_amount, bytes_given);
+}
+
 void sdlbeep_init()
 {
+    if (beep_output)
+        return;
+
+    if (!audio_out)
+        return;
+
+    if (!beep_inited) {
+        PCSPEAKER_Init(PCSPEAKER_RATE, sdltimer_ticks);
+        beep_inited = true;
+    }
+
+    SDL_AudioSpec src = { SDL_AUDIO_S16LE, 1, PCSPEAKER_RATE };
+    beep_output = SDL_CreateAudioStream(&src, NULL);
+    SDL_SetAudioStreamGetCallback(beep_output, sdlbeep_callback, NULL);
+    if (!SDL_BindAudioStream(audio_out, beep_output)) {
+        log_print("sdlbeep_init: Failed to bind audio stream to device: %s\n", SDL_GetError());
+    }
+
+    pcspeaker_init();
 }
 
 void sdlbeep_shutdown()
 {
+    if (!beep_output)
+        return;
+    pcspeaker_shutdown();
+
+    PCSPEAKER_ShutDown();
+    SDL_DestroyAudioStream(beep_output);
+    beep_output = NULL;
+    beep_inited = false;
 }
 
-void sdlbeep_tone(float freq)
+void sdlbeep_set_gate(bool enabled)
 {
+    if (!beep_inited)
+        return;
+
+    PCSPEAKER_SetType(enabled ? 3 : 0, (float)beep_ticks / PCSPEAKER_1MS);
 }
 
-void sdlbeep_play_sample(byte* data, size_t len, int rate)
+void sdlbeep_set_mode(uint16_t mode, bool word)
 {
-    if (data)
-        free(data);
+    if (!beep_inited)
+        return;
+
+    beep_mode = mode;
+    beep_word = word;
 }
 
-void sdlbeep_play_data(uint16_t* data, size_t len, int rate)
+void sdlbeep_set_counter_8(uint8_t counter)
 {
-    if (data)
-        free(data);
+    if (!beep_inited)
+        return;
+
+    PCSPEAKER_SetCounter(counter, beep_mode, (float)beep_ticks / PCSPEAKER_1MS);
 }
 
-void sdlbeep_stop()
+void sdlbeep_set_counter_16(uint16_t counter)
 {
+    if (!beep_inited)
+        return;
+
+    PCSPEAKER_SetCounter(counter, beep_mode, (float)beep_ticks / PCSPEAKER_1MS);
 }
 
-pt_drv_beep sdl_beep
-    = { &sdlbeep_init, &sdlbeep_shutdown, &sdlbeep_tone, &sdlbeep_play_sample, &sdlbeep_play_data, &sdlbeep_stop };
+pt_drv_beep sdl_beep = { &sdlbeep_init, &sdlbeep_shutdown, &sdlbeep_set_gate, &sdlbeep_set_mode, &sdlbeep_set_counter_8,
+    &sdlbeep_set_counter_16 };
 
 // For some reason you can't actually include woodyopl/opl.h, as it has a bunch of
 // player state embedded into it. Oh well!

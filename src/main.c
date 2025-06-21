@@ -1,15 +1,15 @@
-#include "colour.h"
-#include "event.h"
-#include "log.h"
-#include "musicrad.h"
-#include "script.h"
-#include "stb/stb_ds.h"
-#include "system.h"
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "colour.h"
+#include "event.h"
+#include "log.h"
+#include "musicrad.h"
+#include "pcspeak.h"
+#include "script.h"
+#include "system.h"
 
 #ifdef SYSTEM_SDL
 #include "sdl.h"

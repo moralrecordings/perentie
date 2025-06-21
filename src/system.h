@@ -36,6 +36,9 @@ struct pt_drv_timer {
     void (*sleep)(uint32_t millis);
     uint32_t (*add_callback)(uint32_t interval, pt_timer_callback callback, void* param);
     bool (*remove_callback)(uint32_t id);
+    bool (*supports_hires)();
+    bool (*get_hires)();
+    void (*set_hires)(bool enabled);
 };
 
 struct pt_drv_keyboard {
@@ -81,10 +84,10 @@ struct pt_drv_opl {
 struct pt_drv_beep {
     void (*init)();
     void (*shutdown)();
-    void (*tone)(float freq);
-    void (*play_sample)(byte* data, size_t len, int rate);
-    void (*play_data)(uint16_t* data, size_t len, int rate);
-    void (*stop)();
+    void (*set_gate)(bool enabled);
+    void (*set_mode)(uint16_t mode, bool word);
+    void (*set_counter_8)(uint8_t counter);
+    void (*set_counter_16)(uint16_t counter);
 };
 
 enum pt_blit_flags { FLIP_H = 0x01, FLIP_V = 0x02 };

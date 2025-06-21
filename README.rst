@@ -166,4 +166,5 @@ In addition, Perentie incorporates code and algorithms from the following projec
 - `PCTIMER <http://technology.chtsai.org/pctimer/>`_ - high-frequency timer interrupt replacement
 - `LoveDOS <https://github.com/SuperIlu/lovedos/>`_ - framework for making 2D DOS games with Lua
 - `ScummVM <https://www.scummvm.org>`_ - engine for playing narrative-based games
+- `DOSBox <https://www.dosbox.com>`_ - MS-DOS PC emulator 
 - `Reality Adlib Tracker <https://www.3eality.com/productions/reality-adlib-tracker>`_ - OPL3 music tracker/player

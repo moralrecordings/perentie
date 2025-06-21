@@ -18,6 +18,7 @@
 #include "event.h"
 #include "image.h"
 #include "log.h"
+#include "pcspeak.h"
 
 extern char etext;
 
@@ -88,26 +89,6 @@ static struct timer_data_t _timer = { 0 };
 static float _timer_tick_per_ms = TIMER_DEFAULT_TICK_PER_MS;
 static float _timer_ms_per_tick = TIMER_DEFAULT_MS_PER_TICK;
 static float _timer_freq = TIMER_DEFAULT_FREQ;
-
-#define PCSPEAKER_OFF 0
-#define PCSPEAKER_TONE 1
-#define PCSPEAKER_SAMPLE_8K 2
-#define PCSPEAKER_SAMPLE_16K 3
-#define PCSPEAKER_DATA 4
-struct pcspeaker_data_t {
-    uint8_t mode;
-    byte* sample_data;
-    size_t sample_len;
-    uint16_t* data;
-    size_t data_count;
-    uint16_t data_rate;
-    uint16_t data_ticks;
-    size_t offset;
-};
-static struct pcspeaker_data_t _pcspeaker = { 0 };
-static uint8_t pcspeaker_lut[256] = { 0 };
-void pcspeaker_sample_update();
-void pcspeaker_data_update();
 
 static bool _int_8h_prot()
 {
@@ -299,7 +280,12 @@ void _setup_int8_wrapper()
     _timer.handler_prot_new.pm_selector = (uint16_t)_go32_my_cs();
 }
 
-void _timer_switch(bool hires)
+bool timer_get_hires()
+{
+    return _timer.hires;
+}
+
+void timer_set_hires(bool enabled)
 {
     if (_timer.installed) {
         disable();
@@ -307,10 +293,10 @@ void _timer_switch(bool hires)
         // PIT command register - channel 0, two bytes, mode 2 (rate generator)
         outportb(0x43, 0x34);
         // PIT0 data register - load in our new frequency
-        outportb(0x40, (TIMER_PIT_CLOCK / (hires ? TIMER_HIRES_HZ : TIMER_HZ)) & 0xff);
-        outportb(0x40, (TIMER_PIT_CLOCK / (hires ? TIMER_HIRES_HZ : TIMER_HZ)) >> 8);
-        // log_print("dos:_timer_switch: DOS timer hotpatched to run at %dHz\n", hires ? TIMER_HIRES_HZ : TIMER_HZ);
-        _timer.hires = hires;
+        outportb(0x40, (TIMER_PIT_CLOCK / (enabled ? TIMER_HIRES_HZ : TIMER_HZ)) & 0xff);
+        outportb(0x40, (TIMER_PIT_CLOCK / (enabled ? TIMER_HIRES_HZ : TIMER_HZ)) >> 8);
+        // log_print("dos:timer_set_hires: DOS timer hotpatched to run at %dHz\n", hires ? TIMER_HIRES_HZ : TIMER_HZ);
+        _timer.hires = enabled;
         enable();
     }
 }
@@ -368,9 +354,7 @@ void timer_init()
         // All done, interrupts back on.
         enable();
 
-        // Cank the timer frequency.
-        // If DPMI is present, 99% chance we're in Windows, so don't go to 16KHz.
-        _timer_switch(false);
+        timer_set_hires(false);
 
         atexit(timer_shutdown);
     }
@@ -499,194 +483,65 @@ bool timer_remove_callback(uint32_t id)
     return result;
 }
 
+bool timer_supports_hires()
+{
+    // If DPMI is present, 99% chance we're in Windows, so don't go to 16KHz.
+    return !use_dpmi_yield;
+}
+
 pt_drv_timer dos_timer = { &timer_init, &timer_shutdown, &timer_ticks, &timer_millis, &timer_sleep, &timer_add_callback,
-    &timer_remove_callback };
+    &timer_remove_callback, &timer_supports_hires, &timer_get_hires, &timer_set_hires };
 
-void pcspeaker_play_sample(byte* data, size_t len, int rate);
-void pcspeaker_play_data(uint16_t* data, size_t len, int rate);
-void pcspeaker_stop();
-void pcspeaker_init()
+void dos_beep_init()
 {
-    // 6-bit LUT for the sample playback mode
-    for (int i = 0; i < 256; i++) {
-        pcspeaker_lut[i] = (uint8_t)(i * TIMER_PIT_CLOCK / (TIMER_HIRES_HZ * 255));
+    pcspeaker_init();
+}
+
+void dos_beep_shutdown()
+{
+    pcspeaker_shutdown();
+}
+
+void dos_beep_set_gate(bool enabled)
+{
+    if (enabled) {
+        // Enable PC speaker gate on keyboard controller
+        outportb(0x61, inportb(0x61) | 3);
+    } else {
+        // Disable PC speaker gate on keyboard controller
+        outportb(0x61, inportb(0x61) & 0xfc);
     }
-    memset(&_pcspeaker, 0, sizeof(_pcspeaker));
-    LOCK_DATA(_pcspeaker);
-    pcspeaker_stop();
 }
 
-void pcspeaker_shutdown()
-{
-    pcspeaker_stop();
-}
-
-void pcspeaker_tone_raw(uint16_t value)
+void dos_beep_set_mode(uint16_t mode, bool word)
 {
     // PIT mode/command register:
     // - counter 2 (PC speaker)
-    // - bits 0-7 then 8-15
-    // - mode 3 (square wave generator)
-    outportb(0x43, 0xb6);
-    // Load tone frequency into PIT channel 2 data port
-    // The PC speaker is attached to PIT channel 2 and has two states: high
-    // and low. The square wave generator will cycle between high and low
-    // after a specified number of ticks of the main clock (1193180Hz),
-    // making a tone frequency at the loudest possible volume.
-    outportb(0x42, value & 0xff);
-    outportb(0x42, value >> 8);
-    // Enable PC speaker gate on keyboard controller
-    outportb(0x61, inportb(0x61) | 3);
+    // - if word, bits 0-7 then 8-15, else just bits 0-7
+    // - mode
+    outportb(0x43, 0x80 | (word ? 0x30 : 0x10) | ((mode & 3) << 1));
 }
 
-void pcspeaker_tone(float freq)
+void dos_beep_set_counter_16(uint16_t counter)
 {
-    _pcspeaker.mode = PCSPEAKER_TONE;
-    uint16_t units = TIMER_PIT_CLOCK / freq;
-    pcspeaker_tone_raw(units);
+    // PIT counter 2 data port
+    outportb(0x42, counter & 0xff);
+    outportb(0x42, counter >> 8);
 }
 
-void pcspeaker_play_sample(byte* data, size_t len, int rate)
+void dos_beep_set_counter_8(uint8_t counter)
 {
-    uint8_t mode = 0;
-    if (use_dpmi_yield) {
-        log_print("pcspeaker_play_sample: Windows detected, sample playback disabled\n");
-        return;
-    } else if (rate == 8000) {
-        mode = PCSPEAKER_SAMPLE_8K;
-    } else if (rate == 16000) {
-        mode = PCSPEAKER_SAMPLE_16K;
-    } else {
-        log_print("pcspeaker_play_sample: audio must have a sample rate of 8000 or 16000\n");
-        return;
-    }
-    pcspeaker_stop();
-    _pcspeaker.sample_data = data;
-    _pcspeaker.sample_len = len;
-    _pcspeaker.offset = 0;
-    _pcspeaker.mode = mode;
-    _go32_dpmi_lock_data(data, len);
-    _timer_switch(true);
-    // PIT mode/command register:
-    // - counter 2 (PC speaker)
-    // - bits 0-7 only
-    // - mode 0 (interrupt on terminal count)
-    outportb(0x43, 0x90);
-    // Enable PC speaker gate on keyboard controller
-    outportb(0x61, inportb(0x61) | 0x3);
-}
-
-void pcspeaker_play_data(uint16_t* data, size_t len, int rate)
-{
-    if ((rate > 1000) || (rate <= 0)) {
-        log_print("pcspeaker_play_data: playback rate must be between 1 and 1000Hz");
-        return;
-    }
-    pcspeaker_stop();
-    _pcspeaker.mode = PCSPEAKER_DATA;
-    _go32_dpmi_lock_data(data, len * sizeof(uint16_t));
-    _pcspeaker.data = data;
-    _pcspeaker.data_count = len;
-    _pcspeaker.data_rate = TIMER_HIRES_HZ / rate;
-    _pcspeaker.data_ticks = 0;
-}
-
-void pcspeaker_sample_update()
-{
-    // This is the same trick used by Access Software's "RealSound".
-    // Even though we can only send an on-off signal to the PC speaker,
-    // the speaker cone is still subject to real world physics.
-    // If we change the signal faster than the cone can move, then
-    // it will average out to an analogue waveform.
-
-    // We set PIT channel 2 to mode 0; this means whenever we write [value]
-    // to counter 2, the PC speaker output will go high for [value] main
-    // clock ticks, then go low.
-
-    // ------------0x4a------------
-    // --- value ----
-    // _____________
-    //              |______________ -> PC speaker
-
-    // Say that we ran our main timer at 16000Hz. That gives us 0x4a ticks
-    // of the main clock between each timer interrupt. So if we had an
-    // 8000Hz unsigned 8-bit WAV, we could convert each sample to the 0x00-0x4a
-    // range, and make our main timer interrupt set counter 2 (twice per sample)
-    // to play it back.
-    size_t offset = 0;
-    if (_pcspeaker.mode == PCSPEAKER_SAMPLE_8K) {
-        offset = _pcspeaker.offset >> 1;
-    } else if (_pcspeaker.mode == PCSPEAKER_SAMPLE_16K) {
-        offset = _pcspeaker.offset;
-    } else {
-        return;
-    }
-    if (offset >= _pcspeaker.sample_len) {
-        pcspeaker_stop();
-    } else {
-        // PIT channel 2 data port
-        // outportb(0x42, _pcspeaker.sample_data[offset]);
-        outportb(0x42, pcspeaker_lut[_pcspeaker.sample_data[offset]]);
-        _pcspeaker.offset += 1;
-    }
-}
-
-void pcspeaker_data_update()
-{
-    if (_pcspeaker.mode != PCSPEAKER_DATA) {
-        return;
-    }
-    _pcspeaker.data_ticks += _timer.hires ? 1 : TIMER_HIRES_DIV;
-    if (_pcspeaker.data_ticks >= _pcspeaker.data_rate) {
-        _pcspeaker.offset += 1;
-        _pcspeaker.data_ticks %= _pcspeaker.data_rate;
-    }
-
-    if (_pcspeaker.offset >= _pcspeaker.data_count) {
-        pcspeaker_stop();
-    } else {
-        uint16_t value = _pcspeaker.data[_pcspeaker.offset];
-        if (value == 0) {
-            // Disable PC speaker gate on keyboard controller
-            outportb(0x61, inportb(0x61) & 0xfc);
-        } else if (value == 0xffff) {
-            pcspeaker_stop();
-        } else {
-            pcspeaker_tone_raw(value);
-        }
-    }
-}
-
-void pcspeaker_stop()
-{
-    if (_timer.hires) {
-        _timer_switch(false);
-    }
-    _pcspeaker.mode = PCSPEAKER_OFF;
-    if (_pcspeaker.sample_data) {
-        free(_pcspeaker.sample_data);
-        _pcspeaker.sample_data = NULL;
-        _pcspeaker.sample_len = 0;
-    }
-    if (_pcspeaker.data) {
-        free(_pcspeaker.data);
-        _pcspeaker.data = NULL;
-        _pcspeaker.data_count = 0;
-    }
-    _pcspeaker.data_rate = 0;
-    _pcspeaker.data_ticks = 0;
-    _pcspeaker.offset = 0;
-    // Disable PC speaker gate on keyboard controller
-    outportb(0x61, inportb(0x61) & 0xfc);
+    // PIT counter 2 data port
+    outportb(0x42, counter & 0xff);
 }
 
 pt_drv_beep dos_beep = {
-    &pcspeaker_init,
-    &pcspeaker_shutdown,
-    &pcspeaker_tone,
-    &pcspeaker_play_sample,
-    &pcspeaker_play_data,
-    &pcspeaker_stop,
+    &dos_beep_init,
+    &dos_beep_shutdown,
+    &dos_beep_set_gate,
+    &dos_beep_set_mode,
+    &dos_beep_set_counter_8,
+    &dos_beep_set_counter_16,
 };
 
 // Serial port

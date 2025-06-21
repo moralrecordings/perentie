@@ -75,13 +75,13 @@ static int lua_pt_get_millis(lua_State* L)
 static int lua_pt_pc_speaker_tone(lua_State* L)
 {
     float freq = luaL_checknumber(L, 1);
-    pt_sys.beep->tone(freq);
+    pcspeaker_tone(freq);
     return 0;
 }
 
 static int lua_pt_pc_speaker_stop(lua_State* L)
 {
-    pt_sys.beep->stop();
+    pcspeaker_stop();
     return 0;
 }
 
@@ -203,7 +203,7 @@ static int lua_pt_pc_speaker_play_sample(lua_State* L)
     size_t length = wave_get_length(*waveptr);
     byte* buffer = (byte*)malloc(sizeof(byte) * length);
     wave_read(*waveptr, buffer, length);
-    pt_sys.beep->play_sample(buffer, sizeof(byte) * length, rate);
+    pcspeaker_play_sample(buffer, sizeof(byte) * length, rate);
 
     return 0;
 }
@@ -225,7 +225,7 @@ static int lua_pt_pc_speaker_play_data(lua_State* L)
     log_print("]\n");
     memcpy(data, (*target)->data, size);
 
-    pt_sys.beep->play_data(data, (*target)->data_len, (*target)->playback_freq);
+    pcspeaker_play_data(data, (*target)->data_len, (*target)->playback_freq);
     return 0;
 }
 

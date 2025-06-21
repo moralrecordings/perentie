@@ -171,6 +171,17 @@ woodyopl = static_library(
   include_directories : ['src/woodyopl'],
 )
 
+woodypc = static_library(
+  'woodypc',
+  [
+    'src/woodypc/pcspeak.c',
+    'src/woodypc/pcspeak.h',
+  ],
+  c_args : platform_args,
+  include_directories : ['src/woodypc'],
+)
+
+
 siphash = static_library(
   'siphash',
   [
@@ -189,7 +200,7 @@ simplex = static_library(
 if host_machine.system() == 'msdos'
   platform_libs = []
 else
-  platform_libs = [woodyopl]
+  platform_libs = [woodyopl, woodypc]
 endif
 
 boot_lo = custom_target(
