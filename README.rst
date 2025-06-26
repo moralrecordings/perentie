@@ -81,6 +81,12 @@ You will need to package your game contents into a prefetch module in order for 
 
    /usr/lib/emscripten/tools/file_packager game.data --js-output=game.js --preload ../example
 
+To test the WebAssembly version locally, the following command will start a Python webserver with the correct COOP/COEP headers set:
+
+.. code-block:: bash
+
+   ninja webserver
+
 Documentation
 -------------
 

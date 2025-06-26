@@ -30,6 +30,9 @@ elif host_machine.system() == 'emscripten'
     platform_link_args += ['-gsource-map']
   endif
   platform_deps = []
+  run_target('webserver',
+    command : 'scripts/webserver.py')
+
 else
   exe_name = 'perentie'
   sdl_dep = dependency(
