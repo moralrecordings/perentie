@@ -125,7 +125,8 @@ void sdlvideo_clear()
     if (!renderer)
         return;
 
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
+    pt_colour_rgb* fill = &pt_sys.palette[pt_sys.overscan];
+    SDL_SetRenderDrawColor(renderer, fill->r, fill->g, fill->b, SDL_ALPHA_OPAQUE);
     SDL_RenderClear(renderer);
 }
 
