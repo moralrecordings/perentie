@@ -143,7 +143,7 @@ end
 -- @local
 _PTInitFromStateFile = function(filename)
     PTLog("PTInitFromStateFile: %s", filename)
-    local path = PTGetAppDataPath() .. filename
+    local path = filename
     local file, err = io.open(path, "rb")
     if not file then
         error(string.format('PTInitFromStateFile: Unable to open path "%s" for reading: %s', path, tostring(err)))
@@ -286,7 +286,7 @@ PTSaveState = function(index, state_name)
         state_name = ""
     end
 
-    local path = PTGetAppDataPath() .. PTSaveFileName(index)
+    local path = PTSaveFileName(index)
     local file = io.open(path, "a+b")
     if not file then
         error(string.format('PTSaveState: Unable to open path "%s" for writing', path))
@@ -412,7 +412,7 @@ end
 
 PTGetSaveStateSummary = function(index)
     local result = nil
-    local path = PTGetAppDataPath() .. PTSaveFileName(index)
+    local path = PTSaveFileName(index)
     local f, err = io.open(path, "rb")
     if f then
         local magic = f:read(8)

@@ -3,7 +3,7 @@ Perentie
 
 .. image:: example/assets/logo.png
 
-Perentie is a Lua-based graphical adventure game engine for DOS. The design takes several cues from LucasArts' SCUMM and GrimE adventure game engines.
+Perentie is a Lua-based graphical adventure game engine, designed for MS-DOS. The design takes several cues from LucasArts' SCUMM and GrimE adventure game engines.
 
 The engine is still work-in-progress, however a lot of the base functionality has been implemented. Try it and see!
 
@@ -166,6 +166,7 @@ Perentie wouldn't be possible without the following third-party components:
 - `WoodyOPL <https://github.com/rofl0r/woody-opl>`_ - OPL2/OPL3 emulator by the DOSBox team, originally based on Ken Silverman's ADLIBEMU.
 - `SipHash <https://github.com/veorq/SipHash>`_ - fast cryptographic hash function
 - `SimplexNoise <https://github.com/SRombauts/SimplexNoise>`_ - Simplex noise generator
+- `PhysicsFS <https://icculus.org/physfs/>`_ - File system interface
 
 In addition, Perentie incorporates code and algorithms from the following projects:
 

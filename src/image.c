@@ -6,6 +6,7 @@
 
 #include "spng/spng.h"
 
+#include "fs.h"
 #include "image.h"
 #include "log.h"
 #include "rect.h"
@@ -24,12 +25,26 @@ pt_image* create_image(char* path, int16_t origin_x, int16_t origin_y, int16_t c
     return image;
 }
 
+int image_read_fn(spng_ctx* ctx, void* user, void* data, size_t n)
+{
+    FILE* file = user;
+    (void)ctx;
+
+    if (fs_fread(data, n, 1, file) != 1) {
+        if (fs_feof(file))
+            return SPNG_IO_EOF;
+        else
+            return SPNG_IO_ERROR;
+    }
+    return 0;
+}
+
 bool image_load(pt_image* image)
 {
     if (!image || !image->path)
         return false;
 
-    FILE* fp = fopen(image->path, "rb");
+    FILE* fp = fs_fopen(image->path, "rb");
     if (!fp) {
         log_print("image_load: Failed to open image: %s\n", image->path);
         return false;
@@ -38,28 +53,28 @@ bool image_load(pt_image* image)
     spng_ctx* ctx = spng_ctx_new(0);
     if (!ctx) {
         log_print("image_load: Failed to create SPNG context!\n");
-        fclose(fp);
+        fs_fclose(fp);
         return false;
     }
     int result = 0;
-    if ((result = spng_set_png_file(ctx, fp))) {
+    if ((result = spng_set_png_stream(ctx, image_read_fn, fp))) {
         log_print("image_load: Failed to set PNG file! %s\n", spng_strerror(result));
         spng_ctx_free(ctx);
-        fclose(fp);
+        fs_fclose(fp);
         return false;
     }
     struct spng_ihdr ihdr;
     if ((result = spng_get_ihdr(ctx, &ihdr))) {
         log_print("image_load: Failed to fetch IHDR! %s\n", spng_strerror(result));
         spng_ctx_free(ctx);
-        fclose(fp);
+        fs_fclose(fp);
         return false;
     }
 
     if ((ihdr.color_type != SPNG_COLOR_TYPE_INDEXED) && (ihdr.color_type != SPNG_COLOR_TYPE_GRAYSCALE)) {
         log_print("image_load: Image %s is not grayscale or paletted! %d\n", image->path, ihdr.color_type);
         spng_ctx_free(ctx);
-        fclose(fp);
+        fs_fclose(fp);
         return false;
     }
 
@@ -71,7 +86,7 @@ bool image_load(pt_image* image)
     if (result) {
         log_print("image_load: Error decoding image: %d\n", result);
         spng_ctx_free(ctx);
-        fclose(fp);
+        fs_fclose(fp);
         return false;
     }
 
@@ -199,11 +214,11 @@ bool image_load(pt_image* image)
     if (result != SPNG_EOI) {
         log_print("image_load: Expected EOI, got %d\n", result);
         spng_ctx_free(ctx);
-        fclose(fp);
+        fs_fclose(fp);
         return false;
     }
     spng_ctx_free(ctx);
-    fclose(fp);
+    fs_fclose(fp);
 
     return true;
 }

@@ -16,6 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+// HACK: Use Perentie's file API
+#include "../fs_shim.h"
 
 /*
 ** This file uses only the official API of Lua.

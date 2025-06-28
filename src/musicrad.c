@@ -8,6 +8,7 @@
 #include <dpmi.h>
 #endif
 
+#include "fs.h"
 #include "musicrad.h"
 #include "system.h"
 #include "utils.h"
@@ -213,20 +214,20 @@ bool radplayer_load_file(const char* path)
     if (pt_sys.opl->is_ready())
         rad_stop(&rad_player);
 
-    FILE* fp = fopen(path, "rb");
+    FILE* fp = fs_fopen(path, "rb");
     if (!fp)
         return false;
     // get the file size
-    fseek(fp, 0, SEEK_END);
-    size_t rad_size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
+    fs_fseek(fp, 0, SEEK_END);
+    size_t rad_size = fs_ftell(fp);
+    fs_fseek(fp, 0, SEEK_SET);
     if (rad_size > 65536) {
         // too big for the music buffer!
-        fclose(fp);
+        fs_fclose(fp);
         return false;
     }
-    fread(rad_player.Data, rad_size, 1, fp);
-    fclose(fp);
+    fs_fread(rad_player.Data, rad_size, 1, fp);
+    fs_fclose(fp);
     rad_load(&rad_player);
 
     if (rad_timer)

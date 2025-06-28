@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+// HACK: Use Perentie's file API
+#include "../fs_shim.h"
+
 #include "wave.h"
 
 #define WAVE_ENDIAN_ORDER_LITTLE    0x41424344UL

@@ -5,6 +5,7 @@
 
 #include "colour.h"
 #include "event.h"
+#include "fs.h"
 #include "log.h"
 #include "musicrad.h"
 #include "pcspeak.h"
@@ -29,7 +30,7 @@ static uint32_t blits[16] = { 0 };
 static uint32_t flips[16] = { 0 };
 static uint32_t sample_idx = 0;
 
-void perentie_init()
+void perentie_init(int argc, char** argv)
 {
 #ifdef SYSTEM_DOS
     pt_sys.app = &dos_app;
@@ -55,14 +56,15 @@ void perentie_init()
     // seed the RNG in the most basic way
     srand(time(NULL));
 
+    // Initialise driver system
+    pt_sys.app->init();
+
+    fs_init(argc > 0 ? argv[0] : "perentie");
     radplayer_init();
     log_init();
     event_init();
     script_init();
     palette_init();
-
-    // Initialise driver system
-    pt_sys.app->init();
 
     pt_sys.timer->init();
     pt_sys.beep->init();
@@ -101,6 +103,7 @@ void perentie_shutdown()
     pt_sys.timer->shutdown();
     event_shutdown();
     log_shutdown();
+    fs_shutdown();
     pt_sys.app->shutdown();
     script_shutdown();
 }
@@ -149,7 +152,7 @@ static void perentie_loop()
 
 int main(int argc, char** argv)
 {
-    perentie_init();
+    perentie_init(argc, argv);
 
 #ifdef __EMSCRIPTEN__
     emscripten_set_main_loop(perentie_loop, 0, 1);

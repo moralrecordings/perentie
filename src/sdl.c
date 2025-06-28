@@ -13,6 +13,7 @@
 
 #include "dos.h"
 #include "event.h"
+#include "fs.h"
 #include "image.h"
 #include "log.h"
 #include "pcspeak.h"
@@ -41,12 +42,6 @@ void sdl_init()
     }
 }
 
-void sdl_set_meta(const char* name, const char* version, const char* identifier)
-{
-    // This command has to be run before basically any init steps
-    SDL_SetAppMetadata(name, version, identifier);
-}
-
 char* sdl_get_data_path()
 {
     char* path = SDL_GetPrefPath(NULL, SDL_GetAppMetadataProperty(SDL_PROP_APP_METADATA_IDENTIFIER_STRING));
@@ -54,6 +49,15 @@ char* sdl_get_data_path()
     memcpy(buffer, path, strlen(path));
     SDL_free(path);
     return buffer;
+}
+
+void sdl_set_meta(const char* name, const char* version, const char* identifier)
+{
+    // This command has to be run before basically any init steps
+    SDL_SetAppMetadata(name, version, identifier);
+    char* path = sdl_get_data_path();
+    fs_set_write_dir(path);
+    free(path);
 }
 
 void sdl_shutdown()

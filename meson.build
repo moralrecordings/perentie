@@ -199,6 +199,21 @@ simplex = static_library(
   ],
 )
 
+physfs = static_library(
+  'physfs',
+  [
+    'src/physfs/physfs.c',
+    'src/physfs/physfs_archiver_dir.c',
+    'src/physfs/physfs_archiver_zip.c',
+    'src/physfs/physfs_byteorder.c',
+    'src/physfs/physfs_unicode.c',
+    'src/physfs/physfs_platform_djgpp.c',
+    'src/physfs/physfs_platform_posix.c',
+    'src/physfs/physfs_platform_unix.c'
+  ],
+  c_args : ['-DPHYSFS_SUPPORTS_DEFAULT=0', '-DPHYSFS_SUPPORTS_ZIP'] + platform_args,
+  include_directories : ['src/miniz'],
+)
 
 if host_machine.system() == 'msdos'
   platform_libs = []
@@ -263,6 +278,8 @@ core_src = [
   'src/event.h', 
   'src/font.c', 
   'src/font.h', 
+  'src/fs.c', 
+  'src/fs.h', 
   'src/image.c', 
   'src/image.h', 
   'src/log.c', 
@@ -297,7 +314,8 @@ libs = [
   libspng,
   libwave,
   siphash,
-  simplex
+  simplex,
+  physfs
 ]
 
 exe = executable(

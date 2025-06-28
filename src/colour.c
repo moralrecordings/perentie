@@ -601,6 +601,7 @@ void palette_init()
         pt_sys.palette[i].b = ega_palette[i].b;
     }
     pt_sys.palette_top = 16;
+    pt_sys.palette_revision = 0;
     memset(&pt_sys.palette[16], 0, sizeof(pt_colour_rgb) * 240);
 
     pt_sys.remapper = REMAPPER_NONE;
