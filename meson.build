@@ -199,6 +199,12 @@ simplex = static_library(
   ],
 )
 
+if host_machine.system() == 'msdos'
+  physfs_args = ['-DPHYSFS_NO_64BIT_SUPPORT']
+else
+  physfs_args = []
+endif
+
 physfs = static_library(
   'physfs',
   [
@@ -211,7 +217,7 @@ physfs = static_library(
     'src/physfs/physfs_platform_posix.c',
     'src/physfs/physfs_platform_unix.c'
   ],
-  c_args : ['-DPHYSFS_SUPPORTS_DEFAULT=0', '-DPHYSFS_SUPPORTS_ZIP'] + platform_args,
+  c_args : ['-DPHYSFS_SUPPORTS_DEFAULT=0', '-DPHYSFS_SUPPORTS_ZIP'] + physfs_args + platform_args,
   include_directories : ['src/miniz'],
 )
 

@@ -4,7 +4,74 @@
 
 #include "physfs/physfs.h"
 
+#include "log.h"
 #include "system.h"
+
+// HACK: Lua uses unget a -lot- for 1-byte lookaheads. So we have to emulate it.
+#define UNGET_SIZE 8192
+struct unget_t {
+    FILE* ptr;
+    byte buffer[UNGET_SIZE];
+    int offset;
+};
+
+static struct unget_t* unget_ptr[UNGET_SIZE] = { 0 };
+static int unget_count = 0;
+
+struct unget_t* get_unget(FILE* stream)
+{
+    for (int i = 0; i < unget_count; i++) {
+        if (unget_ptr[i]->ptr == stream)
+            return unget_ptr[i];
+    }
+    return NULL;
+}
+
+void tidy_unget()
+{
+    for (int i = unget_count - 1; i >= 0; i--) {
+        if (unget_ptr[i]->offset == 0) {
+            free(unget_ptr[i]);
+            unget_ptr[i] = NULL;
+            if (i != unget_count - 1) {
+                memcpy(&unget_ptr[i], &unget_ptr[i + 1], (size_t)(&unget_ptr[unget_count] - &unget_ptr[i + 1]));
+            }
+            unget_count--;
+        }
+    }
+    return;
+}
+
+struct unget_t* create_unget(FILE* stream)
+{
+    if (unget_count == UNGET_SIZE)
+        tidy_unget();
+    if (unget_count < UNGET_SIZE) {
+        struct unget_t* result = calloc(1, sizeof(struct unget_t));
+        result->ptr = stream;
+        unget_ptr[unget_count] = result;
+        unget_count++;
+        return result;
+    }
+    return NULL;
+}
+
+struct unget_t* get_or_create_unget(FILE* stream)
+{
+    struct unget_t* result = get_unget(stream);
+    if (!result)
+        result = create_unget(stream);
+    return result;
+}
+
+void destroy_unget()
+{
+    for (int i = 0; i < unget_count; i++) {
+        free(unget_ptr[i]);
+        unget_ptr[i] = NULL;
+    }
+    unget_count = 0;
+}
 
 void fs_init(const char* argv0)
 {
@@ -24,68 +91,13 @@ int fs_set_write_dir(const char* path)
 
 void fs_shutdown()
 {
+    destroy_unget();
     PHYSFS_deinit();
 }
 
 // HACK: Provide a POSIX-y shim that can be injected into e.g.
 // the Lua source code with minimal changes.
 // Yes, I know this looks terrible.
-
-#define UNGET_SIZE 8192
-struct unget_t {
-    FILE* ptr;
-    byte buffer[UNGET_SIZE];
-    int offset;
-};
-
-static struct unget_t* unget_ptr[UNGET_SIZE] = { 0 };
-static int unget_offset = 0;
-
-struct unget_t* get_unget(FILE* stream)
-{
-    for (int i = 0; i < unget_offset; i++) {
-        if (unget_ptr[i]->ptr == stream)
-            return unget_ptr[i];
-    }
-    return NULL;
-}
-
-struct unget_t* create_unget(FILE* stream)
-{
-    if (unget_offset < UNGET_SIZE) {
-        struct unget_t* result = calloc(1, sizeof(struct unget_t));
-        result->ptr = stream;
-        unget_ptr[unget_offset] = result;
-        unget_offset++;
-        return result;
-    }
-    return NULL;
-}
-
-struct unget_t* get_or_create_unget(FILE* stream)
-{
-    struct unget_t* result = get_unget(stream);
-    if (!result)
-        result = create_unget(stream);
-    return result;
-}
-
-void destroy_unget(FILE* stream)
-{
-    int idx = -1;
-    for (int i = 0; i < unget_offset; i++) {
-        if (unget_ptr[i]->ptr == stream) {
-            free(unget_ptr[i]);
-            idx = i;
-            break;
-        }
-    }
-    if (idx != -1) {
-        memcpy(&unget_ptr[idx], &unget_ptr[idx + 1], (size_t)(&unget_ptr[unget_offset] - &unget_ptr[idx + 1]));
-        unget_offset--;
-    }
-    return;
-}
 
 FILE* fs_fopen(const char* filename, const char* mode)
 {
@@ -97,8 +109,12 @@ FILE* fs_fopen(const char* filename, const char* mode)
     } else {
         file = PHYSFS_openRead(filename);
     }
-    if (file)
-        printf("fs_fopen: Opened %s with ptr 0x%lx\n", filename, (size_t)file);
+
+    /*if (file) {
+        log_print("fs_fopen: Opened %s with ptr 0x%lx\n", filename, (size_t)file);
+    } else {
+        log_print("fs_fopen: Failed to open file %s: %s\n", filename, PHYSFS_getLastError());
+    }*/
     return (FILE*)file;
 }
 
@@ -106,6 +122,7 @@ size_t fs_fread(void* buffer, size_t size, size_t count, FILE* stream)
 {
     if ((size == 0) || (count == 0))
         return 0;
+    void* buffer_start = buffer;
     size_t len = size * count;
     PHYSFS_File* file = (PHYSFS_File*)stream;
     size_t result = 0;
@@ -118,10 +135,15 @@ size_t fs_fread(void* buffer, size_t size, size_t count, FILE* stream)
             buffer++;
             result++;
         }
-        if (ugt->offset == 0)
-            destroy_unget(stream);
     }
     result += (size_t)PHYSFS_readBytes(file, buffer, len);
+
+    /*log_print("fs_fread: Fetched %d bytes (size: %d, count: %d, len: %d) from ptr 0x%lx (%d)\n", result, size, count,
+    len, (size_t)file, PHYSFS_tell(file)); for (int i = 0; i < result; i++) { log_print("%02hhX ", ((uint8_t
+    *)buffer_start)[i]);
+    }
+    log_print("\n");*/
+
     return result / size;
 }
 
@@ -155,11 +177,11 @@ int fs_fgetc(FILE* stream)
     if (ugt && ugt->offset) {
         ugt->offset--;
         result = ugt->buffer[ugt->offset];
-        if (ugt->offset == 0)
-            destroy_unget(stream);
     } else {
         PHYSFS_readBytes(file, &result, 1);
     }
+    /*log_print("fs_fgetc: %02hhX from ptr 0x%lx (%d)\n", result, (size_t)file, PHYSFS_tell(file));*/
+
     return (int)result;
 }
 
@@ -175,7 +197,8 @@ int fs_fputc(int ch, FILE* stream)
 
 int fs_feof(FILE* stream)
 {
-    if (unget_offset)
+    struct unget_t* ugt = get_unget(stream);
+    if (ugt && ugt->offset)
         return 1;
     PHYSFS_File* file = (PHYSFS_File*)stream;
     return PHYSFS_eof(file);
@@ -200,7 +223,10 @@ long fs_ftell(FILE* stream)
 int fs_fseek(FILE* stream, long offset, int origin)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
-    unget_offset = 0;
+    struct unget_t* ugt = get_unget(stream);
+    if (ugt)
+        ugt->offset = 0;
+
     if (origin == SEEK_END)
         return (int)PHYSFS_seek(file, PHYSFS_fileLength(file) + offset);
     else if (origin == SEEK_CUR)

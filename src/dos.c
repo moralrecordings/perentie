@@ -16,6 +16,7 @@
 
 #include "dos.h"
 #include "event.h"
+#include "fs.h"
 #include "image.h"
 #include "log.h"
 #include "pcspeak.h"
@@ -1272,10 +1273,6 @@ void dos_init()
     _go32_dpmi_lock_code((void*)0x1000, (long)&etext - (long)0x1000);
 }
 
-void dos_set_meta(const char* name, const char* version, const char* identifier)
-{
-}
-
 char* dos_get_data_path()
 {
     char* buffer = (char*)calloc(512, sizeof(char));
@@ -1285,6 +1282,15 @@ char* dos_get_data_path()
     if (idx < 512 && buffer[idx - 1] != '/')
         buffer[idx] = '/';
     return buffer;
+}
+
+void dos_set_meta(const char* name, const char* version, const char* identifier)
+{
+    // Normally we'd use the above to generate a local appdata path.
+    // But this is DOS, so just use the same directory.
+    char* path = dos_get_data_path();
+    fs_set_write_dir(path);
+    free(path);
 }
 
 void dos_shutdown()

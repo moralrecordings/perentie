@@ -73,11 +73,13 @@ void __PHYSFS_platformDetectAvailableCDs(PHYSFS_StringCallback cb, void *data)
 char *__PHYSFS_platformCalcBaseDir(const char *argv0)
 {
     char* buffer = (char*)allocator.Malloc(512);
-    getcwd(buffer, 512);
-    size_t idx = strlen(buffer);
-    // DJGPP uses pretendy UNIX paths. Make sure it ends with a slash.
-    if (idx < 512 && buffer[idx - 1] != '/')
-        buffer[idx] = '/';
+    if (buffer) {
+        getcwd(buffer, 512);
+        size_t idx = strlen(buffer);
+        // DJGPP uses pretendy UNIX paths. Make sure it ends with a slash.
+        if (idx < 512 && buffer[idx - 1] != '/')
+            buffer[idx] = '/';
+    }
     return buffer;
 }
 
@@ -155,7 +157,8 @@ static void *doOpen(const char *filename, int mode)
     /* Add O_CLOEXEC if defined */
     mode |= O_CLOEXEC;
 #endif
-
+    // DJGPP opens in stupid text mode by default
+    mode |= O_BINARY;
     do {
         fd = open(filename, mode, S_IRUSR | S_IWUSR);
     } while ((fd < 0) && (errno == EINTR));
@@ -319,7 +322,7 @@ int __PHYSFS_platformStat(const char *fname, PHYSFS_Stat *st, const int follow)
     {
         st->filetype = PHYSFS_FILETYPE_DIRECTORY;
         st->filesize = 0;
-    } /* else if */
+    } /* else if */ 
 
     else if(S_ISLNK(statbuf.st_mode))
     {
