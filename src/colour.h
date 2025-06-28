@@ -85,4 +85,6 @@ uint8_t map_colour(uint8_t r, uint8_t g, uint8_t b);
 void dither_set_hint(pt_colour_rgb* src, enum pt_dither_type type, pt_colour_rgb* a, pt_colour_rgb* b);
 uint8_t dither_calc(uint8_t src, int16_t x, int16_t y);
 
+void palette_init();
+
 #endif

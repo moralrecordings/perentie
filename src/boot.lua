@@ -25,14 +25,14 @@ local _PTGameName = nil
 --- Set the current game.
 -- Required in order to use the save/load system.
 -- @tparam string id Identifier code for the game, in reverse domain format. Used to check that a saved state is for the correct game.
--- @tparam number version Version number of the code. Used to state which version of the game created a save state.
+-- @tparam string version Version number of the code. Used to state which version of the game created a save state.
 -- @tparam string name Human readable name
 PTSetGameInfo = function(id, version, name)
     if not type(id) == "string" then
         error("PTSetGameInfo: expected string for first argument")
     end
-    if not type(version) == "number" then
-        error("PTSetGameInfo: expected number for second argument")
+    if not type(version) == "string" then
+        error("PTSetGameInfo: expected string for second argument")
     end
     if not type(name) == "string" then
         error("PTSetGameInfo: expected string for third argument")
@@ -117,6 +117,28 @@ PTGetAppDataPath = function()
     return _PTGetAppDataPath()
 end
 
+local _PTOnLoadStateHandler = nil
+local _PTOnSaveStateHandler = nil
+--- Set the callback to run when loading a game state.
+-- Perentie will first load all of your game's code, then read the
+-- save file, then call this callback with the state contents, then
+-- apply that state to the running game.
+-- You can use this as a hook to e.g. check for an earlier game version
+-- and apply manual variable fixups to the state.
+-- @tparam function callback Function body to call. Takes the state object as an argument.
+PTOnLoadState = function(callback)
+    _PTOnLoadStateHandler = callback
+end
+
+--- Set the callback to run when saving a game state.
+-- Perentie will first generate a state from the running game,
+-- call this callback with the state contents, then write that state to a file.
+-- Ideally you shouldn't ever need this.
+-- @tparam function callback Function body to call. Takes the state object as an argument.
+PTOnSaveState = function(callback)
+    _PTOnSaveStateHandler = callback
+end
+
 --- Load a saved state as part of the initial engine setup.
 -- @local
 _PTInitFromStateFile = function(filename)
@@ -132,15 +154,50 @@ _PTInitFromStateFile = function(filename)
         error(string.format('PTInitFromStateFile: Unrecognised format for file "%s"', path))
     end
     local version = file:read(2)
-    if version ~= string.char(1, 0) then
+    local state = {}
+    if version == string.char(1, 0) then
+        -- version 1: everything in CBOR blob
+        state = cbor.decode(file:read("a"))
+        file:close()
+        if type(state) ~= "table" then
+            error(string.format('PTInitFromStateFile: Expected table from file "%s"', path))
+        end
+    elseif version == string.char(2, 0) then
+        -- version 2: basic attributes in chunks, everything else in CBOR blob
+        while true do
+            local chunk_id = file:read(4)
+            if not chunk_id then
+                break
+            end
+            local chunk_size = string.unpack("<I4", file:read(4))
+            local chunk = file:read(chunk_size)
+            if chunk_id == "PTVR" then
+                state.pt_version = chunk
+            elseif chunk_id == "GMVR" then
+                state.game_version = chunk
+            elseif chunk_id == "GMID" then
+                state.game_id = chunk
+            elseif chunk_id == "NAME" then
+                state.name = chunk
+            elseif chunk_id == "TIME" then
+                state.timestamp = chunk
+            elseif chunk_id == "DATA" then
+                local data = cbor.decode(chunk)
+                if type(data) ~= "table" then
+                    error(string.format('PTInitFromStateFile: Expected table from file "%s"', path))
+                end
+                state.vars = data.vars
+                state.actors = data.actors
+                state.rooms = data.rooms
+                state.current_room = data.current_room
+            end
+        end
+        file:close()
+    else
         file:close()
         error(string.format('PTInitFromStateFile: Unsupported format version for file "%s"', path))
     end
-    local state = cbor.decode(file:read("a"))
-    file:close()
-    if type(state) ~= "table" then
-        error(string.format('PTInitFromStateFile: Expected table from file "%s"', path))
-    end
+
     local game_id = state.game_id
     if not game_id then
         error(string.format('PTInitFromStateFile: No game_id found in file "%s"', path))
@@ -160,25 +217,85 @@ _PTInitFromStateFile = function(filename)
     PTImportState(state)
 end
 
+local _PTSaveToStateFile = function(index, state_name)
+    local path = PTGetAppDataPath() .. PTSaveFileName(index)
+    local file = io.open(path, "wb")
+    if not file then
+        error(string.format('PTSaveToStateFile: Unable to open path "%s" for writing', path))
+    end
+
+    local state = PTExportState(state_name)
+    if _PTOnSaveStateHandler then
+        _PTOnSaveStateHandler(state)
+    end
+
+    file:write("PERENTIE") -- magic number
+    file:write(string.char(2, 0)) -- format version, little endian
+
+    -- Lift chunk data from state
+    local pt_version = state.pt_version
+    state.pt_version = nil
+    local game_id = state.game_id
+    state.game_id = nil
+    local game_version = state.game_version
+    state.game_version = nil
+    local name = state.name
+    state.name = nil
+    local timestamp = state.timestamp
+    state.timestamp = nil
+
+    PTLog("PTSaveStateToFile: writing state - slot: %d, path: %s, name: %s", index, path, state_name)
+    file:write("PTVR")
+    file:write(string.pack("<I4", #pt_version))
+    file:write(pt_version)
+    file:write("GMVR")
+    file:write(string.pack("<I4", #game_version))
+    file:write(game_version)
+    file:write("GMID")
+    file:write(string.pack("<I4", #game_id))
+    file:write(game_id)
+    file:write("NAME")
+    file:write(string.pack("<I4", #name))
+    file:write(name)
+    file:write("TIME")
+    file:write(string.pack("<I4", #timestamp))
+    file:write(timestamp)
+    local data = cbor.encode(state)
+    file:write("DATA")
+    file:write(string.pack("<I4", #data))
+    file:write(data)
+    file:close()
+end
+
+local _PTSaveIndex = nil
+local _PTSaveStateName = nil
 --- Save the current game state to a file.
--- @tparam number index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}, with the filename provided by @{PTSaveFileName}.
--- @tparam string state_name Name of the saved state. Useful for e.g. listing saved games.
+-- This is a deferred operation.
+-- @tparam integer index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}, with the filename provided by @{PTSaveFileName}.
+-- @tparam[opt=""] string state_name Name of the saved state. Useful for e.g. listing saved games.
 PTSaveState = function(index, state_name)
+    if type(index) ~= "number" then
+        error("PTSaveState: index must be an integer between 0 and 999")
+    end
+
     if not _PTGameID then
         error("PTSaveState: No game ID defined! First, set it up with PTSetGameInfo()")
     end
 
+    if not state_name then
+        state_name = ""
+    end
+
     local path = PTGetAppDataPath() .. PTSaveFileName(index)
-    local file = io.open(path, "wb")
+    local file = io.open(path, "a+b")
     if not file then
         error(string.format('PTSaveState: Unable to open path "%s" for writing', path))
     end
-    file:write("PERENTIE") -- magic number
-    file:write(string.char(1, 0)) -- format version, little endian
-    local state = PTExportState(state_name)
-    PTLog("PTSaveState: writing state - slot: %d, path: %s, name: %s", index, path, state_name)
-    file:write(cbor.encode(state)) -- version 1 is just a CBOR blob containing the state
     file:close()
+
+    -- Defer until end of event loop
+    _PTSaveIndex = index
+    _PTSaveStateName = state_name
 end
 
 --- Export the current game state.
@@ -299,25 +416,58 @@ PTGetSaveStateSummary = function(index)
     local f, err = io.open(path, "rb")
     if f then
         local magic = f:read(8)
+        if magic ~= "PERENTIE" then
+            f:close()
+            error(string.format('PTGetSaveStateSummary: Unrecognised format for file "%s"', path))
+        end
         local version = f:read(2)
-        if magic == "PERENTIE" and version == string.char(1, 0) then
+        if version == string.char(1, 0) then
+            -- version 1: everything in CBOR blob
             local content = f:read("a")
             if #content > 0 then
                 local state = cbor.decode(content)
                 if type(state) == "table" and state.game_id == _PTGameID then
                     result = { index = index, name = state.name, timestamp = state.timestamp }
                 else
-                    PTLog("PTGetSaveStateSummary: failed to open %s: payload is wrong", path)
+                    PTLog("PTGetSaveStateSummary: Failed to open %s: payload is wrong", path)
                 end
             else
-                PTLog("PTGetSaveStateSummary: failed to open %s: no content", path)
+                PTLog("PTGetSaveStateSummary: Failed to open %s: no content", path)
+            end
+        elseif version == string.char(2, 0) then
+            -- version 2: basic attributes in chunks, everything else in CBOR blob
+            -- We were running into problems where version 1 would hit the watchdog limit,
+            -- as cbor.decode is pretty damn expensive. Having the summary fields stored
+            -- as string chunks is a lot cheaper.
+            local game_id = nil
+            local name = nil
+            local timestamp = nil
+            while true do
+                local chunk_id = f:read(4)
+                if not chunk_id then
+                    break
+                end
+                local chunk_size = string.unpack("<I4", f:read(4))
+
+                if chunk_id == "GMID" then
+                    game_id = f:read(chunk_size)
+                elseif chunk_id == "NAME" then
+                    name = f:read(chunk_size)
+                elseif chunk_id == "TIME" then
+                    timestamp = f:read(chunk_size)
+                else
+                    f:seek("cur", chunk_size)
+                end
+            end
+            if game_id == _PTGameID then
+                result = { index = index, name = name, timestamp = timestamp }
+            else
+                PTLog("PTGetSaveStateSummary: Failed to open %s: payload is wrong", path)
             end
         else
-            PTLog("PTGetSaveStateSummary: failed to open %s: couldn't find header %s", path, magic)
+            PTLog("PTGetSaveStateSummary: Failed to open %s: couldn't find header %s", path, magic)
         end
         f:close()
-    else
-        PTLog("PTGetSaveStateSummary: failed to open %s: %s", path, tostring(err))
     end
     return result
 end
@@ -331,28 +481,6 @@ PTListSavedStates = function()
         end
     end
     return results
-end
-
-local _PTOnLoadStateHandler = nil
-local _PTOnSaveStateHandler = nil
---- Set the callback to run when loading a game state.
--- Perentie will first load all of your game's code, then read the
--- save file, then call this callback with the state contents, then
--- apply that state to the running game.
--- You can use this as a hook to e.g. check for an earlier game version
--- and apply manual variable fixups to the state.
--- @tparam function callback Function body to call. Takes the state object as an argument.
-PTOnLoadState = function(callback)
-    _PTOnLoadStateHandler = callback
-end
-
---- Set the callback to run when saving a game state.
--- Perentie will first generate a state from the running game,
--- call this callback with the state contents, then write that state to a file.
--- Ideally you shouldn't ever need this.
--- @tparam function callback Function body to call. Takes the state object as an argument.
-PTOnSaveState = function(callback)
-    _PTOnSaveStateHandler = callback
 end
 
 --- Return a unique 32-bit hash for a string.
@@ -3940,6 +4068,14 @@ _PTEvents = function()
     _PTUpdateRoom()
     _PTUpdateMoveObject()
     _PTUpdateGUI()
+
+    if _PTSaveIndex then
+        local index = _PTSaveIndex
+        local state_name = _PTSaveStateName
+        _PTSaveIndex = nil
+        _PTSaveStateName = nil
+        _PTSaveToStateFile(index, state_name)
+    end
 end
 
 --- Process the main rendering loop. Called from C.

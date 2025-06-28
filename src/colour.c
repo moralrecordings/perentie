@@ -1,6 +1,6 @@
 #include <math.h>
 #include <stdint.h>
-#include <stdlib.h>
+#include <string.h>
 
 #include "colour.h"
 #include "log.h"
@@ -589,4 +589,21 @@ uint8_t dither_calc(uint8_t src, int16_t x, int16_t y)
     default:
         return src;
     }
+}
+
+void palette_init()
+{
+    // Fill the top 16 colours with the EGA palette.
+    // DOS should default to this, but better safe than sorry.
+    for (int i = 0; i < 16; i++) {
+        pt_sys.palette[i].r = ega_palette[i].r;
+        pt_sys.palette[i].g = ega_palette[i].g;
+        pt_sys.palette[i].b = ega_palette[i].b;
+    }
+    pt_sys.palette_top = 16;
+    memset(&pt_sys.palette[16], 0, sizeof(pt_colour_rgb) * 240);
+
+    pt_sys.remapper = REMAPPER_NONE;
+    pt_sys.remapper_mode = REMAPPER_MODE_NEAREST;
+    memset(pt_sys.dither, 0, sizeof(pt_dither) * 256);
 }

@@ -59,18 +59,10 @@ void perentie_init()
     log_init();
     event_init();
     script_init();
+    palette_init();
 
     // Initialise driver system
     pt_sys.app->init();
-
-    // Fill the top 16 colours with the EGA palette.
-    // DOS should default to this, but better safe than sorry.
-    for (int i = 0; i < 16; i++) {
-        pt_sys.palette[i].r = ega_palette[i].r;
-        pt_sys.palette[i].g = ega_palette[i].g;
-        pt_sys.palette[i].b = ega_palette[i].b;
-    }
-    pt_sys.palette_top = 16;
 
     pt_sys.timer->init();
     pt_sys.beep->init();

@@ -949,7 +949,8 @@ void script_init()
     if (result != LUA_OK) {
         log_print("script_init(): inspect: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);
-        log_print("%s", lua_tostring(main_thread, 1));
+        crash_message = lua_strcpy(main_thread, -1, NULL);
+        log_print("%s\n", crash_message);
         lua_pop(main_thread, 1);
         exit(1);
     }
@@ -960,7 +961,8 @@ void script_init()
     if (result != LUA_OK) {
         log_print("script_init(): cbor: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);
-        log_print("%s", lua_tostring(main_thread, 1));
+        crash_message = lua_strcpy(main_thread, -1, NULL);
+        log_print("%s\n", crash_message);
         lua_pop(main_thread, 1);
         exit(1);
     }
@@ -1000,19 +1002,24 @@ void script_reset()
     log_print("script_reset(): Resetting Perentie state!\n");
     lua_close(main_thread);
     main_thread = NULL;
+    // clear palette + remove dithering rules
+    palette_init();
+
     script_init();
     has_reset = false;
     if (reset_state_path) {
         log_print("script_reset(): Loading state from filename %s\n", reset_state_path);
+        lua_getglobal(main_thread, "_PTWhoops");
         lua_getglobal(main_thread, "_PTInitFromStateFile");
         lua_pushstring(main_thread, reset_state_path);
-        if (lua_pcall(main_thread, 1, 0, 0) != LUA_OK) {
-            const char* error = lua_tostring(main_thread, -1);
-            log_print("script_reset(): error: %s\n", error);
-            lua_pop(main_thread, 1);
-        }
         free(reset_state_path);
         reset_state_path = NULL;
+        if (lua_pcall(main_thread, 1, LUA_MULTRET, 1) != LUA_OK) {
+            crash_message = lua_strcpy(main_thread, -1, NULL);
+            log_print("script_reset(): error: %s\n", crash_message);
+            lua_pop(main_thread, 2);
+            exit(1);
+        }
     }
 }
 
@@ -1023,5 +1030,8 @@ void script_shutdown()
         main_thread = NULL;
         // just in case the game tries to go on
         has_quit = true;
+    }
+    if (crash_message) {
+        printf("%s\n", crash_message);
     }
 }

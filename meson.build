@@ -1,5 +1,5 @@
 project('perentie', 'c',
-  version : '0.9.0',
+  version : '0.9.1',
   license : 'GPL-3.0-or-later', 
   default_options : ['warning_level=1', 'optimization=2']
 )
