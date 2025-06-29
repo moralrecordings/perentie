@@ -13,6 +13,12 @@ PTVersion = function()
     return _PTVersion()
 end
 
+--- Get the platform which Perentie is running on.
+-- @treturn string Platform string. Options are: "dos", "sdl", "web"
+PTPlatform = function()
+    return _PTPlatform()
+end
+
 local _PTActorList = {}
 local _PTRoomList = {}
 local _PTCurrentRoom = nil

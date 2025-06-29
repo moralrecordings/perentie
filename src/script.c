@@ -66,6 +66,12 @@ static int lua_pt_version(lua_State* L)
     return 1;
 }
 
+static int lua_pt_platform(lua_State* L)
+{
+    lua_pushstring(L, PLATFORM);
+    return 1;
+}
+
 static int lua_pt_get_millis(lua_State* L)
 {
     lua_pushinteger(L, pt_sys.timer->millis());
@@ -832,6 +838,7 @@ static int lua_pt_quit(lua_State* L)
 
 static const struct luaL_Reg lua_funcs[] = {
     { "_PTVersion", lua_pt_version },
+    { "_PTPlatform", lua_pt_platform },
     { "_PTGetMillis", lua_pt_get_millis },
     { "_PTPCSpeakerTone", lua_pt_pc_speaker_tone },
     { "_PTPCSpeakerStop", lua_pt_pc_speaker_stop },

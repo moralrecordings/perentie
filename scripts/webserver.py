@@ -30,6 +30,6 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
-    with socketserver.TCPServer(("localhost", port), Handler) as httpd:
+    with socketserver.TCPServer(("0.0.0.0", port), Handler) as httpd:
         print(f"Emscripten port served at http://localhost:{port}/perentie.html")
         httpd.serve_forever()
