@@ -3,7 +3,13 @@ Perentie
 
 .. image:: example/assets/logo.png
 
-Perentie is a Lua-based graphical adventure game engine, designed for MS-DOS. The design takes several cues from LucasArts' SCUMM and GrimE adventure game engines.
+Perentie is a Lua-based graphical adventure game engine. The design is heavily inspired by LucasArts' SCUMM and GrimE adventure game engines.
+
+Perentie is designed for the hardware constraints of Pentium-era MS-DOS. You can run it in any of the following environments:
+
+- MS-DOS, including as a child process from inside Windows 3.1/95/98
+- Natively on most platforms (via SDL3)
+- Embedded in a webpage (via SDL3 + Emscripten)
 
 The engine is still work-in-progress, however a lot of the base functionality has been implemented. Try it and see!
 
@@ -11,7 +17,8 @@ Featuring:
 
 - Lua-based scripting API
 - Co-operative threading
-- 320x200 256 colour VGA graphics
+- 320x200 resolution 256 colour VGA graphics
+- Programmable dithering engine (convert your graphics to EGA and CGA!)
 - Bitmap text rendering with support for UTF-8
 - PC speaker tone/sample playback
 - OPL2/OPL3 music playback
@@ -100,53 +107,6 @@ You will also need:
    meson setup --cross-file=i586-pc-msdosdjgpp.ini build_dos
    cd build_dos
    ninja doc 
-
-Images 
-======
-
-Perentie supports exactly one image format: PNG. Speifically, PNGs in 8-bit indexed or grayscale format.
-
-Don't worry too much about palettes; Perentie will keep a running tab of all the colours used and convert your graphics for the target hardware. Once 256 colours have been used, subsequent colours will be remapped to the nearest matching colour.
-
-You can convert a normal PNG to 8-bit with `ImageMagick <https://imagemagick.org>`_:
-
-.. code-block:: bash
-
-   magick convert source.png -colors 256 PNG8:target.png 
-
-Debugging
-=========
-
-Perentie includes a built-in Lua shell, accessible over a COM port via a null-modem connection. For DOSBox Staging users, all that's required is to add the following line to your dosbox.conf: 
-
-.. code-block:: text 
-
-   [serial]
-   serial4       = nullmodem telnet:1 port:42424
-
-In your game's Lua code, add the following call:
-
-.. code-block:: lua
-
-   PTSetDebugConsole(true, "COM4")
-
-When the engine is running, you can connect to the shell on port 42424 using a Telnet client:
-
-.. code-block:: bash
-
-   $ telnet localhost 42424
-   Trying 127.0.0.1...
-   Connected to localhost.
-   Escape character is '^]'.
-
-   ┈┅━┥ Perentie v0.9.0 - Console ┝━┅┈
-   Lua 5.4.7  Copyright (C) 1994-2024 Lua.org, PUC-Rio
-
-   >> PTVersion()
-   "0.9.0"
-   >> 
-
-Calls to Lua's `print` function will display the output in the debug shell.
 
 Third-party
 ===========

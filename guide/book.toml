@@ -1,0 +1,11 @@
+[book]
+title = "Perentie User Guide"
+authors = ["Scott Percival"]
+language = "en"
+src = "src"
+description = "User guide for the Perentie adventure game engine."
+
+[output.html]
+git-repository-url = "https://github.com/moralrecordings/perentie"
+git-repository-icon = "fa-code-fork"
+edit-url-template = "https://github.com/moralrecordings/perentie/edit/main/guide/{path}"
