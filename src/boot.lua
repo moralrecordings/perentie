@@ -224,7 +224,7 @@ _PTInitFromStateFile = function(filename)
 end
 
 local _PTSaveToStateFile = function(index, state_name)
-    local path = PTGetAppDataPath() .. PTSaveFileName(index)
+    local path = PTSaveFileName(index)
     local file = io.open(path, "wb")
     if not file then
         error(string.format('PTSaveToStateFile: Unable to open path "%s" for writing', path))
@@ -410,7 +410,7 @@ PTImportState = function(state)
         end
         _PTCurrentRoom = room.name
         if room and _PTOnRoomLoadHandlers[room.name] then
-            PTLog("PTSwitchRoom: calling load handler for %s", room.name)
+            PTLog("PTImportState: calling load handler for %s", room.name)
             _PTOnRoomLoadHandlers[room.name]()
         end
     end
@@ -424,7 +424,8 @@ PTGetSaveStateSummary = function(index)
         local magic = f:read(8)
         if magic ~= "PERENTIE" then
             f:close()
-            error(string.format('PTGetSaveStateSummary: Unrecognised format for file "%s"', path))
+            PTLog('PTGetSaveStateSummary: Unrecognised format for file "%s"', path)
+            return
         end
         local version = f:read(2)
         if version == string.char(1, 0) then
