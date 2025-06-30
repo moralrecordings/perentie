@@ -6,5 +6,6 @@
 - [Graphics](./graphics.md)
 - [Fonts](./fonts.md)
 - [Sound](./sound.md)
+- [State](./state.md)
 - [Storage](./storage.md)
 - [Debugging](./debugging.md)

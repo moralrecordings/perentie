@@ -7,11 +7,20 @@ There is a fully commented [basic example program](https://github.com/moralrecor
 
 ## Design philosophy
 
-Perentie's biggest departure from adventure game engines such as [Adventure Game Studio](https://www.adventuregamestudio.co.uk/) is that there is no Integrated Development Environment. Games are written as Lua code, and assets are stored as plain files. There are no special Perentie file formats. 
+- The engine will be designed around the hardware constraints of a Pentium PC from 1996.
+- The hardware interface and main loop will be written in C.
+- The scripting API will be written in Lua.
+- As much of the engine as possible should be written in Lua rather than C.
+- Engine state should be stored in one place, tightly defined and serialisable.
+- The engine should run at feature parity on three platforms: MS-DOS, SDL3 + POSIX, and WebAssembly.
 
-The main advantages of this approach are that plain files are much easier to version control, and you can use your favourite editing tools to handle development. 
+## Development environment
 
-Right now the biggest drawback is that graphical layout operations (e.g. drawing items in a room) require writing code; later on we will talk about the easiest way to import graphics and room layouts from your image editing tool into your code.
+Perentie's biggest departure from existing adventure game development systems such as [Adventure Game Studio](https://www.adventuregamestudio.co.uk/) is that there is no Integrated Development Environment. Games are written as Lua code, and assets are stored as plain files. There are no special Perentie file formats. 
+
+There are two main advantages of this approach: plain files are much easier to version control, and you can use your favourite tools to handle development instead of wrestling with a custom editor. 
+
+Right now the biggest drawback is that graphical layout operations (e.g. drawing items in a room) require writing code; later on we will talk about the easiest way to import graphics and room layouts from your image editing tool into Lua.
 
 Perentie does keep one of the strengths normally associated with custom IDEs; you can hot-reload the engine and instantly test changes to the code and assets. The game state is designed to be minimal and serialisable, making it easy to save and load in a way that doesn't break with future revisions of the game code.
 
