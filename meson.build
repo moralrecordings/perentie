@@ -1,7 +1,8 @@
 project('perentie', 'c',
   version : '0.9.1',
   license : 'GPL-3.0-or-later', 
-  default_options : ['warning_level=1', 'optimization=2']
+  default_options : ['warning_level=1', 'optimization=2'],
+  meson_version: '>=1.4.0'
 )
 
 if host_machine.system() == 'msdos'
@@ -17,6 +18,7 @@ if host_machine.system() == 'msdos'
   platform_link_args = []
   platform_deps = []
 elif host_machine.system() == 'emscripten'
+  em_pre_js = files('src/em_pre.js')[0]
   exe_name = 'perentie'
   platform_src = [
     'src/sdl.c',
@@ -25,7 +27,7 @@ elif host_machine.system() == 'emscripten'
   platform_args = [
     '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3', '--use-port=sdl3', '-sUSE_PTHREADS=1'
   ]
-  platform_link_args = ['--use-port=sdl3', '-sFORCE_FILESYSTEM', '-sUSE_PTHREADS=1']
+  platform_link_args = ['--use-port=sdl3', '-sFORCE_FILESYSTEM', '-sUSE_PTHREADS=1', '-lidbfs.js', '--pre-js', em_pre_js.full_path()]
   if get_option('buildtype') in ['debug', 'debugoptimized']
     platform_link_args += ['-gsource-map']
   endif

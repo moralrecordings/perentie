@@ -389,9 +389,22 @@ void sdlkeyboard_init()
 {
     if (!sdl_input_system) {
         SDL_InitSubSystem(SDL_INIT_EVENTS);
+        // By default, SDL will make fake mouse events for any touch events.
+        // Let's just do that ourselves.
+        SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
         sdl_input_system = true;
     }
 }
+
+#define DRAG_THRESHOLD 3.0
+#define PRESS_TIME 500
+
+static bool in_touch_press = false;
+static bool touch_has_resolved = false;
+static bool in_touch_drag = false;
+static SDL_TouchFingerEvent touch_lastevent = { 0 };
+static uint32_t touch_time = 0;
+
 void sdlkeyboard_update()
 {
     SDL_PumpEvents();
@@ -436,6 +449,109 @@ void sdlkeyboard_update()
                 t->mouse.y = (int)ev.button.y;
             }
             break;
+        // We want to support three scenarios with touch:
+        // - Tapping the screen (same spot, < 500ms) -> left mouse down + left mouse up
+        // - Long pressing on the screen (same spot, 500ms+) -> right mouse down + right mouse up
+        // - Tapping and dragging on the screen -> left mouse down, followed by left mouse up when finger is released
+        // The screen should always show the cursor moving, but taps and long presses should resolve
+        // at the site of the finger down event.
+        case SDL_EVENT_FINGER_DOWN: {
+            SDL_ConvertEventToRenderCoordinates(renderer, &ev);
+            // log_print("SDL_EVENT_FINGER_DOWN: x: %f, y: %f, pressure: %f, touchID: %d, fingerID: %lld\n",
+            // ev.tfinger.x,
+            //     ev.tfinger.y, ev.tfinger.pressure, ev.tfinger.touchID, ev.tfinger.fingerID);
+            if (!in_touch_press) {
+                // log_print("finger!\n");
+                in_touch_press = true;
+                touch_has_resolved = false;
+                in_touch_drag = false;
+                memcpy(&touch_lastevent, &ev.tfinger, sizeof(SDL_TouchFingerEvent));
+                touch_time = pt_sys.timer->millis();
+                pt_event* t = event_push(EVENT_MOUSE_MOVE);
+                t->mouse.dx = (int)ev.tfinger.x - mouse_x;
+                t->mouse.dy = (int)ev.tfinger.y - mouse_y;
+                mouse_x = (int)ev.tfinger.x;
+                mouse_y = (int)ev.tfinger.y;
+                t->mouse.x = mouse_x;
+                t->mouse.y = mouse_y;
+
+            } else {
+                // we're already in a touch fingerdown event, do nothing
+            }
+        } break;
+        case SDL_EVENT_FINGER_UP: {
+            SDL_ConvertEventToRenderCoordinates(renderer, &ev);
+            // log_print("SDL_EVENT_FINGER_UP: x: %f, y: %f, pressure: %f, touchID: %d, fingerID: %lld\n", ev.tfinger.x,
+            //     ev.tfinger.y, ev.tfinger.pressure, ev.tfinger.touchID, ev.tfinger.fingerID);
+            if (in_touch_press && ev.tfinger.touchID == touch_lastevent.touchID
+                && ev.tfinger.fingerID == touch_lastevent.fingerID) {
+                if (!touch_has_resolved) {
+                    if (!in_touch_drag) {
+                        // log_print("tap finished!\n");
+                        pt_event* t = event_push(EVENT_MOUSE_MOVE);
+                        t->mouse.dx = (int)ev.tfinger.x - mouse_x;
+                        t->mouse.dy = (int)ev.tfinger.y - mouse_y;
+                        mouse_x = (int)ev.tfinger.x;
+                        mouse_y = (int)ev.tfinger.y;
+                        t->mouse.x = mouse_x;
+                        t->mouse.y = mouse_y;
+
+                        t = event_push(EVENT_MOUSE_DOWN);
+                        t->mouse.button = 1 << 0;
+                        t->mouse.x = mouse_x;
+                        t->mouse.y = mouse_x;
+                    } else {
+                        // log_print("drag finished!\n");
+                    }
+                    pt_event* t = event_push(EVENT_MOUSE_UP);
+                    t->mouse.button = 1 << 0;
+                    t->mouse.x = mouse_x;
+                    t->mouse.y = mouse_y;
+                }
+
+                in_touch_press = false;
+                touch_has_resolved = false;
+                in_touch_drag = false;
+                memset(&touch_lastevent, 0, sizeof(SDL_TouchFingerEvent));
+            }
+        } break;
+        case SDL_EVENT_FINGER_MOTION: {
+            SDL_ConvertEventToRenderCoordinates(renderer, &ev);
+            // log_print("SDL_EVENT_FINGER_MOTION: x: %f, y: %f, pressure: %f, touchID: %d, fingerID: %lld\n",
+            //     ev.tfinger.x, ev.tfinger.y, ev.tfinger.pressure, ev.tfinger.touchID, ev.tfinger.fingerID);
+            if (in_touch_press && ev.tfinger.touchID == touch_lastevent.touchID
+                && ev.tfinger.fingerID == touch_lastevent.fingerID) {
+                if (!in_touch_drag && !touch_has_resolved) {
+                    // Check if we've moved around enough
+                    if ((abs((int)(ev.tfinger.x - touch_lastevent.x)) > DRAG_THRESHOLD)
+                        || (abs((int)(ev.tfinger.y - touch_lastevent.y)) > DRAG_THRESHOLD)) {
+                        // log_print("drag started!\n");
+                        in_touch_drag = true;
+                        // temporarily move the mouse to the start pos from the FINGER_DOWN event
+                        pt_event* t = event_push(EVENT_MOUSE_MOVE);
+                        t->mouse.dx = (int)touch_lastevent.x - mouse_x;
+                        t->mouse.dy = (int)touch_lastevent.y - mouse_y;
+                        mouse_x = (int)touch_lastevent.x;
+                        mouse_y = (int)touch_lastevent.y;
+                        t->mouse.x = mouse_x;
+                        t->mouse.y = mouse_y;
+
+                        t = event_push(EVENT_MOUSE_DOWN);
+                        t->mouse.button = 1 << 0;
+                        t->mouse.x = mouse_x;
+                        t->mouse.y = mouse_y;
+                    }
+                }
+                // Always show the cursor moving
+                pt_event* t = event_push(EVENT_MOUSE_MOVE);
+                t->mouse.dx = (int)ev.tfinger.x - mouse_x;
+                t->mouse.dy = (int)ev.tfinger.y - mouse_y;
+                mouse_x = (int)ev.tfinger.x;
+                mouse_y = (int)ev.tfinger.y;
+                t->mouse.x = mouse_x;
+                t->mouse.y = mouse_y;
+            }
+        } break;
         case SDL_EVENT_KEY_DOWN:
         case SDL_EVENT_KEY_UP:
             if (ev.key.scancode < KEY_MAX) {
@@ -458,6 +574,30 @@ void sdlkeyboard_update()
             break;
         default:
             break;
+        }
+    }
+
+    // Simulate right mouse click input based on the touch state
+    if (in_touch_press && !in_touch_drag && !touch_has_resolved) {
+        if (pt_sys.timer->millis() - touch_time > PRESS_TIME) {
+            touch_has_resolved = true;
+            pt_event* t = event_push(EVENT_MOUSE_MOVE);
+            t->mouse.x = (int)touch_lastevent.x;
+            t->mouse.y = (int)touch_lastevent.y;
+            t->mouse.dx = (int)touch_lastevent.dx;
+            t->mouse.dy = (int)touch_lastevent.dy;
+            mouse_x = t->mouse.x;
+            mouse_y = t->mouse.y;
+
+            t = event_push(EVENT_MOUSE_DOWN);
+            t->mouse.button = 1 << 1;
+            t->mouse.x = mouse_x;
+            t->mouse.y = mouse_y;
+            event_push(EVENT_MOUSE_UP);
+            t->mouse.button = 1 << 1;
+            t->mouse.x = mouse_x;
+            t->mouse.y = mouse_y;
+            // log_print("long press finished!\n");
         }
     }
 }
@@ -669,7 +809,12 @@ extern void adlib_init(uint32_t samplerate);
 extern void adlib_write(uintptr_t idx, uint8_t val);
 extern void adlib_getsample(int16_t* sndptr, intptr_t numsamples);
 
+#ifdef __EMSCRIPTEN__
+// Safari doesn't like weird sample rates
+#define OPL_RATE 48000
+#else
 #define OPL_RATE 49716
+#endif
 #define OPL_BUFFER 128
 static SDL_AudioStream* oploutput = NULL;
 static bool oplinited = false;
