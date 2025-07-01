@@ -592,6 +592,19 @@ PTGetInputGrabbed = function()
     return _PTInputGrabbed
 end
 
+--- Return whether the engine has seen a touchscreen input.
+-- Perentie will translate touch events to mouse inputs; a normal
+-- tap will translate to a left mouse click, a tap held for 500ms
+-- will translate to a right mouse click, and any other interaction
+-- will count as a left mouse click and drag.
+-- This can be used as a check to e.g. enable touch-specific UI elements.
+-- Be aware that it is possible for a system to have both touch
+-- and mouse inputs.
+-- @treturn boolean Whether a touchscreen input has been seen.
+PTUsingTouch = function()
+    return _PTUsingTouch()
+end
+
 --- Actors
 -- @section actor
 

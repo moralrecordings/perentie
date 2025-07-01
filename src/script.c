@@ -78,6 +78,12 @@ static int lua_pt_get_millis(lua_State* L)
     return 1;
 }
 
+static int lua_pt_using_touch(lua_State* L)
+{
+    lua_pushboolean(L, pt_sys.mouse->using_touch());
+    return 1;
+}
+
 static int lua_pt_pc_speaker_tone(lua_State* L)
 {
     float freq = luaL_checknumber(L, 1);
@@ -840,6 +846,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTVersion", lua_pt_version },
     { "_PTPlatform", lua_pt_platform },
     { "_PTGetMillis", lua_pt_get_millis },
+    { "_PTUsingTouch", lua_pt_using_touch },
     { "_PTPCSpeakerTone", lua_pt_pc_speaker_tone },
     { "_PTPCSpeakerStop", lua_pt_pc_speaker_stop },
     { "_PTRadLoad", lua_pt_rad_load },

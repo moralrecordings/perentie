@@ -868,6 +868,11 @@ void mouse_shutdown()
     // noop
 }
 
+bool mouse_using_touch()
+{
+    return false;
+}
+
 pt_drv_mouse dos_mouse = {
     &mouse_init,
     &mouse_update,
@@ -875,6 +880,7 @@ pt_drv_mouse dos_mouse = {
     &mouse_get_x,
     &mouse_get_y,
     &mouse_is_down,
+    &mouse_using_touch,
 };
 
 // Keyboard handler

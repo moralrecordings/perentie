@@ -340,11 +340,17 @@ void sdltimer_sleep(uint32_t millis)
 };
 uint32_t sdltimer_add_callback(uint32_t interval, pt_timer_callback callback, void* param)
 {
-    return SDL_AddTimer(interval, callback, param);
+    uint32_t result = SDL_AddTimer(interval, callback, param);
+    if (result == 0) {
+        log_print("sdltimer_add_callback: Failed to add a timer, platform probably has broken threads - %s\n",
+            SDL_GetError());
+    }
+    return result;
 }
 bool sdltimer_remove_callback(uint32_t id)
 {
-    return SDL_RemoveTimer(id);
+    bool result = SDL_RemoveTimer(id);
+    return result;
 }
 
 bool sdltimer_supports_hires()
@@ -399,6 +405,7 @@ void sdlkeyboard_init()
 #define DRAG_THRESHOLD 3.0
 #define PRESS_TIME 500
 
+static bool using_touch = false;
 static bool in_touch_press = false;
 static bool touch_has_resolved = false;
 static bool in_touch_drag = false;
@@ -456,6 +463,7 @@ void sdlkeyboard_update()
         // The screen should always show the cursor moving, but taps and long presses should resolve
         // at the site of the finger down event.
         case SDL_EVENT_FINGER_DOWN: {
+            using_touch = true;
             SDL_ConvertEventToRenderCoordinates(renderer, &ev);
             // log_print("SDL_EVENT_FINGER_DOWN: x: %f, y: %f, pressure: %f, touchID: %d, fingerID: %lld\n",
             // ev.tfinger.x,
@@ -649,8 +657,13 @@ bool sdlmouse_is_button_down(enum pt_mouse_button button)
     return mouse_button_states[button];
 }
 
+bool sdlmouse_using_touch()
+{
+    return using_touch;
+}
+
 pt_drv_mouse sdl_mouse = { &sdlmouse_init, &sdlmouse_update, &sdlmouse_shutdown, &sdlmouse_get_x, &sdlmouse_get_y,
-    &sdlmouse_is_button_down };
+    &sdlmouse_is_button_down, &sdlmouse_using_touch };
 
 void sdlserial_init()
 {

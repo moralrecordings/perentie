@@ -58,6 +58,7 @@ struct pt_drv_mouse {
     int (*get_x)();
     int (*get_y)();
     bool (*is_button_down)(enum pt_mouse_button button);
+    bool (*using_touch)();
 };
 
 struct pt_drv_serial {
