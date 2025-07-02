@@ -1,3 +1,4 @@
+#include <dirent.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -73,11 +74,57 @@ void destroy_unget()
     unget_count = 0;
 }
 
+bool fs_mount(const char* path, int append)
+{
+    int result = PHYSFS_mount(path, "/", append);
+    if (result) {
+        log_print("fs_mount: Adding %s to search path\n", path);
+    } else {
+        log_print("fs_mount: Failed to add %s to search path!\n", path);
+    }
+    return result != 0;
+}
+
 void fs_init(const char* argv0)
 {
     PHYSFS_init(argv0);
-    PHYSFS_mount(".", "/", 1);
-    PHYSFS_mount("data.pt", "/", 1);
+    fs_mount(".", 1);
+    // add all files with the .pt file extension
+    DIR* dp = opendir("./");
+    char* dirs[256] = { 0 };
+    int dir_count = 0;
+
+    if (dp != NULL) {
+        struct dirent* ep = readdir(dp);
+        while (ep) {
+            char* ext = strrchr(ep->d_name, '.');
+            if (ext && (strcmp(ext, ".pt") == 0 || strcmp(ext, ".PT") == 0)) {
+                dirs[dir_count] = calloc(256, sizeof(char));
+                memcpy(dirs[dir_count], ep->d_name, 256);
+                dir_count++;
+            }
+            if (dir_count == 256) {
+                log_print("fs_init: More than 255 .PT files found! Please consolidate them\n");
+                break;
+            }
+            ep = readdir(dp);
+        }
+        closedir(dp);
+    }
+    // sort alphabetically
+    for (int i = 0; i < dir_count - 1; i++) {
+        for (int j = 0; j < dir_count - i - 1; j++) {
+            if (strcmp(dirs[j], dirs[j + 1]) > 0) {
+                char* tmp = dirs[j];
+                dirs[j] = dirs[j + 1];
+                dirs[j + 1] = tmp;
+            }
+        }
+    }
+    for (int i = 0; i < dir_count; i++) {
+        fs_mount(dirs[i], 1);
+        free(dirs[i]);
+    }
 }
 
 int fs_set_write_dir(const char* path)
@@ -85,7 +132,7 @@ int fs_set_write_dir(const char* path)
     const char* existing = PHYSFS_getWriteDir();
     if (existing)
         PHYSFS_unmount(existing);
-    PHYSFS_mount(path, "/", 0);
+    fs_mount(path, 0);
     return PHYSFS_setWriteDir(path);
 }
 
@@ -110,11 +157,11 @@ FILE* fs_fopen(const char* filename, const char* mode)
         file = PHYSFS_openRead(filename);
     }
 
-    /*if (file) {
+    if (file) {
         log_print("fs_fopen: Opened %s with ptr 0x%lx\n", filename, (size_t)file);
     } else {
-        log_print("fs_fopen: Failed to open file %s: %s\n", filename, PHYSFS_getLastError());
-    }*/
+        log_print("fs_fopen: Failed to open file %s: error %d\n", filename, PHYSFS_getLastErrorCode());
+    }
     return (FILE*)file;
 }
 
@@ -122,7 +169,7 @@ size_t fs_fread(void* buffer, size_t size, size_t count, FILE* stream)
 {
     if ((size == 0) || (count == 0))
         return 0;
-    void* buffer_start = buffer;
+    // void* buffer_start = buffer;
     size_t len = size * count;
     PHYSFS_File* file = (PHYSFS_File*)stream;
     size_t result = 0;
