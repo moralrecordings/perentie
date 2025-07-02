@@ -51,12 +51,9 @@ local m_type = math.type
     end
 local s_pack = string.pack or softreq("struct", "pack")
 local s_unpack = string.unpack or softreq("struct", "unpack")
-local b_rshift = softreq("bit32", "rshift")
-    or softreq("bit", "rshift")
-    or dostring("return function(a,b) return a >> b end")
-    or function(a, b)
-        return m_max(0, m_floor(a / (2 ^ b)))
-    end
+local b_rshift = function(a, b)
+    return a >> b
+end
 
 -- sanity check
 if s_pack and s_pack(">I2", 0) ~= "\0\0" then
