@@ -89,7 +89,7 @@ void sdlvideo_init()
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return;
     }
-    renderer = SDL_CreateRenderer(window, "software");
+    renderer = SDL_CreateRenderer(window, NULL);
     if (!renderer) {
         log_print("sdlvideo_init: Failed to create renderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
@@ -97,9 +97,11 @@ void sdlvideo_init()
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return;
     }
-    SDL_SetRenderLogicalPresentation(renderer, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
+    // SDL_SetRenderLogicalPresentation(renderer, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
+    SDL_SetRenderLogicalPresentation(renderer, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_LOGICAL_PRESENTATION_LETTERBOX);
     framebuffer = SDL_CreateTexture(
         renderer, SDL_GetWindowPixelFormat(window), SDL_TEXTUREACCESS_TARGET, SCREEN_WIDTH, SCREEN_HEIGHT);
+    // SDL_SetTextureScaleMode(framebuffer, SDL_SCALEMODE_LINEAR);
     SDL_SetTextureScaleMode(framebuffer, SDL_SCALEMODE_NEAREST);
     SDL_SetRenderTarget(renderer, framebuffer);
     SDL_SetRenderVSync(renderer, 1);
@@ -316,9 +318,15 @@ void sdlvideo_set_overscan_colour(pt_colour_rgb* colour)
 {
 }
 
+void sdlvideo_get_screen_dims(uint16_t* w, uint16_t* h)
+{
+    *w = SCREEN_WIDTH;
+    *h = SCREEN_HEIGHT;
+}
+
 pt_drv_video sdl_video = { &sdlvideo_init, &sdlvideo_shutdown, &sdlvideo_clear, &sdlvideo_blit_image,
     &sdlvideo_blit_line, &sdlvideo_blit, &sdlvideo_flip, &sdlvideo_update_palette_slot, &sdlvideo_destroy_hw_image,
-    &sdlvideo_set_palette_remapper, &sdlvideo_set_overscan_colour };
+    &sdlvideo_set_palette_remapper, &sdlvideo_set_overscan_colour, sdlvideo_get_screen_dims };
 
 void sdltimer_init()
 {
@@ -822,12 +830,7 @@ extern void adlib_init(uint32_t samplerate);
 extern void adlib_write(uintptr_t idx, uint8_t val);
 extern void adlib_getsample(int16_t* sndptr, intptr_t numsamples);
 
-#ifdef __EMSCRIPTEN__
-// Safari doesn't like weird sample rates
-#define OPL_RATE 48000
-#else
 #define OPL_RATE 49716
-#endif
 #define OPL_BUFFER 128
 static SDL_AudioStream* oploutput = NULL;
 static bool oplinited = false;

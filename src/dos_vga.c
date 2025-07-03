@@ -578,5 +578,12 @@ void vga_shutdown()
     }
 }
 
+void vga_get_screen_dims(uint16_t* w, uint16_t* h)
+{
+    *w = SCREEN_WIDTH;
+    *h = SCREEN_HEIGHT;
+}
+
 pt_drv_video dos_vga = { &vga_init, &vga_shutdown, &vga_clear, &vga_blit_image, &vga_blit_line, &vga_blit, &vga_flip,
-    &vga_update_palette_slot, &vga_destroy_hw_image, &vga_set_palette_remapper, &vga_set_overscan_colour };
+    &vga_update_palette_slot, &vga_destroy_hw_image, &vga_set_palette_remapper, &vga_set_overscan_colour,
+    &vga_get_screen_dims };

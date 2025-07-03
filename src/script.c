@@ -789,6 +789,15 @@ static int lua_pt_get_app_data_path(lua_State* L)
     return 1;
 }
 
+static int lua_pt_get_screen_dims(lua_State* L)
+{
+    uint16_t w, h;
+    pt_sys.video->get_screen_dims(&w, &h);
+    lua_pushinteger(L, w);
+    lua_pushinteger(L, h);
+    return 2;
+}
+
 // Default key is the ASCII for "PERENTIE"
 static uint8_t hash_key[8] = { 0x50, 0x45, 0x52, 0x45, 0x4e, 0x54, 0x49, 0x45 };
 
@@ -883,6 +892,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTSetDebugConsole", lua_pt_set_debug_console },
     { "_PTSetGameInfo", lua_pt_set_game_info },
     { "_PTGetAppDataPath", lua_pt_get_app_data_path },
+    { "_PTGetScreenDims", lua_pt_get_screen_dims },
     { "_PTHash", lua_pt_hash },
     { "_PTSimplexNoise1D", lua_pt_simplex_noise_1d },
     { "_PTSimplexNoise2D", lua_pt_simplex_noise_2d },

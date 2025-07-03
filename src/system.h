@@ -106,6 +106,7 @@ struct pt_drv_video {
     void (*destroy_hw_image)(void* hw_image);
     void (*set_palette_remapper)(enum pt_palette_remapper remapper, enum pt_palette_remapper_mode mode);
     void (*set_overscan_colour)(pt_colour_rgb* colour);
+    void (*get_screen_dims)(uint16_t* w, uint16_t* h);
 };
 
 struct pt_system {

@@ -4,9 +4,6 @@
 --- General
 -- @section general
 
-SCREEN_WIDTH = 320
-SCREEN_HEIGHT = 200
-
 --- Get the version string of the Perentie engine.
 -- @treturn string Version string.
 PTVersion = function()
@@ -60,6 +57,13 @@ end
 -- @treturn integer Number of milliseconds.
 PTGetMillis = function()
     return _PTGetMillis()
+end
+
+--- Get the dimensions of the screen in pixels.
+-- @treturn integer Width of the screen.
+-- @treturn integer Height of the screen.
+PTGetScreenDims = function()
+    return _PTGetScreenDims()
 end
 
 --- Quit Perentie.
@@ -810,8 +814,10 @@ PTActorTalk = function(actor, message, font, colour)
     local width, height = PTGetImageDims(text)
     PTSetImageOrigin(text, width / 2, height)
     local sx, sy = PTRoomToScreen(actor.x + actor.talk_x, actor.y + actor.talk_y)
-    sx = math.min(math.max(sx, width / 2), SCREEN_WIDTH - width / 2)
-    sy = math.min(math.max(sy, height), SCREEN_HEIGHT)
+    local sw, sh = _PTGetScreenDims()
+
+    sx = math.min(math.max(sx, width / 2), sw - width / 2)
+    sy = math.min(math.max(sy, height), sh)
     local x, y = PTScreenToRoom(sx, sy)
 
     if not actor.talk_img then
@@ -3346,6 +3352,7 @@ end
 -- @tparam integer height Height of the room in pixels.
 -- @treturn PTRoom The new room.
 PTRoom = function(name, width, height)
+    local sw, sh = _PTGetScreenDims()
     return {
         _type = "PTRoom",
         name = name,
@@ -3353,8 +3360,8 @@ PTRoom = function(name, width, height)
         height = height,
         x = 0,
         y = 0,
-        origin_x = SCREEN_WIDTH // 2,
-        origin_y = SCREEN_HEIGHT // 2,
+        origin_x = sw // 2,
+        origin_y = sh // 2,
         render_list = {},
         boxes = {},
         box_links = {},
@@ -3604,10 +3611,11 @@ local _PTUpdateRoom = function(force)
         --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
     end
     -- constrain camera to room bounds
+    local sw, sh = _PTGetScreenDims()
     local x_min = room.origin_x
-    local x_max = room.width - (SCREEN_WIDTH - room.origin_x)
+    local x_max = room.width - (sw - room.origin_x)
     local y_min = room.origin_y
-    local y_max = room.height - (SCREEN_HEIGHT - room.origin_y)
+    local y_max = room.height - (sh - room.origin_y)
     room.x = math.max(math.min(room.x, x_max), x_min)
     room.y = math.max(math.min(room.y, y_max), y_min)
 end

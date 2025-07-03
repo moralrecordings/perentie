@@ -2,6 +2,9 @@
 -- This should be the first line of your main.lua
 PTSetGameInfo("au.net.moral.perentie.example", "1.0.0", "Perentie - Example app")
 
+-- Get size of the screen
+SCREEN_WIDTH, SCREEN_HEIGHT = PTGetScreenDims()
+
 -- Create a room.
 -- A room is the basic scene structure used in Perentie. They are a fixed size,
 -- and keep track of objects in a scene graph.
