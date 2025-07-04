@@ -11,7 +11,7 @@
 // HACK: Lua uses unget a -lot- for 1-byte lookaheads. So we have to emulate it.
 #define UNGET_SIZE 8192
 struct unget_t {
-    FILE* ptr;
+    PHYSFS_File* ptr;
     byte buffer[UNGET_SIZE];
     int offset;
 };
@@ -19,7 +19,7 @@ struct unget_t {
 static struct unget_t* unget_ptr[UNGET_SIZE] = { 0 };
 static int unget_count = 0;
 
-struct unget_t* get_unget(FILE* stream)
+struct unget_t* get_unget(PHYSFS_File* stream)
 {
     for (int i = 0; i < unget_count; i++) {
         if (unget_ptr[i]->ptr == stream)
@@ -35,7 +35,7 @@ void tidy_unget()
             free(unget_ptr[i]);
             unget_ptr[i] = NULL;
             if (i != unget_count - 1) {
-                memcpy(&unget_ptr[i], &unget_ptr[i + 1], (size_t)(&unget_ptr[unget_count] - &unget_ptr[i + 1]));
+                memmove(&unget_ptr[i], &unget_ptr[i + 1], (size_t)(&unget_ptr[unget_count] - &unget_ptr[i + 1]));
             }
             unget_count--;
         }
@@ -43,7 +43,7 @@ void tidy_unget()
     return;
 }
 
-struct unget_t* create_unget(FILE* stream)
+struct unget_t* create_unget(PHYSFS_File* stream)
 {
     if (unget_count == UNGET_SIZE)
         tidy_unget();
@@ -57,7 +57,7 @@ struct unget_t* create_unget(FILE* stream)
     return NULL;
 }
 
-struct unget_t* get_or_create_unget(FILE* stream)
+struct unget_t* get_or_create_unget(PHYSFS_File* stream)
 {
     struct unget_t* result = get_unget(stream);
     if (!result)
@@ -136,17 +136,11 @@ int fs_set_write_dir(const char* path)
     return PHYSFS_setWriteDir(path);
 }
 
-void fs_shutdown()
-{
-    destroy_unget();
-    PHYSFS_deinit();
-}
-
 // HACK: Provide a POSIX-y shim that can be injected into e.g.
 // the Lua source code with minimal changes.
 // Yes, I know this looks terrible.
 
-FILE* fs_fopen(const char* filename, const char* mode)
+PHYSFS_File* fs_fopen(const char* filename, const char* mode)
 {
     PHYSFS_file* file;
     if (strstr(mode, "w")) {
@@ -162,10 +156,10 @@ FILE* fs_fopen(const char* filename, const char* mode)
     } else {
         log_print("fs_fopen: Failed to open file %s: error %d\n", filename, PHYSFS_getLastErrorCode());
     }
-    return (FILE*)file;
+    return (PHYSFS_File*)file;
 }
 
-size_t fs_fread(void* buffer, size_t size, size_t count, FILE* stream)
+size_t fs_fread(void* buffer, size_t size, size_t count, PHYSFS_File* stream)
 {
     if ((size == 0) || (count == 0))
         return 0;
@@ -194,7 +188,7 @@ size_t fs_fread(void* buffer, size_t size, size_t count, FILE* stream)
     return result / size;
 }
 
-size_t fs_fwrite(const void* buffer, size_t size, size_t count, FILE* stream)
+size_t fs_fwrite(const void* buffer, size_t size, size_t count, PHYSFS_File* stream)
 {
     if ((size == 0) || (count == 0))
         return 0;
@@ -202,7 +196,7 @@ size_t fs_fwrite(const void* buffer, size_t size, size_t count, FILE* stream)
     return (size_t)(PHYSFS_writeBytes(file, buffer, count * size) / size);
 }
 
-int fs_ungetc(int ch, FILE* stream)
+int fs_ungetc(int ch, PHYSFS_File* stream)
 {
     struct unget_t* ugt = get_or_create_unget(stream);
     if (!ugt)
@@ -216,7 +210,7 @@ int fs_ungetc(int ch, FILE* stream)
     return (int)payload;
 }
 
-int fs_fgetc(FILE* stream)
+int fs_fgetc(PHYSFS_File* stream)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
     uint8_t result;
@@ -232,7 +226,7 @@ int fs_fgetc(FILE* stream)
     return (int)result;
 }
 
-int fs_fputc(int ch, FILE* stream)
+int fs_fputc(int ch, PHYSFS_File* stream)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
     uint8_t payload = (uint8_t)ch;
@@ -242,7 +236,7 @@ int fs_fputc(int ch, FILE* stream)
     return EOF;
 }
 
-int fs_feof(FILE* stream)
+int fs_feof(PHYSFS_File* stream)
 {
     struct unget_t* ugt = get_unget(stream);
     if (ugt && ugt->offset)
@@ -251,23 +245,23 @@ int fs_feof(FILE* stream)
     return PHYSFS_eof(file);
 }
 
-int fs_ferror(FILE* stream)
+int fs_ferror(PHYSFS_File* stream)
 {
     // Quit worrying, everything's fine
     return 0;
 }
 
-void fs_clearerr(FILE* stream)
+void fs_clearerr(PHYSFS_File* stream)
 {
 }
 
-long fs_ftell(FILE* stream)
+long fs_ftell(PHYSFS_File* stream)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
     return (long)PHYSFS_tell(file);
 }
 
-int fs_fseek(FILE* stream, long offset, int origin)
+int fs_fseek(PHYSFS_File* stream, long offset, int origin)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
     struct unget_t* ugt = get_unget(stream);
@@ -281,13 +275,72 @@ int fs_fseek(FILE* stream, long offset, int origin)
     return (int)PHYSFS_seek(file, offset);
 }
 
-int fs_fclose(FILE* stream)
+#define AUTOCLEAN_MAX 64
+struct autoclean_t {
+    PHYSFS_File* handle;
+    char* filename;
+};
+
+struct autoclean_t autoclean[AUTOCLEAN_MAX] = { 0 };
+int autoclean_count = 0;
+
+void destroy_temp()
 {
-    PHYSFS_File* file = (PHYSFS_File*)stream;
-    return PHYSFS_close(file);
+    for (int i = 0; i < autoclean_count; i++) {
+        PHYSFS_close(autoclean[i].handle);
+        PHYSFS_delete(autoclean[i].filename);
+        free(autoclean[i].filename);
+        autoclean[i].handle = NULL;
+        autoclean[i].filename = NULL;
+    }
+    autoclean_count = 0;
 }
 
-int fs_fflush(FILE* stream)
+void remove_file_if_temp(PHYSFS_File* handle)
+{
+    for (int i = 0; i < autoclean_count; i++) {
+        if (autoclean[i].handle == handle) {
+            PHYSFS_delete(autoclean[i].filename);
+            free(autoclean[i].filename);
+            if (i != autoclean_count - 1) {
+                memmove(&autoclean[i], &autoclean[i + 1], (size_t)(&autoclean[autoclean_count] - &autoclean[i + 1]));
+            }
+            autoclean[autoclean_count - 1].handle = NULL;
+            autoclean[autoclean_count - 1].filename = NULL;
+            autoclean_count--;
+            return;
+        }
+    }
+}
+
+PHYSFS_File* fs_tmpfile()
+{
+    if (autoclean_count > AUTOCLEAN_MAX)
+        return NULL;
+    char* filename = calloc(L_tmpnam, 1);
+    tmpnam(filename);
+    PHYSFS_File* result = fs_fopen(filename, "wb+");
+    autoclean[autoclean_count].handle = result;
+    autoclean[autoclean_count].filename = filename;
+    autoclean_count++;
+    return result;
+}
+
+int fs_fclose(PHYSFS_File* stream)
+{
+    PHYSFS_File* file = (PHYSFS_File*)stream;
+    int result = PHYSFS_close(file);
+    remove_file_if_temp(stream);
+    return result;
+}
+
+PHYSFS_File* fs_freopen(const char* filename, const char* mode, PHYSFS_File* stream)
+{
+    fs_fclose(stream);
+    return fs_fopen(filename, mode);
+}
+
+int fs_fflush(PHYSFS_File* stream)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
     return PHYSFS_flush(file);
@@ -296,14 +349,14 @@ int fs_fflush(FILE* stream)
 #define FPRINTF_FAKE_SIZE 8192
 static char fprintf_fake_buffer[FPRINTF_FAKE_SIZE] = { 0 };
 
-int fs_vfprintf(FILE* stream, const char* format, va_list vlist)
+int fs_vfprintf(PHYSFS_File* stream, const char* format, va_list vlist)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
     int result = vsnprintf(fprintf_fake_buffer, FPRINTF_FAKE_SIZE, format, vlist);
     return PHYSFS_writeBytes(file, fprintf_fake_buffer, result);
 }
 
-int fs_fprintf(FILE* stream, const char* format, ...)
+int fs_fprintf(PHYSFS_File* stream, const char* format, ...)
 {
     va_list args;
     va_start(args, format);
@@ -312,7 +365,29 @@ int fs_fprintf(FILE* stream, const char* format, ...)
     return result;
 }
 
-void fs_rewind(FILE* stream)
+void fs_rewind(PHYSFS_File* stream)
 {
     fs_fseek(stream, 0, SEEK_SET);
+}
+
+int fs_setvbuf(PHYSFS_File* stream, char* buffer, int mode, size_t size)
+{
+    return 0;
+}
+
+PHYSFS_File* fs_popen(const char* command, const char* mode)
+{
+    return NULL;
+}
+
+int fs_pclose(PHYSFS_File* stream)
+{
+    return 0;
+}
+
+void fs_shutdown()
+{
+    destroy_unget();
+    destroy_temp();
+    PHYSFS_deinit();
 }

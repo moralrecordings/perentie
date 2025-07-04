@@ -13,7 +13,8 @@
 #include <locale.h>
 #include <math.h>
 #include <stdarg.h>
-#include <stdio.h>
+// HACK: Use Perentie's file API
+#include "../stdio_shim.h"
 #include <stdlib.h>
 #include <string.h>
 

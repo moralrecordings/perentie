@@ -10,7 +10,8 @@
 
 
 #include <stddef.h>
-#include <stdio.h>
+// HACK: Use Perentie's file API
+#include "../stdio_shim.h"
 
 #include "luaconf.h"
 #include "lua.h"

@@ -10,7 +10,8 @@
 #include "lprefix.h"
 
 
-#include <stdio.h>
+// HACK: Use Perentie's file API
+#include "../stdio_shim.h"
 #include <stdlib.h>
 #include <string.h>
 
