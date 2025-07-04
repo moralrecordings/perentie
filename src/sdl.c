@@ -835,7 +835,89 @@ extern void adlib_getsample(int16_t* sndptr, intptr_t numsamples);
 static SDL_AudioStream* oploutput = NULL;
 static bool oplinited = false;
 
-void sdlopl_callback(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount)
+// You'll notice this is the same as the timer API, however
+// by putting it here we can process it inline with the audio
+// rendering process and avoid the need for threads.
+struct sdlopl_cb_t {
+    pt_timer_slot slots[256];
+    uint32_t max_callback_id;
+    int slot_head;
+    uint32_t samples;
+};
+
+static struct sdlopl_cb_t _sdlopl_cb = { 0 };
+
+uint32_t sdlopl_add_callback(uint32_t interval, pt_timer_callback callback, void* param)
+{
+    if (_sdlopl_cb.slot_head >= 256)
+        return 0;
+    _sdlopl_cb.max_callback_id++;
+    _sdlopl_cb.slots[_sdlopl_cb.slot_head].id = _sdlopl_cb.max_callback_id;
+    _sdlopl_cb.slots[_sdlopl_cb.slot_head].count = 0;
+    _sdlopl_cb.slots[_sdlopl_cb.slot_head].interval = interval * OPL_RATE / 1000;
+    _sdlopl_cb.slots[_sdlopl_cb.slot_head].callback = callback;
+    _sdlopl_cb.slots[_sdlopl_cb.slot_head].param = param;
+    log_print("sdlopl_add_callback: Adding timer id %d to slot %d\n", _sdlopl_cb.max_callback_id, _sdlopl_cb.slot_head);
+    _sdlopl_cb.slot_head++;
+    return _sdlopl_cb.max_callback_id;
+}
+
+bool sdlopl_remove_callback(uint32_t id)
+{
+    bool result = false;
+    for (int i = 0; i < _sdlopl_cb.slot_head; i++) {
+        if (_sdlopl_cb.slots[i].id == id) {
+            _sdlopl_cb.slot_head--;
+            if (_sdlopl_cb.slot_head == i) {
+                // removed timer was in the last slot
+                memset(&_sdlopl_cb.slots[i], 0, sizeof(struct pt_timer_slot));
+            } else if (_sdlopl_cb.slot_head > 0) {
+                // move last slot into cleared slot
+                memmove(&_sdlopl_cb.slots[i], &_sdlopl_cb.slots[_sdlopl_cb.slot_head], sizeof(struct pt_timer_slot));
+                // clear last slot
+                memset(&_sdlopl_cb.slots[_sdlopl_cb.slot_head], 0, sizeof(struct pt_timer_slot));
+            }
+            log_print("sdlopl_remove_callback: Removing timer id %d from slot %d\n", id, i);
+            result = true;
+            break;
+        }
+    }
+    return result;
+}
+
+uint32_t sdlopl_next_cb()
+{
+    if (_sdlopl_cb.slot_head == 0) {
+        return 0;
+    }
+    uint32_t lowest_left = _sdlopl_cb.slots[0].interval - _sdlopl_cb.slots[0].count;
+    for (int i = 1; i < _sdlopl_cb.slot_head; i++) {
+        if (_sdlopl_cb.slots[i].count < lowest_left) {
+            lowest_left = _sdlopl_cb.slots[i].interval - _sdlopl_cb.slots[i].count;
+        }
+    }
+    return lowest_left;
+}
+
+void sdlopl_incr(uint32_t samples)
+{
+    for (int i = 0; i < _sdlopl_cb.slot_head; i++) {
+        pt_timer_slot* slot = &_sdlopl_cb.slots[i];
+        slot->count += samples;
+        if (slot->count >= slot->interval) {
+            slot->count %= slot->interval;
+            uint32_t result = slot->callback(slot->param, slot->id, slot->interval * 1000 / OPL_RATE);
+            if (result == 0) {
+                sdlopl_remove_callback(i);
+                i--;
+            } else {
+                slot->interval = result * OPL_RATE / 1000;
+            }
+        }
+    }
+}
+
+void sdlopl_get_audio(void* userdata, SDL_AudioStream* stream, int additional_amount, int total_amount)
 {
     int samples_needed = additional_amount > 0 ? ((additional_amount + OPL_BUFFER * 8) >> 2) : 0;
     int bytes_given = 0;
@@ -844,12 +926,19 @@ void sdlopl_callback(void* userdata, SDL_AudioStream* stream, int additional_amo
         // However if we try and render the whole thing ahead of time, at about the 80% mark
         // the audio pipeline will run out of data and start mixing in silence, which causes audible pops.
         // The solution is to cut the request into tiny slices so that the pipeline is always full.
+
         int16_t samples[OPL_BUFFER << 1];
         while (samples_needed > 0) {
+            uint32_t samples_left = sdlopl_next_cb();
+
             int sample_count = MIN(OPL_BUFFER, samples_needed);
+            if (samples_left)
+                sample_count = MIN(sample_count, samples_left);
             adlib_getsample(samples, sample_count);
             SDL_PutAudioStreamData(stream, samples, sizeof(int16_t) * (sample_count << 1));
             samples_needed -= sample_count;
+            _sdlopl_cb.samples += sample_count;
+            sdlopl_incr(sample_count);
             bytes_given += sizeof(int16_t) * (sample_count << 1);
         }
     }
@@ -871,7 +960,7 @@ void sdlopl_init()
 
     SDL_AudioSpec src = { SDL_AUDIO_S16LE, 2, OPL_RATE };
     oploutput = SDL_CreateAudioStream(&src, NULL);
-    SDL_SetAudioStreamGetCallback(oploutput, sdlopl_callback, NULL);
+    SDL_SetAudioStreamGetCallback(oploutput, sdlopl_get_audio, NULL);
     if (!SDL_BindAudioStream(audio_out, oploutput)) {
         log_print("sdlopl_init: Failed to bind audio stream to device: %s\n", SDL_GetError());
     }
@@ -909,4 +998,5 @@ bool sdlopl_is_ready()
     return true;
 }
 
-pt_drv_opl sdl_opl = { &sdlopl_init, &sdlopl_shutdown, &sdlopl_write_reg, &sdlopl_is_ready };
+pt_drv_opl sdl_opl = { &sdlopl_init, &sdlopl_shutdown, &sdlopl_write_reg, &sdlopl_is_ready, &sdlopl_add_callback,
+    &sdlopl_remove_callback };

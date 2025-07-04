@@ -8,6 +8,7 @@
 
 typedef uint8_t byte;
 typedef struct pt_image pt_image;
+typedef struct pt_timer_slot pt_timer_slot;
 
 typedef struct pt_drv_app pt_drv_app;
 typedef struct pt_drv_timer pt_drv_timer;
@@ -20,6 +21,14 @@ typedef struct pt_drv_video pt_drv_video;
 typedef struct pt_system pt_system;
 
 typedef uint32_t (*pt_timer_callback)(void* data, uint32_t timer_id, uint32_t interval);
+
+struct pt_timer_slot {
+    uint32_t id;
+    pt_timer_callback callback;
+    void* param;
+    uint32_t interval;
+    uint32_t count;
+};
 
 struct pt_drv_app {
     void (*init)();
@@ -80,6 +89,8 @@ struct pt_drv_opl {
     void (*shutdown)();
     void (*write_reg)(uint16_t addr, uint8_t data);
     bool (*is_ready)();
+    uint32_t (*add_callback)(uint32_t interval, pt_timer_callback callback, void* param);
+    bool (*remove_callback)(uint32_t id);
 };
 
 struct pt_drv_beep {

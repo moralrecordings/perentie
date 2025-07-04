@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -345,7 +346,7 @@ static int lua_pt_image(lua_State* L)
 
     pt_image* image = create_image(path, origin_x, origin_y, colourkey);
     // log_print("lua_pt_create_image: %p %d %d %d\n", image, image->width, image->height, image->colourkey);
-    //  create a table
+    // create a table
     pt_image** target = lua_newuserdatauv(L, sizeof(pt_image*), 1);
     *target = image;
     lua_newtable(L);

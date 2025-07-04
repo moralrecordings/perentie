@@ -25,9 +25,14 @@ elif host_machine.system() == 'emscripten'
     'src/sdl.h'
   ]
   platform_args = [
-    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3', '--use-port=sdl3', '-sUSE_PTHREADS=1'
+    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3', '--use-port=sdl3',
   ]
-  platform_link_args = ['--use-port=sdl3', '-sFORCE_FILESYSTEM', '-sUSE_PTHREADS=1', '-lidbfs.js', '--pre-js', em_pre_js.full_path()]
+  platform_link_args = ['--use-port=sdl3', '-sFORCE_FILESYSTEM', '-lidbfs.js', '--pre-js', em_pre_js.full_path()]
+  # we don't need threads... yet
+  #if false
+  #  platform_args += ['-sUSE_PTHREADS=1']
+  #  platform_link_args += ['-sUSE_PTHREADS=1']
+  #endif
   if get_option('buildtype') in ['debug', 'debugoptimized']
     platform_link_args += ['-gsource-map']
   endif

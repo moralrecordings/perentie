@@ -60,14 +60,6 @@ bool sys_idle(int (*idle_callback)(), int idle_callback_period)
 #define TIMER_DEFAULT_TICK_PER_MS 0.0182068
 #define TIMER_DEFAULT_MS_PER_TICK 54.9246551
 
-struct timer_slot_t {
-    uint32_t id;
-    pt_timer_callback callback;
-    void* param;
-    uint32_t interval;
-    uint32_t count;
-};
-
 struct timer_data_t {
     int16_t counter;
     int16_t reset;
@@ -82,7 +74,7 @@ struct timer_data_t {
     float freq;
     _go32_dpmi_seginfo handler_prot_old;
     _go32_dpmi_seginfo handler_prot_new;
-    struct timer_slot_t slots[256];
+    struct pt_timer_slot slots[256];
     uint32_t max_callback_id;
     int slot_head;
 };
@@ -468,12 +460,12 @@ bool timer_remove_callback(uint32_t id)
             _timer.slot_head--;
             if (_timer.slot_head == i) {
                 // removed timer was in the last slot
-                memset(&_timer.slots[i], 0, sizeof(struct timer_slot_t));
+                memset(&_timer.slots[i], 0, sizeof(struct pt_timer_slot));
             } else if (_timer.slot_head > 0) {
                 // move last slot into cleared slot
-                memmove(&_timer.slots[i], &_timer.slots[_timer.slot_head], sizeof(struct timer_slot_t));
+                memmove(&_timer.slots[i], &_timer.slots[_timer.slot_head], sizeof(struct pt_timer_slot));
                 // clear last slot
-                memset(&_timer.slots[_timer.slot_head], 0, sizeof(struct timer_slot_t));
+                memset(&_timer.slots[_timer.slot_head], 0, sizeof(struct pt_timer_slot));
             }
             log_print("timer_remove_callback: Removing timer id %d from slot %d\n", id, i);
             timer_print();
@@ -1215,7 +1207,8 @@ bool opl_is_ready()
     return sound_opl2_available || sound_opl3_available;
 }
 
-pt_drv_opl dos_opl = { &opl_init, &opl_shutdown, &opl_write_reg, &opl_is_ready };
+pt_drv_opl dos_opl
+    = { &opl_init, &opl_shutdown, &opl_write_reg, &opl_is_ready, &timer_add_callback, &timer_remove_callback };
 
 void dos_init()
 {

@@ -190,7 +190,7 @@ void rad_transpose(RADPlayer* rad, int8_t note, int8_t octave);
 void radplayer_shutdown()
 {
     rad_stop(&rad_player);
-    pt_sys.timer->remove_callback(rad_timer);
+    pt_sys.opl->remove_callback(rad_timer);
     rad_timer = 0;
 }
 
@@ -206,7 +206,7 @@ uint32_t radplayer_callback(void* data, uint32_t id, uint32_t interval)
         rad_stop(&rad_player);
     }
     rad_update(&rad_player);
-    return interval;
+    return 1000 / rad_get_hertz(&rad_player);
 }
 
 bool radplayer_load_file(const char* path)
@@ -231,9 +231,9 @@ bool radplayer_load_file(const char* path)
     rad_load(&rad_player);
 
     if (rad_timer)
-        pt_sys.timer->remove_callback(rad_timer);
+        pt_sys.opl->remove_callback(rad_timer);
 
-    rad_timer = pt_sys.timer->add_callback(1000 / rad_get_hertz(&rad_player), radplayer_callback, NULL);
+    rad_timer = pt_sys.opl->add_callback(1000 / rad_get_hertz(&rad_player), radplayer_callback, NULL);
 
     return true;
 }
