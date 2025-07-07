@@ -75,6 +75,8 @@ static bool vga_available = false;
 
 static int vga_page_offset = 0;
 
+static bool vga_first_flip = false;
+static bool vga_palette_update = true;
 static bool vga_overscan_update = false;
 static uint8_t vga_overscan = 0x00;
 
@@ -145,6 +147,7 @@ void vga_init()
 
     atexit(vga_shutdown);
     vga_available = true;
+    vga_first_flip = true;
     __djgpp_nearptr_disable();
 }
 
@@ -313,7 +316,7 @@ void vga_update_palette_slot(uint8_t idx)
     vga_palette[3 * idx] = r_v;
     vga_palette[3 * idx + 1] = g_v;
     vga_palette[3 * idx + 2] = b_v;
-    vga_load_palette_colour(idx);
+    vga_palette_update = true;
     log_print("vga_update_palette_slot: vga_palette[%d] = %d, %d, %d -> %d, %d, %d (dither %d %d)\n", idx, r, g, b, r_v,
         g_v, b_v, pt_sys.dither[idx].idx_a, pt_sys.dither[idx].idx_b);
 }
@@ -389,6 +392,15 @@ void vga_blit()
     // copy the framebuffer to VGA memory
     if (!vga_framebuffer)
         return;
+
+    if (vga_first_flip) {
+        vga_update_overscan();
+        for (int i = 0; i < 256; i++) {
+            vga_load_palette_colour(i);
+        }
+        vga_first_flip = false;
+    }
+
     __djgpp_nearptr_enable();
     byte* vga = vga_ptr() + vga_page_offset;
     byte* buf = vga_framebuffer;
@@ -473,6 +485,11 @@ void vga_flip()
     if (vga_overscan_update) {
         vga_update_overscan();
         vga_overscan_update = false;
+    }
+    if (vga_palette_update) {
+        for (int i = 0; i < 256; i++) {
+            vga_load_palette_colour(i);
+        }
     }
 
     // A little yield as a treat
