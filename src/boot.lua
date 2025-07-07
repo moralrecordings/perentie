@@ -1519,7 +1519,9 @@ PTIterObjects = function(objects, reverse, visible_only)
             end
             local inner, inner_x, inner_y = group_iter()
             if inner then
-                return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
+                return inner,
+                    obj.x + inner_x - obj.origin_x + (obj.sx or 0),
+                    obj.y + inner_y - obj.origin_y + (obj.sy or 0)
             end
             group_iter = nil
             i = i + 1
@@ -1535,26 +1537,28 @@ PTIterObjects = function(objects, reverse, visible_only)
                 group_iter = PTIterObjects(obj.objects, reverse, visible_only)
                 local inner, inner_x, inner_y = group_iter()
                 if inner then
-                    return inner, obj.x + inner_x - obj.origin_x, obj.y + inner_y - obj.origin_y
+                    return inner,
+                        obj.x + inner_x - obj.origin_x + (obj.sx or 0),
+                        obj.y + inner_y - obj.origin_y + (obj.sy or 0)
                 end
                 group_iter = nil
             elseif obj._type == "PTPanel" and (not visible_only or obj.visible) then
                 if #obj.objects > 0 then
                     group_iter = PTIterObjects(obj.objects, reverse, visible_only)
                 end
-                return obj, obj.x, obj.y
+                return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
             elseif obj._type == "PTButton" and (not visible_only or obj.visible) then
                 if #obj.objects > 0 then
                     group_iter = PTIterObjects(obj.objects, reverse, visible_only)
                 end
-                return obj, obj.x, obj.y
+                return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
             elseif obj._type == "PTHorizSlider" and (not visible_only or obj.visible) and #obj.objects > 0 then
                 group_iter = PTIterObjects(obj.objects, reverse, visible_only)
-                return obj, obj.x, obj.y
+                return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
             elseif obj._type == "PTActor" or obj._type == "PTBackground" or obj._type == "PTSprite" then
                 if not visible_only or obj.visible then
                     i = i + 1
-                    return obj, obj.x, obj.y
+                    return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
                 end
             end
             i = i + 1
@@ -1884,6 +1888,46 @@ end
 -- @treturn boolean Whether the object is moving.
 PTObjectIsMoving = function(object)
     return _PTObjectIsMoving(object)
+end
+
+PTSimplexShakeFunc = function(x_amplitude, y_amplitude)
+    local simplex_x = math.random() * 2048.0 - 1024.0
+    local simplex_y = math.random() * 2048.0 - 1024.0
+    local last_offset_x = 0.0
+    local last_offset_y = 0.0
+    return function(time)
+        local shake = 1.0
+        local offset_x = x_amplitude * shake * PTSimplexNoise1D(time + simplex_x)
+        local offset_y = y_amplitude * shake * PTSimplexNoise1D(time + simplex_y)
+        local result_x, result_y = offset_x - last_offset_x, offset_y - last_offset_y
+        last_offset_x = offset_x
+        last_offset_y = offset_y
+        return result_x, result_y
+    end
+end
+
+PTShakeRef = function(object, shake_func, start_time, duration, while_paused)
+    -- timing functions nicked from the CSS animation-timing-function spec
+    return {
+        _type = "PTShakeRef",
+        start_time = start_time,
+        duration = duration,
+        object = object,
+        shake_func = shake_func,
+        while_paused = while_paused,
+    }
+end
+
+local _PTShakeRefList = {}
+PTShakeObject = function(object, amplitude, duration, while_paused)
+    for i, obj in ipairs(_PTShakeRefList) do
+        if object == obj.object then
+            table.remove(_PTShakeRefList, i)
+            break
+        end
+    end
+    local shakeref = PTShakeRef(object, PTSimplexShakeFunc(amplitude, amplitude), PTGetMillis(), duration, while_paused)
+    table.insert(_PTShakeRefList, shakeref)
 end
 
 --- GUI controls
@@ -3482,7 +3526,8 @@ PTRoomToScreen = function(x, y, parallax_x, parallax_y)
     if not parallax_y then
         parallax_y = 1
     end
-    local dx, dy = math.floor((x - room.x) * parallax_x), math.floor((y - room.y) * parallax_y)
+    local room_x, room_y = room.x + (room.sx or 0), room.y + (room.sy or 0)
+    local dx, dy = math.floor((x - room_x) * parallax_x), math.floor((y - room_y) * parallax_y)
     return dx + room.origin_x, dy + room.origin_y
 end
 
@@ -4061,6 +4106,27 @@ local _PTUpdateMoveObject = function()
     end
 end
 
+local _PTUpdateShakeObject = function()
+    local t = PTGetMillis()
+    local done = {}
+    for i, shakeref in ipairs(_PTShakeRefList) do
+        if (not _PTGamePaused) or shakeref.while_paused then
+            local at = (t - shakeref.start_time) / shakeref.duration
+
+            shakeref.object.sx, shakeref.object.sy = shakeref.shake_func(t - shakeref.start_time)
+            --PTLog("(%f, %f) %f", shakeref.object.sx, shakeref.object.sy, at)
+            if at >= 1.0 then
+                table.insert(done, 1, i)
+                shakeref.object.sx = nil
+                shakeref.object.sy = nil
+            end
+        end
+    end
+    for _, i in ipairs(done) do
+        table.remove(_PTShakeRefList, i)
+    end
+end
+
 --- Process the main event loop. Called from C.
 -- @local
 _PTEvents = function()
@@ -4095,6 +4161,7 @@ _PTEvents = function()
     end
     _PTUpdateRoom()
     _PTUpdateMoveObject()
+    _PTUpdateShakeObject()
     _PTUpdateGUI()
 
     if _PTSaveIndex then
