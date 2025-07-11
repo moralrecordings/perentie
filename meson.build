@@ -5,6 +5,8 @@ project('perentie', 'c',
   meson_version: '>=1.4.0'
 )
 
+fs = import('fs')
+
 if host_machine.system() == 'msdos'
   exe_name = 'pt_base.exe'
   platform_src = [
@@ -37,6 +39,8 @@ elif host_machine.system() == 'emscripten'
     platform_link_args += ['-gsource-map']
   endif
   platform_deps = []
+  fs.copyfile('html/index.html')
+  fs.copyfile('html/style.css')
   run_target('webserver',
     command : 'scripts/webserver.py')
 

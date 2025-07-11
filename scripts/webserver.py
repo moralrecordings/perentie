@@ -45,8 +45,8 @@ if __name__ == '__main__':
             sslc.load_cert_chain(str(args.cert), str(args.cert))
             with sslc.wrap_socket(httpd.socket, server_side=True) as sock:
                 httpd.socket = sock
-                print(f"Emscripten port served at https://localhost:{port}/perentie.html")
+                print(f"Emscripten port served at https://localhost:{port}/index.html")
                 httpd.serve_forever()
         else:
-            print(f"Emscripten port served at http://localhost:{port}/perentie.html")
+            print(f"Emscripten port served at http://localhost:{port}/index.html")
             httpd.serve_forever()
