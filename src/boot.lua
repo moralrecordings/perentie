@@ -516,6 +516,18 @@ PTSimplexNoise3D = function(x, y, z)
     return _PTSimplexNoise1D(x, y, z)
 end
 
+PTSimplexFractal1D = function(frequency, amplitude, lacunarity, persistence, octaves, x)
+    return _PTSimplexFractal1D(frequency, amplitude, lacunarity, persistence, octaves, x)
+end
+
+PTSimplexFractal2D = function(frequency, amplitude, lacunarity, persistence, octaves, x, y)
+    return _PTSimplexFractal2D(frequency, amplitude, lacunarity, persistence, octaves, x, y)
+end
+
+PTSimplexFractal3D = function(frequency, amplitude, lacunarity, persistence, octaves, x, y, z)
+    return _PTSimplexFractal3D(frequency, amplitude, lacunarity, persistence, octaves, x, y, z)
+end
+
 local _PTAddToList = function(list, object)
     local exists = false
     for i, obj in ipairs(list) do
@@ -3116,6 +3128,12 @@ end
 --- Stop playing the music loaded in the RAD player.
 PTRadStop = function()
     _PTRadStop()
+end
+
+--- Get the path of the currently playing file in the RAD player.
+-- @treturn string Path of the current playing RAD file.
+PTRadGetPath = function()
+    return _PTRadGetPath()
 end
 
 --- Get the master volume of the RAD player.

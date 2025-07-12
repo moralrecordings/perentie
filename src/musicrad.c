@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef SYSTEM_DOS
 #include "dos.h"
@@ -102,6 +103,7 @@ typedef struct {
 
 struct RADPlayer {
     byte Data[65536];
+    char Path[256];
     CInstrument Instruments[kInstruments];
     CChannel Channels[kChannels];
     uint32_t PlayTime;
@@ -217,6 +219,8 @@ bool radplayer_load_file(const char* path)
     FILE* fp = fs_fopen(path, "rb");
     if (!fp)
         return false;
+    strncpy(rad_player.Path, path, 256);
+    rad_player.Path[255] = '\0';
     // get the file size
     fs_fseek(fp, 0, SEEK_END);
     size_t rad_size = fs_ftell(fp);
@@ -246,6 +250,11 @@ void radplayer_play()
 void radplayer_stop()
 {
     rad_player.PlayLatch = false;
+}
+
+char* radplayer_get_path()
+{
+    return rad_player.Path;
 }
 
 void radplayer_set_master_volume(int vol)
@@ -1403,6 +1412,7 @@ void _radplayer_lock()
 
 void radplayer_init()
 {
+    memset(&rad_player, 0, sizeof(RADPlayer));
 #ifdef SYSTEM_DOS
     _radplayer_lock();
 #endif

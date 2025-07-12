@@ -10,6 +10,7 @@ bool radplayer_load_file(const char* path);
 void radplayer_update();
 void radplayer_play();
 void radplayer_stop();
+char* radplayer_get_path();
 void radplayer_set_master_volume(int vol);
 int radplayer_get_master_volume();
 void radplayer_set_position(int order, int line);

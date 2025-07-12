@@ -118,6 +118,12 @@ static int lua_pt_rad_stop(lua_State* L)
     return 0;
 }
 
+static int lua_pt_rad_get_path(lua_State* L)
+{
+    lua_pushstring(L, radplayer_get_path());
+    return 1;
+}
+
 static int lua_pt_rad_get_volume(lua_State* L)
 {
     lua_pushinteger(L, radplayer_get_master_volume());
@@ -836,6 +842,45 @@ static int lua_pt_simplex_noise_3d(lua_State* L)
     return 1;
 };
 
+static int lua_pt_simplex_fractal_1d(lua_State* L)
+{
+    float freq = luaL_checknumber(L, 1);
+    float ampl = luaL_checknumber(L, 2);
+    float lacu = luaL_checknumber(L, 3);
+    float pers = luaL_checknumber(L, 4);
+    size_t oct = luaL_checkinteger(L, 5);
+    float x = luaL_checknumber(L, 6);
+    lua_pushnumber(L, simplex_fractal_1d(freq, ampl, lacu, pers, oct, x));
+    return 1;
+};
+
+static int lua_pt_simplex_fractal_2d(lua_State* L)
+{
+    float freq = luaL_checknumber(L, 1);
+    float ampl = luaL_checknumber(L, 2);
+    float lacu = luaL_checknumber(L, 3);
+    float pers = luaL_checknumber(L, 4);
+    size_t oct = luaL_checkinteger(L, 5);
+    float x = luaL_checknumber(L, 6);
+    float y = luaL_checknumber(L, 7);
+    lua_pushnumber(L, simplex_fractal_2d(freq, ampl, lacu, pers, oct, x, y));
+    return 1;
+};
+
+static int lua_pt_simplex_fractal_3d(lua_State* L)
+{
+    float freq = luaL_checknumber(L, 1);
+    float ampl = luaL_checknumber(L, 2);
+    float lacu = luaL_checknumber(L, 3);
+    float pers = luaL_checknumber(L, 4);
+    size_t oct = luaL_checkinteger(L, 5);
+    float x = luaL_checknumber(L, 6);
+    float y = luaL_checknumber(L, 7);
+    float z = luaL_checknumber(L, 8);
+    lua_pushnumber(L, simplex_fractal_3d(freq, ampl, lacu, pers, oct, x, y, z));
+    return 1;
+};
+
 static int lua_pt_reset(lua_State* L)
 {
     pt_event* ev = event_push(EVENT_RESET);
@@ -862,6 +907,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTRadLoad", lua_pt_rad_load },
     { "_PTRadPlay", lua_pt_rad_play },
     { "_PTRadStop", lua_pt_rad_stop },
+    { "_PTRadGetPath", lua_pt_rad_get_path },
     { "_PTRadGetVolume", lua_pt_rad_get_volume },
     { "_PTRadSetVolume", lua_pt_rad_set_volume },
     { "_PTRadGetPosition", lua_pt_rad_get_position },
@@ -898,6 +944,9 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTSimplexNoise1D", lua_pt_simplex_noise_1d },
     { "_PTSimplexNoise2D", lua_pt_simplex_noise_2d },
     { "_PTSimplexNoise3D", lua_pt_simplex_noise_3d },
+    { "_PTSimplexFractal1D", lua_pt_simplex_fractal_1d },
+    { "_PTSimplexFractal2D", lua_pt_simplex_fractal_2d },
+    { "_PTSimplexFractal3D", lua_pt_simplex_fractal_3d },
     { "_PTReset", lua_pt_reset },
     { "_PTQuit", lua_pt_quit },
     { NULL, NULL },
