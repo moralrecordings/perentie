@@ -27,7 +27,7 @@ pt_image* create_image(char* path, int16_t origin_x, int16_t origin_y, int16_t c
 
 int image_read_fn(spng_ctx* ctx, void* user, void* data, size_t n)
 {
-    FILE* file = user;
+    PHYSFS_File* file = user;
     (void)ctx;
 
     if (fs_fread(data, n, 1, file) != 1) {
@@ -44,7 +44,7 @@ bool image_load(pt_image* image)
     if (!image || !image->path)
         return false;
 
-    FILE* fp = fs_fopen(image->path, "rb");
+    PHYSFS_File* fp = fs_fopen(image->path, "rb");
     if (!fp) {
         log_print("image_load: Failed to open image: %s\n", image->path);
         return false;

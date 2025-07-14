@@ -269,10 +269,10 @@ int fs_fseek(PHYSFS_File* stream, long offset, int origin)
         ugt->offset = 0;
 
     if (origin == SEEK_END)
-        return (int)PHYSFS_seek(file, PHYSFS_fileLength(file) + offset);
+        return PHYSFS_seek(file, PHYSFS_fileLength(file) + offset) != 0 ? 0 : 1;
     else if (origin == SEEK_CUR)
-        return (int)PHYSFS_seek(file, offset + PHYSFS_tell(file));
-    return (int)PHYSFS_seek(file, offset);
+        return (int)PHYSFS_seek(file, offset + PHYSFS_tell(file)) != 0 ? 0 : 1;
+    return (int)PHYSFS_seek(file, offset) != 0 ? 0 : 1;
 }
 
 #define AUTOCLEAN_MAX 64
@@ -331,7 +331,7 @@ int fs_fclose(PHYSFS_File* stream)
     PHYSFS_File* file = (PHYSFS_File*)stream;
     int result = PHYSFS_close(file);
     remove_file_if_temp(stream);
-    return result;
+    return result != 0 ? 0 : 1;
 }
 
 PHYSFS_File* fs_freopen(const char* filename, const char* mode, PHYSFS_File* stream)
@@ -343,7 +343,7 @@ PHYSFS_File* fs_freopen(const char* filename, const char* mode, PHYSFS_File* str
 int fs_fflush(PHYSFS_File* stream)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
-    return PHYSFS_flush(file);
+    return PHYSFS_flush(file) != 0 ? 0 : 1;
 }
 
 #define FPRINTF_FAKE_SIZE 8192
@@ -351,6 +351,8 @@ static char fprintf_fake_buffer[FPRINTF_FAKE_SIZE] = { 0 };
 
 int fs_vfprintf(PHYSFS_File* stream, const char* format, va_list vlist)
 {
+    if (!stream)
+        return -1;
     PHYSFS_File* file = (PHYSFS_File*)stream;
     int result = vsnprintf(fprintf_fake_buffer, FPRINTF_FAKE_SIZE, format, vlist);
     return PHYSFS_writeBytes(file, fprintf_fake_buffer, result);

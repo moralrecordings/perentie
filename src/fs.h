@@ -1,6 +1,8 @@
 #ifndef PERENTIE_FS_H
 #define PERENTIE_FS_H
 
+#include "physfs/physfs.h"
+
 #include <stdint.h>
 #include <stdio.h>
 
@@ -8,25 +10,25 @@ void fs_init(const char* argv0);
 int fs_set_write_dir(const char* path);
 void fs_shutdown();
 
-FILE* fs_fopen(const char* filename, const char* mode);
-size_t fs_fread(void* buffer, size_t size, size_t count, FILE* stream);
-size_t fs_fwrite(const void* buffer, size_t size, size_t count, FILE* stream);
-int fs_ungetc(int ch, FILE* stream);
-int fs_fgetc(FILE* stream);
-int fs_fputc(int ch, FILE* stream);
-int fs_feof(FILE* stream);
-int fs_ferror(FILE* stream);
-void fs_clearerr(FILE* stream);
-long fs_ftell(FILE* stream);
-int fs_fseek(FILE* stream, long offset, int origin);
-int fs_fclose(FILE* stream);
-int fs_fflush(FILE* stream);
-int fs_vfprintf(FILE* stream, const char* format, va_list vlist);
-int fs_fprintf(FILE* stream, const char* format, ...);
-void fs_rewind(FILE* stream);
+PHYSFS_File* fs_fopen(const char* filename, const char* mode);
+size_t fs_fread(void* buffer, size_t size, size_t count, PHYSFS_File* stream);
+size_t fs_fwrite(const void* buffer, size_t size, size_t count, PHYSFS_File* stream);
+int fs_ungetc(int ch, PHYSFS_File* stream);
+int fs_fgetc(PHYSFS_File* stream);
+int fs_fputc(int ch, PHYSFS_File* stream);
+int fs_feof(PHYSFS_File* stream);
+int fs_ferror(PHYSFS_File* stream);
+void fs_clearerr(PHYSFS_File* stream);
+long fs_ftell(PHYSFS_File* stream);
+int fs_fseek(PHYSFS_File* stream, long offset, int origin);
+int fs_fclose(PHYSFS_File* stream);
+int fs_fflush(PHYSFS_File* stream);
+int fs_vfprintf(PHYSFS_File* stream, const char* format, va_list vlist);
+int fs_fprintf(PHYSFS_File* stream, const char* format, ...);
+void fs_rewind(PHYSFS_File* stream);
 
 #define FREAD_TYPE_LE(T, S)                                                                                            \
-    static inline T fs_fread_##S(FILE* fp)                                                                             \
+    static inline T fs_fread_##S(PHYSFS_File* fp)                                                                      \
     {                                                                                                                  \
         T result = 0;                                                                                                  \
         fs_fread(&result, sizeof(T), 1, fp);                                                                           \
@@ -34,7 +36,7 @@ void fs_rewind(FILE* stream);
     }
 
 #define FREAD_TYPE_BE(T, C, S)                                                                                         \
-    static inline T fs_fread_##S(FILE* fp)                                                                             \
+    static inline T fs_fread_##S(PHYSFS_File* fp)                                                                      \
     {                                                                                                                  \
         T result = 0;                                                                                                  \
         fs_fread(&result, sizeof(T), 1, fp);                                                                           \

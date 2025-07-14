@@ -101,11 +101,11 @@ void perentie_shutdown()
     pt_sys.opl->shutdown();
     pt_sys.beep->shutdown();
     pt_sys.timer->shutdown();
+    pt_sys.app->shutdown();
+    script_shutdown();
     event_shutdown();
     log_shutdown();
     fs_shutdown();
-    pt_sys.app->shutdown();
-    script_shutdown();
 }
 
 static void perentie_loop()

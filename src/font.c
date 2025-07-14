@@ -7,7 +7,7 @@
 #include "log.h"
 #include "utils.h"
 
-void font_load_info_block(FILE* fp, size_t size, pt_font* font)
+void font_load_info_block(PHYSFS_File* fp, size_t size, pt_font* font)
 {
     if (size < 15) {
         log_print("font_load_info_block: %d is too small\n", size);
@@ -31,7 +31,7 @@ void font_load_info_block(FILE* fp, size_t size, pt_font* font)
     fs_fread(font->font_name, sizeof(char), size, fp);
 }
 
-void font_load_common_block(FILE* fp, size_t size, pt_font* font)
+void font_load_common_block(PHYSFS_File* fp, size_t size, pt_font* font)
 {
     if (size < 15) {
         log_print("font_load_common_block: %d is too small\n", size);
@@ -52,7 +52,7 @@ void font_load_common_block(FILE* fp, size_t size, pt_font* font)
     fs_fseek(fp, size, SEEK_CUR);
 }
 
-void font_load_pages_block(FILE* fp, size_t size, pt_font* font, const char* path)
+void font_load_pages_block(PHYSFS_File* fp, size_t size, pt_font* font, const char* path)
 {
     char buffer[256];
     char* ptr = buffer;
@@ -85,7 +85,7 @@ void font_load_pages_block(FILE* fp, size_t size, pt_font* font, const char* pat
     }
 }
 
-void font_load_chars_block(FILE* fp, size_t size, pt_font* font)
+void font_load_chars_block(PHYSFS_File* fp, size_t size, pt_font* font)
 {
     if (size % 20 != 0) {
         log_print("font_load_chars_block: %d is not divisible by 20\n", size);
@@ -109,7 +109,7 @@ void font_load_chars_block(FILE* fp, size_t size, pt_font* font)
     }
 }
 
-void font_load_kerning_block(FILE* fp, size_t size, pt_font* font)
+void font_load_kerning_block(PHYSFS_File* fp, size_t size, pt_font* font)
 {
     log_print("font_load_kerning_block: not implemented\n");
     fs_fseek(fp, size, SEEK_CUR);
@@ -117,7 +117,7 @@ void font_load_kerning_block(FILE* fp, size_t size, pt_font* font)
 
 pt_font* create_font(char* path)
 {
-    FILE* fp = fs_fopen(path, "rb");
+    PHYSFS_File* fp = fs_fopen(path, "rb");
     if (!fp) {
         log_print("create_font: Unable to open %s\n", path);
         free(path);

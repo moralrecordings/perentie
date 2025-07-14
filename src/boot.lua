@@ -3048,8 +3048,8 @@ end
 -- @tparam float midi MIDI pitch.
 -- @treturn float Tone frequency, in Hz.
 PTMIDIToFreq = function(midi)
-    if not midi then
-        return 0.0
+    if midi == nil then
+        return 0
     end
     return 440 * 2 ^ ((midi - 69) / 12)
 end

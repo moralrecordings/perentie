@@ -216,7 +216,7 @@ bool radplayer_load_file(const char* path)
     if (pt_sys.opl->is_ready())
         rad_stop(&rad_player);
 
-    FILE* fp = fs_fopen(path, "rb");
+    PHYSFS_File* fp = fs_fopen(path, "rb");
     if (!fp)
         return false;
     strncpy(rad_player.Path, path, 256);

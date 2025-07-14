@@ -239,7 +239,7 @@ void destroy_pc_speaker_data(pt_pc_speaker_data* spk)
 
 pt_pc_speaker_ifs* load_pc_speaker_ifs(const char* path)
 {
-    FILE* fp;
+    PHYSFS_File* fp;
     fp = fs_fopen(path, "rb");
     if (!fp) {
         log_print("load_pc_speaker_ifs: could not open file %s\n", path);
@@ -249,7 +249,7 @@ pt_pc_speaker_ifs* load_pc_speaker_ifs(const char* path)
     uint32_t magic = fs_fread_u32be(fp);
     if (magic != 0x534e4400) { // b"SND\x00"
         log_print("load_pc_speaker_ifs: file %s is not an Inverse Frequency Sound file\n", path);
-        fclose(fp);
+        fs_fclose(fp);
         return NULL;
     }
 
@@ -264,13 +264,13 @@ pt_pc_speaker_ifs* load_pc_speaker_ifs(const char* path)
     pt_pc_speaker_ifs* result = (pt_pc_speaker_ifs*)calloc(1, sizeof(pt_pc_speaker_ifs));
     result->sounds = (pt_pc_speaker_data**)calloc(sfx_count, sizeof(pt_pc_speaker_data*));
     for (int i = 0; i < sfx_count; i++) {
-        fseek(fp, 16 + i * 16, SEEK_SET);
+        fs_fseek(fp, 16 + i * 16, SEEK_SET);
         size_t sound_offset = fs_fread_u16le(fp);
         fs_fread_u8(fp);
         fs_fread_u8(fp);
         char* name = (char*)calloc(16, sizeof(char));
         fs_fread(name, sizeof(char), 12, fp);
-        size_t sound_end = ftell(fp) == header_end ? file_end : fs_fread_u16le(fp);
+        size_t sound_end = fs_ftell(fp) == header_end ? file_end : fs_fread_u16le(fp);
         fs_fseek(fp, sound_offset, SEEK_SET);
         size_t data_len = (sound_end - sound_offset) >> 1;
         uint16_t* data = (uint16_t*)malloc(sizeof(uint16_t) * data_len);

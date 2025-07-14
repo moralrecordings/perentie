@@ -172,6 +172,7 @@ static int lua_pt_wave(lua_State* L)
         lua_pushnil(L);
         return 1;
     }
+    free(path);
 
     const WaveErr* error = wave_err();
     if (error && error->code) {
@@ -615,6 +616,10 @@ static int lua_pt_pump_event(lua_State* L)
         // tell the engine to reload everything
         // after the current loop
         has_reset = true;
+        if (reset_state_path) {
+            free(reset_state_path);
+            reset_state_path = NULL;
+        }
         reset_state_path = ev->reset.state_path;
         ev->reset.state_path = NULL;
         break;
@@ -1104,6 +1109,10 @@ void script_shutdown()
         main_thread = NULL;
         // just in case the game tries to go on
         has_quit = true;
+    }
+    if (reset_state_path) {
+        free(reset_state_path);
+        reset_state_path = NULL;
     }
     if (crash_message) {
         printf("%s\n", crash_message);
