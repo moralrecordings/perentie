@@ -682,6 +682,7 @@ PTActor = function(name, x, y, z)
         walkdata_delta_factor = PTPoint(0, 0),
         walkdata_destbox = nil,
         walkdata_curbox = nil,
+        walkdata_facing = nil,
         walkbox = nil,
         facing = 0,
         scale_x = 0xff,
@@ -1194,6 +1195,20 @@ PTSetDitherHint = function(src, dither_type, dest_a, dest_b)
     return _PTSetDitherHint(src, dt, dest_a, dest_b)
 end
 
+--- Calculate the angle of a 2D direction vector.
+-- @tparam number dx Direction vector x coordinate.
+-- @tparam number dy Vector y coordinate.
+-- @tparam integer Direction in degrees clockwise from north.
+PTAngleDirection = function(dx, dy)
+    -- dx and dy reversed, so that 0 degrees is at (0, 1)
+    -- also dy inverted, as screen coordinates are positive-downwards
+    local ang = math.floor(180 * math.atan(dx, -dy) / math.pi)
+    if ang < 0 then
+        ang = ang + 360
+    end
+    return ang
+end
+
 --- Calculate the delta angle between two directions.
 -- @tparam integer src Start direction, in degrees clockwise from north.
 -- @tparam integer dest End direction, in degrees clockwise from north.
@@ -1261,7 +1276,7 @@ end
 -- @tfield table frames List of @{PTImage} objects; one per frame.
 -- @tfield[opt=0] integer rate Frame rate to use for playback.
 -- @tfield[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
--- @tfield[opt=false] boolean looping Whether to loop the animation when completed.
+-- @tfield[opt=true] boolean looping Whether to loop the animation when completed.
 -- @tfield[opt=0] integer current_frame The current frame in the sequence to display.
 -- @tfield[opt=0] integer next_wait The millisecond count at which to show the next frame.
 -- @tfield[opt=0] integer flags Flags for rendering the image.
@@ -1274,19 +1289,23 @@ end
 -- @tparam[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
 -- @tparam[opt=false] boolean h_mirror Whether the animation can be mirrored horizontally.
 -- @tparam[opt=false] boolean v_mirror Whether the animation can be mirrored vertically.
+-- @tparam[opt=true] boolean looping Whether to loop the animation when completed.
 -- @treturn PTAnimation The new animation.
-PTAnimation = function(name, frames, rate, facing, h_mirror, v_mirror)
-    if not rate then
+PTAnimation = function(name, frames, rate, facing, h_mirror, v_mirror, looping)
+    if rate == nil then
         rate = 0
     end
-    if not facing then
+    if facing == nil then
         facing = 0
     end
-    if not h_mirror then
+    if h_mirror == nil then
         h_mirror = false
     end
-    if not v_mirror then
+    if v_mirror == nil then
         v_mirror = false
+    end
+    if looping == nil then
+        looping = true
     end
     return {
         _type = "PTAnimation",
@@ -1294,7 +1313,7 @@ PTAnimation = function(name, frames, rate, facing, h_mirror, v_mirror)
         frames = frames,
         rate = rate,
         facing = facing,
-        looping = false,
+        looping = looping,
         current_frame = 0,
         next_wait = 0,
         h_mirror = h_mirror,
@@ -1404,6 +1423,7 @@ PTSpriteSetAnimation = function(sprite, name, facing)
         if sprite.anim_index ~= best_index or sprite.anim_flags ~= best_flags then
             sprite.anim_index = best_index
             sprite.anim_flags = best_flags
+            sprite.animations[sprite.anim_index].current_frame = 1
             return true
         end
     end
@@ -1419,8 +1439,10 @@ PTSpriteIncrementFrame = function(object)
         if anim then
             if anim.current_frame == 0 then
                 anim.current_frame = 1
-            elseif not anim.looping and anim.current_frame < #anim.frames then
-                anim.current_frame = anim.current_frame + 1
+            elseif not anim.looping then
+                if anim.current_frame < #anim.frames then
+                    anim.current_frame = anim.current_frame + 1
+                end
             else
                 anim.current_frame = (anim.current_frame % #anim.frames) + 1
             end
@@ -1596,8 +1618,10 @@ PTGetImageFromObject = function(object)
                     anim.current_frame = 1
                     anim.next_wait = PTGetMillis() + (1000 // anim.rate)
                 elseif PTGetMillis() > anim.next_wait then
-                    if not anim.looping and anim.current_frame < #anim.frames then
-                        anim.current_frame = anim.current_frame + 1
+                    if not anim.looping then
+                        if anim.current_frame < #anim.frames then
+                            anim.current_frame = anim.current_frame + 1
+                        end
                     else
                         anim.current_frame = (anim.current_frame % #anim.frames) + 1
                     end
@@ -2846,7 +2870,8 @@ end
 -- @tparam PTActor actor Actor to modify.
 -- @tparam integer x X coordinate in room space.
 -- @tparam integer y Y coordinate in room space.
-PTActorSetWalk = function(actor, x, y)
+-- @tparam[opt=nil] integer facing Direction to face the actor in at the destination.
+PTActorSetWalk = function(actor, x, y, facing)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorSetWalk: expected PTActor for first argument")
     end
@@ -2861,6 +2886,7 @@ PTActorSetWalk = function(actor, x, y)
     actor.walkdata_dest = dest_point
     actor.walkdata_destbox = dest_box
     actor.walkdata_curbox = actor.walkbox
+    actor.walkdata_facing = facing
     actor.moving = MF_NEW_LEG
 end
 
@@ -2878,6 +2904,9 @@ PTActorWalk = function(actor)
 
     if actor.moving == MF_LAST_LEG and actor.x == actor.walkdata_dest.x and actor.y == actor.walkdata_dest.y then
         actor.moving = 0
+        if actor.walkdata_facing then
+            actor.facing = actor.walkdata_facing
+        end
         PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
         return
     end
@@ -2888,6 +2917,9 @@ PTActorWalk = function(actor)
         end
         if actor.moving == MF_LAST_LEG then
             actor.moving = 0
+            if actor.walkdata_facing then
+                actor.facing = actor.walkdata_facing
+            end
             PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
             PTActorSetWalkBox(actor, actor.walkdata_destbox)
             -- turn anim here
@@ -2919,6 +2951,9 @@ PTActorWalk = function(actor)
             local next_box = PTRoomGetNextBox(actor.room, actor.walkbox.id, actor.walkdata_destbox.id)
             if not next_box then
                 actor.moving = 0
+                if actor.walkdata_facing then
+                    actor.facing = actor.walkdata_facing
+                end
                 PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
                 return
             end
