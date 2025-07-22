@@ -83,7 +83,8 @@ void sdlvideo_init()
         log_print("%d - %s\n", i, SDL_GetRenderDriver(i));
     }
 
-    window = SDL_CreateWindow(name, SCREEN_WIDTH * 3, SCREEN_HEIGHT * 3, SDL_WINDOW_RESIZABLE);
+    window = SDL_CreateWindow(
+        name, SCREEN_WIDTH * 3, SCREEN_HEIGHT * 3, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window) {
         log_print("sdlvideo_init: Failed to create window: %s\n", SDL_GetError());
         SDL_QuitSubSystem(SDL_INIT_VIDEO);

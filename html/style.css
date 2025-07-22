@@ -236,7 +236,7 @@ body {
   #game canvas {
     margin-top: 0px;
     width: 100%;
-    max-width: 512px;
+    max-width: 640px;
     border: 0px;
     border-radius: 0px;
   }
@@ -312,7 +312,7 @@ body {
 
   #game canvas {
     display: none;
-    max-width: 480px;
+    max-width: 640px;
   }
 
   #controller {
