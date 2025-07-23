@@ -738,16 +738,18 @@ local _PTActorUpdate = function(actor, fast_forward)
         end
         result = false
     end
-    if actor.talk_img and actor.talk_next_wait then
+    if actor.talk_next_wait then
         if actor.talk_next_wait < 0 then
             -- negative talk wait time means wait until click
             result = false
         elseif not fast_forward and _PTGetMillis() < actor.talk_next_wait then
             result = false
         else
-            PTRoomRemoveObject(actor.room, actor.talk_img)
-            actor.talk_img = nil
-            PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
+            if actor.talk_img then
+                PTRoomRemoveObject(actor.room, actor.talk_img)
+                actor.talk_img = nil
+                PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
+            end
         end
     end
 
@@ -848,6 +850,25 @@ PTActorTalk = function(actor, message, font, colour)
     PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
     PTSpriteSetAnimation(actor.sprite, actor.anim_talk, actor.facing)
     actor.current_frame = 1
+    if _PTActorWaitAfterTalk then
+        PTWaitForActor(actor)
+    end
+end
+
+--- Sleep the current thread.
+-- This is mechanically the same as @{PTSleep}, however it uses the same
+-- timer as PTActorTalk, meaning it can be skipped by clicking the mouse.
+-- This is useful for e.g. dramatic pauses in dialogue.
+-- @tparam PTActor actor The actor.
+-- @tparam integer millis Time to wait in milliseconds.
+PTActorSleep = function(actor, millis)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorSleep: expected PTActor for first argument")
+    end
+    if PTThreadInFastForward() then
+        return
+    end
+    actor.talk_next_wait = _PTGetMillis() + millis
     if _PTActorWaitAfterTalk then
         PTWaitForActor(actor)
     end
