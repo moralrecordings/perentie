@@ -475,8 +475,7 @@ void sdlkeyboard_update()
             using_touch = true;
             SDL_ConvertEventToRenderCoordinates(renderer, &ev);
             // log_print("SDL_EVENT_FINGER_DOWN: x: %f, y: %f, pressure: %f, touchID: %d, fingerID: %lld\n",
-            // ev.tfinger.x,
-            //     ev.tfinger.y, ev.tfinger.pressure, ev.tfinger.touchID, ev.tfinger.fingerID);
+            //     ev.tfinger.x, ev.tfinger.y, ev.tfinger.pressure, ev.tfinger.touchID, ev.tfinger.fingerID);
             if (!in_touch_press) {
                 // log_print("finger!\n");
                 in_touch_press = true;
@@ -516,7 +515,7 @@ void sdlkeyboard_update()
                         t = event_push(EVENT_MOUSE_DOWN);
                         t->mouse.button = 1 << 0;
                         t->mouse.x = mouse_x;
-                        t->mouse.y = mouse_x;
+                        t->mouse.y = mouse_y;
                     } else {
                         // log_print("drag finished!\n");
                     }
