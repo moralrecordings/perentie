@@ -3077,6 +3077,20 @@ PTActorSetRoom = function(actor, room, x, y)
     end
 end
 
+--- Set the current animation to play on an actor's sprite.
+-- @tparam PTActor actor The actor to modify.
+-- @tparam string name Name of the animation.
+-- @tparam[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
+-- @treturn boolean Whether the current animation was changed.
+PTActorSetAnimation = function(actor, name, facing)
+    if not actor or actor._type ~= "PTActor" then
+        return false
+    end
+
+    actor.facing = facing
+    return PTSpriteSetAnimation(actor.sprite, name, facing)
+end
+
 --- Audio
 -- @section audio
 
