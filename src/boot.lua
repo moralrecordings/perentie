@@ -4118,7 +4118,7 @@ local _PTUpdateMouseOver = function()
         return
     end
     -- Need to iterate through objects in reverse draw order
-    for obj, x, y in PTIterObjects(_PTGlobalRenderList, true) do
+    for obj, x, y in PTIterObjects(_PTGlobalRenderList, true, false) do
         if obj.collision then
             local frame, flags = PTGetImageFromObject(obj)
             if
@@ -4141,7 +4141,7 @@ local _PTUpdateMouseOver = function()
             end
         end
     end
-    for obj, x, y in PTIterObjects(room.render_list, true) do
+    for obj, x, y in PTIterObjects(room.render_list, true, false) do
         if obj.collision then
             frame, flags = PTGetImageFromObject(obj)
             if
