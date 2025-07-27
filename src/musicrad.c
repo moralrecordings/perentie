@@ -21,6 +21,29 @@
 #endif
 
 // Various constants
+
+// clang-format off
+// [64-math.floor(0.5+math.exp((255-i)*math.log(64)/255)) for i in range(256)]
+const uint8_t rad_volume_lut[256] = {
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 13, 14,
+    15, 15, 16, 17, 18, 19, 19, 20, 21, 21, 22, 23, 23, 24, 25, 25,
+    26, 27, 27, 28, 28, 29, 30, 30, 31, 31, 32, 32, 33, 33, 34, 34,
+    35, 35, 36, 36, 37, 37, 37, 38, 38, 39, 39, 40, 40, 40, 41, 41,
+    41, 42, 42, 43, 43, 43, 44, 44, 44, 45, 45, 45, 45, 46, 46, 46,
+    47, 47, 47, 47, 48, 48, 48, 49, 49, 49, 49, 49, 50, 50, 50, 50,
+    51, 51, 51, 51, 51, 52, 52, 52, 52, 52, 53, 53, 53, 53, 53, 54,
+    54, 54, 54, 54, 54, 55, 55, 55, 55, 55, 55, 55, 56, 56, 56, 56,
+    56, 56, 56, 56, 57, 57, 57, 57, 57, 57, 57, 57, 57, 58, 58, 58,
+    58, 58, 58, 58, 58, 58, 58, 59, 59, 59, 59, 59, 59, 59, 59, 59,
+    59, 59, 59, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60,
+    60, 60, 60, 61, 61, 61, 61, 61, 61, 61, 61, 61, 61, 61, 61, 61,
+    61, 61, 61, 61, 61, 61, 61, 62, 62, 62, 62, 62, 62, 62, 62, 62,
+    62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62, 62,
+    62, 62, 62, 62, 62, 62, 62, 63, 63, 63, 63, 63, 63, 63, 63, 63,
+    63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63, 63
+};
+// clang-format on
+
 enum {
     kTracks = 100,
     kChannels = 9,
@@ -125,6 +148,7 @@ struct RADPlayer {
     uint8_t Order;
     uint8_t Line;
     int8_t Entrances;
+    uint8_t MasterVolExt;
     uint8_t MasterVol;
     int8_t LineJump;
     uint8_t OPL3Regs[512];
@@ -475,7 +499,9 @@ void rad_stop(RADPlayer* rad)
     rad->Track = rad_get_track(rad);
     rad->Line = 0;
     rad->Entrances = 0;
-    rad->MasterVol = 64;
+    // persist master volume
+    // rad->MasterVol = 64;
+    // rad->MasterVolExt = 255;
 
     // Initialise channels
     for (int i = 0; i < kChannels; i++) {
@@ -563,8 +589,9 @@ int rad_get_tune_line(RADPlayer* rad)
 
 void rad_set_master_volume(RADPlayer* rad, int vol)
 {
-    vol = MAX(MIN(vol, 64), 0);
-    rad->MasterVol = vol;
+    vol = MAX(MIN(vol, 255), 0);
+    rad->MasterVolExt = vol;
+    rad->MasterVol = rad_volume_lut[vol];
     if (rad->Playing) {
         for (int i = 0; i < kChannels; i++) {
             rad_set_volume(rad, i, rad->Channels[i].Volume);
@@ -574,7 +601,7 @@ void rad_set_master_volume(RADPlayer* rad, int vol)
 
 int rad_get_master_volume(RADPlayer* rad)
 {
-    return rad->MasterVol;
+    return rad->MasterVolExt;
 }
 
 int rad_get_speed(RADPlayer* rad)
@@ -1413,6 +1440,7 @@ void _radplayer_lock()
 void radplayer_init()
 {
     memset(&rad_player, 0, sizeof(RADPlayer));
+    rad_set_master_volume(&rad_player, 255);
 #ifdef SYSTEM_DOS
     _radplayer_lock();
 #endif

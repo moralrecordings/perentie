@@ -3207,13 +3207,13 @@ PTRadGetPath = function()
 end
 
 --- Get the master volume of the RAD player.
--- @treturn integer Volume, ranging from 0 to 64.
+-- @treturn integer Volume, ranging from 0 to 255.
 PTRadGetVolume = function()
-    return _PTGetVolume()
+    return _PTRadGetVolume()
 end
 
 --- Set the master volume of the RAD player.
--- @tparam integer volume Volume, ranging from 0 to 64.
+-- @tparam integer volume Volume, ranging from 0 to 255.
 PTRadSetVolume = function(volume)
     _PTRadSetVolume(volume)
 end
