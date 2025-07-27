@@ -77,9 +77,12 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
         getcwd(buffer, 512);
         size_t idx = strlen(buffer);
         // DJGPP uses pretendy UNIX paths. Make sure it ends with a slash.
-        if (idx < 512 && buffer[idx - 1] != '/')
+        if (idx < 511 && buffer[idx - 1] != '/') {
             buffer[idx] = '/';
+            buffer[idx+1] = '\0';
+        }
     }
+    //printf("argv0: %s, cwd: %s\n", argv0, buffer);
     return buffer;
 }
 
