@@ -100,10 +100,10 @@ void pcspeaker_play_sample(byte* data, size_t len, int rate)
     _pcspeaker.sample_data = data;
     _pcspeaker.sample_len = len;
     _pcspeaker.offset = 0;
-    _pcspeaker.mode = mode;
 #ifdef SYSTEM_DOS
     _go32_dpmi_lock_data(data, len);
 #endif
+    _pcspeaker.mode = mode;
     pt_sys.timer->set_hires(true);
     // PIT mode/command register:
     // - counter 2 (PC speaker)
@@ -120,7 +120,8 @@ void pcspeaker_play_data(uint16_t* data, size_t len, int rate)
         return;
     }
     pcspeaker_stop();
-    _pcspeaker.mode = PCSPEAKER_DATA;
+    if (len == 0)
+        return;
 #ifdef SYSTEM_DOS
     _go32_dpmi_lock_data(data, len * sizeof(uint16_t));
 #endif
@@ -128,6 +129,8 @@ void pcspeaker_play_data(uint16_t* data, size_t len, int rate)
     _pcspeaker.data_count = len;
     _pcspeaker.data_rate = TIMER_HIRES_HZ / rate;
     _pcspeaker.data_ticks = 0;
+    _pcspeaker.mode = PCSPEAKER_DATA;
+    pcspeaker_tone_raw(data[0]);
 }
 
 void pcspeaker_sample_update()
@@ -176,14 +179,15 @@ void pcspeaker_data_update()
         return;
     }
     _pcspeaker.data_ticks += pt_sys.timer->get_hires() ? 1 : TIMER_HIRES_DIV;
-    if (_pcspeaker.data_ticks >= _pcspeaker.data_rate) {
+    bool incr = _pcspeaker.data_ticks >= _pcspeaker.data_rate;
+    if (incr) {
         _pcspeaker.offset += 1;
         _pcspeaker.data_ticks %= _pcspeaker.data_rate;
     }
 
     if (_pcspeaker.offset >= _pcspeaker.data_count) {
         pcspeaker_stop();
-    } else {
+    } else if (incr) {
         uint16_t value = _pcspeaker.data[_pcspeaker.offset];
         if (value == 0) {
             pt_sys.beep->set_gate(false);
