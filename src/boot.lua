@@ -629,7 +629,7 @@ end
 -- @tfield[opt=0] integer x X coordinate in room space.
 -- @tfield[opt=0] integer y Y coordinate in room space.
 -- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
--- @tfield[opt=true] boolean visible
+-- @tfield[opt=true] boolean visible Whether the actor is rendered to the screen.
 -- @tfield[opt=nil] PTRoom room The room the actor is located.
 -- @tfield[opt=nil] table sprite The @{PTBackground}/@{PTSprite} object used for drawing. Perentie will proxy this; you only need to add the actor object to the rendering list.
 -- @tfield[opt=0] integer talk_x X coordinate in actor space for talk text.
@@ -642,6 +642,7 @@ end
 -- @tfield[opt="stand"] string anim_stand Name of the sprite animation to use for standing.
 -- @tfield[opt="walk"] string anim_walk Name of the sprite animation to use for walking.
 -- @tfield[opt="talk"] string anim_talk Name of the sprite animation to use for talking.
+-- @tfield[opt=true] boolean use_walkbox Whether the actor snaps to the room's walkboxes.
 -- @table PTActor
 
 --- Create a new actor.
@@ -684,6 +685,7 @@ PTActor = function(name, x, y, z)
         walkdata_curbox = nil,
         walkdata_facing = nil,
         walkbox = nil,
+        use_walkbox = true,
         facing = 0,
         scale_x = 0xff,
         scale_y = 0xff,
@@ -745,11 +747,7 @@ local _PTActorUpdate = function(actor, fast_forward)
         elseif not fast_forward and _PTGetMillis() < actor.talk_next_wait then
             result = false
         else
-            if actor.talk_img then
-                PTRoomRemoveObject(actor.room, actor.talk_img)
-                actor.talk_img = nil
-                PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
-            end
+            PTActorSilence(actor)
         end
     end
 
@@ -853,6 +851,21 @@ PTActorTalk = function(actor, message, font, colour)
     if _PTActorWaitAfterTalk then
         PTWaitForActor(actor)
     end
+end
+
+--- Make an actor stop talking.
+-- This will remove any speech bubble, and trigger the actor's stand animation, as defined in actor.anim_stand.
+-- @tparam PTActor actor The actor.
+PTActorSilence = function(actor)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorSilence: expected PTActor for first argument")
+    end
+    if actor.talk_img then
+        PTRoomRemoveObject(actor.room, actor.talk_img)
+        actor.talk_img = nil
+    end
+    PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
+    actor.talk_next_wait = nil
 end
 
 --- Sleep the current thread.
@@ -1442,6 +1455,7 @@ PTSpriteSetAnimation = function(sprite, name, facing)
     end
     if best_index then
         if sprite.anim_index ~= best_index or sprite.anim_flags ~= best_flags then
+            --PTLog("PTSpriteSetAnimation name: %s, facing: %d, best_index: %d, best_flags: %d", name, facing,  best_index, best_flags)
             sprite.anim_index = best_index
             sprite.anim_flags = best_flags
             sprite.animations[sprite.anim_index].current_frame = 1
@@ -2902,7 +2916,10 @@ PTActorSetWalk = function(actor, x, y, facing)
     end
 
     local dest = PTPoint(x, y)
-    local dest_point, dest_box = _PTAdjustPointToBeInBox(dest, actor.room.boxes)
+    local dest_point, dest_box = dest, nil
+    if actor.use_walkbox then
+        dest_point, dest_box = _PTAdjustPointToBeInBox(dest, actor.room.boxes)
+    end
 
     actor.walkdata_dest = dest_point
     actor.walkdata_destbox = dest_box
@@ -3039,9 +3056,10 @@ end
 --- Move an actor into a different room.
 -- @tparam PTActor actor The actor to move.
 -- @tparam PTRoom room Destination room.
--- @tparam integer x X position for actor.
--- @tparam integer y Y position for actor.
-PTActorSetRoom = function(actor, room, x, y)
+-- @tparam[opt=nil] integer x X position for actor.
+-- @tparam[opt=nil] integer y Y position for actor.
+-- @tparam[opt=nil] integer z Depth coordinate; a higher number renders to the front.
+PTActorSetRoom = function(actor, room, x, y, z)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorSetRoom: expected PTActor for first argument")
     end
@@ -3067,11 +3085,16 @@ PTActorSetRoom = function(actor, room, x, y)
         _PTAddToList(actor.room.actors, actor)
     end
     if #actor.room.boxes > 0 then
-        local near_point, near_box = _PTAdjustPointToBeInBox(PTPoint(x, y), actor.room.boxes)
-        actor.x, actor.y = near_point.x, near_point.y
-        PTActorSetWalkBox(actor, near_box)
+        local near_point, near_box = PTPoint(x, y), nil
+        if actor.use_walkbox then
+            near_point, near_box = _PTAdjustPointToBeInBox(near_point, actor.room.boxes)
+        end
+        actor.x, actor.y, actor.z = near_point.x, near_point.y, z
+        if near_box then
+            PTActorSetWalkBox(actor, near_box)
+        end
     else
-        actor.x, actor.y = x, y
+        actor.x, actor.y, actor.z = x, y, z
         actor.walkbox = nil
         actor.walkdata_curbox = nil
     end
