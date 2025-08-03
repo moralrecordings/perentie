@@ -152,6 +152,20 @@ static int lua_pt_rad_set_position(lua_State* L)
     return 0;
 }
 
+static int lua_pt_rad_fade_in(lua_State* L)
+{
+    uint32_t duration = luaL_checkinteger(L, 1);
+    radplayer_fade_in(duration);
+    return 0;
+}
+
+static int lua_pt_rad_fade_out(lua_State* L)
+{
+    uint32_t duration = luaL_checkinteger(L, 1);
+    radplayer_fade_out(duration);
+    return 0;
+}
+
 static int lua_pt_wave_gc(lua_State* L)
 {
     WaveFile** target = (WaveFile**)lua_touserdata(L, 1);
@@ -917,6 +931,8 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTRadSetVolume", lua_pt_rad_set_volume },
     { "_PTRadGetPosition", lua_pt_rad_get_position },
     { "_PTRadSetPosition", lua_pt_rad_set_position },
+    { "_PTRadFadeIn", lua_pt_rad_fade_in },
+    { "_PTRadFadeOut", lua_pt_rad_fade_out },
     { "_PTWave", lua_pt_wave },
     { "_PTPCSpeakerPlaySample", lua_pt_pc_speaker_play_sample },
     { "_PTPCSpeakerPlayData", lua_pt_pc_speaker_play_data },

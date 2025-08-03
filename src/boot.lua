@@ -3238,6 +3238,18 @@ PTRadSetPosition = function(order, line)
     _PTRadSetPosition(order, line)
 end
 
+--- Start playing the music loaded in the RAD player with a volume fade-in.
+-- @tparam integer duration Duration of fade, in milliseconds.
+PTRadFadeIn = function(duration)
+    _PTRadFadeIn(duration)
+end
+
+--- Stop playing the music loaded in the RAD player with a volume fade-out.
+-- @tparam integer duration Duration of fade, in milliseconds.
+PTRadFadeOut = function(duration)
+    _PTRadFadeOut(duration)
+end
+
 --- Threading
 -- @section threading
 

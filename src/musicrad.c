@@ -79,6 +79,12 @@ enum {
     fKeyedOn = 1 << 2,
 };
 
+enum {
+    fadeNone = 0,
+    fadeIn = 1,
+    fadeOut = 2,
+};
+
 typedef struct {
     uint8_t Feedback[2];
     uint8_t Panning[2];
@@ -160,6 +166,12 @@ struct RADPlayer {
     uint8_t EffectNum;
     uint8_t Param;
     bool LastNote;
+
+    // Fade counters
+    uint32_t FadeTicks;
+    uint32_t FadeTotalTicks;
+    uint8_t FadeState;
+    uint8_t FadeVol;
 };
 typedef struct RADPlayer RADPlayer;
 
@@ -220,6 +232,30 @@ void radplayer_shutdown()
     rad_timer = 0;
 }
 
+void rad_update_fade(RADPlayer* rad)
+{
+    if (rad->FadeState && rad->FadeTotalTicks && rad->Playing) {
+        uint8_t newVol = 255;
+        if (rad->FadeState == fadeIn) {
+            newVol = (uint8_t)(rad->FadeTicks * 255 / rad->FadeTotalTicks);
+        } else if (rad->FadeState == fadeOut) {
+            newVol = (uint8_t)((rad->FadeTotalTicks - rad->FadeTicks) * 255 / rad->FadeTotalTicks);
+        }
+        if (rad->FadeVol != newVol) {
+            rad->FadeVol = newVol;
+            rad_set_master_volume(rad, rad->MasterVolExt);
+        }
+        rad->FadeTicks++;
+        if (rad->FadeTicks >= rad->FadeTotalTicks) {
+            if (rad->FadeState == fadeOut) {
+                rad_stop(rad);
+            }
+            rad->FadeState = fadeNone;
+            rad->FadeVol = 255;
+        }
+    }
+}
+
 uint32_t radplayer_callback(void* data, uint32_t id, uint32_t interval)
 {
     // Defer play and stop commands until OPL is initialised.
@@ -231,6 +267,7 @@ uint32_t radplayer_callback(void* data, uint32_t id, uint32_t interval)
     } else if (!rad_player.PlayLatch && rad_player.Playing) {
         rad_stop(&rad_player);
     }
+    rad_update_fade(&rad_player);
     rad_update(&rad_player);
     return 1000 / rad_get_hertz(&rad_player);
 }
@@ -304,6 +341,16 @@ int radplayer_get_order()
 int radplayer_get_line()
 {
     return rad_get_line(&rad_player);
+}
+
+void radplayer_fade_in(uint32_t duration)
+{
+    rad_fade_in(&rad_player, duration);
+}
+
+void radplayer_fade_out(uint32_t duration)
+{
+    rad_fade_out(&rad_player, duration);
 }
 
 //==================================================================================================
@@ -591,6 +638,7 @@ void rad_set_master_volume(RADPlayer* rad, int vol)
 {
     vol = MAX(MIN(vol, 255), 0);
     rad->MasterVolExt = vol;
+    vol = rad->FadeVol * vol / 255;
     rad->MasterVol = rad_volume_lut[vol];
     if (rad->Playing) {
         for (int i = 0; i < kChannels; i++) {
@@ -626,6 +674,21 @@ int rad_get_order(RADPlayer* rad)
 int rad_get_line(RADPlayer* rad)
 {
     return rad->Line;
+}
+
+void rad_fade_in(RADPlayer* rad, uint32_t duration)
+{
+    rad->FadeState = fadeIn;
+    rad->FadeTicks = 0;
+    rad->FadeTotalTicks = duration * rad->Hertz / 1000;
+    rad_play(rad);
+}
+
+void rad_fade_out(RADPlayer* rad, uint32_t duration)
+{
+    rad->FadeState = fadeOut;
+    rad->FadeTicks = 0;
+    rad->FadeTotalTicks = duration * rad->Hertz / 1000;
 }
 
 //==================================================================================================
@@ -1440,6 +1503,7 @@ void _radplayer_lock()
 void radplayer_init()
 {
     memset(&rad_player, 0, sizeof(RADPlayer));
+    rad_player.FadeVol = 255;
     rad_set_master_volume(&rad_player, 255);
 #ifdef SYSTEM_DOS
     _radplayer_lock();
