@@ -6,18 +6,25 @@ import pathlib
 import subprocess
 import sys
 
-def transform(src_file: pathlib.Path, output_dir: pathlib.Path, collapse: bool) -> None:
+CROP_RE = re.compile(r"(\d+)x(\d+)\+(\d+)\+(\d+)")
+
+def transform(src_file: pathlib.Path, output_dir: pathlib.Path, collapse: bool, crop: str|None) -> None:
     if not src_file.is_file():
         raise ValueError("src_file must be a file")
     if not output_dir.is_dir():
         raise ValueError("output_dir must be a dir")
 
-    # get the crop dimensions
-    dims_args = ["identify", "-format"] + (["%@"] if collapse else ["%g"]) +[str(src_file)] 
-    dims_raw = subprocess.run(dims_args, capture_output=True, text=True)
-    dims = re.match(r"(\d+)x(\d+)\+(\d+)\+(\d+)", dims_raw.stdout)
-    if not dims:
-        raise ValueError(f"could not extract image crop dimensions: {dims_raw.stdout}, {dims_raw.stderr}")
+    if crop:
+        dims = CROP_RE.match(crop)
+        if not dims:
+            raise ValueError(f"could not extract image crop dimensions: {crop}")
+    else:
+        # get the crop dimensions from image
+        dims_args = ["identify", "-format"] + (["%@"] if collapse else ["%g"]) +[str(src_file)] 
+        dims_raw = subprocess.run(dims_args, capture_output=True, text=True)
+        dims = CROP_RE.match(dims_raw.stdout)
+        if not dims:
+            raise ValueError(f"could not extract image crop dimensions: {dims_raw.stdout}, {dims_raw.stderr}")
     width, height, x_off, y_off = map(int, dims.groups())
 
     img_x = width // 2
@@ -25,7 +32,7 @@ def transform(src_file: pathlib.Path, output_dir: pathlib.Path, collapse: bool) 
 
     dest_file = output_dir / src_file.name
 
-    args = ["magick", str(src_file), "-colors", "256"] + (["-trim"] if collapse else []) + [str(dest_file)]
+    args = ["magick", str(src_file), "-colors", "256"] + (["-crop", crop] if crop else ["-trim"] if (collapse) else []) + [str(dest_file)]
 
     subprocess.call(args)
     print(f"{src_file.stem}_bg = PTBackground(PTImage(\"{str(dest_file)}\", {img_x}, {img_y}), {x_off + img_x}, {y_off + img_y})")
@@ -35,7 +42,8 @@ if __name__ == "__main__":
     parser.add_argument("SOURCE", type=pathlib.Path, nargs="+", help="Source images")
     parser.add_argument("DEST", type=pathlib.Path, help="Destination path")
     parser.add_argument("--no-collapse", dest="collapse", help="Don't collapse the empty margin of the image", action="store_false")
+    parser.add_argument("--crop", dest="crop", type=str, help="Use a custom crop rect: {w}x{h}+{x_off}+{y_off}")
     args = parser.parse_args()
     for f in args.SOURCE:
         if f.is_file():
-            transform(f, args.DEST, args.collapse)
+            transform(f, args.DEST, args.collapse, args.crop)
