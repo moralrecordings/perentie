@@ -20,6 +20,9 @@
 #define RAD_DETECT_REPEATS 0
 #endif
 
+#define MUSICRAD_CMD_QUEUE_SIZE 256
+#define MUSICRAD_CMD_QUEUE_MASK (MUSICRAD_CMD_QUEUE_SIZE - 1)
+
 // Various constants
 
 // clang-format off
@@ -172,6 +175,11 @@ struct RADPlayer {
     uint32_t FadeTotalTicks;
     uint8_t FadeState;
     uint8_t FadeVol;
+
+    // Command buffer
+    pt_musicrad_cmd CmdQueue[MUSICRAD_CMD_QUEUE_SIZE];
+    size_t CmdReadI;
+    size_t CmdWriteI;
 };
 typedef struct RADPlayer RADPlayer;
 
@@ -232,6 +240,26 @@ void radplayer_shutdown()
     rad_timer = 0;
 }
 
+pt_musicrad_cmd* rad_cmd_push(RADPlayer* rad, enum pt_musicrad_cmd_type type)
+{
+    if (rad->CmdReadI == ((rad->CmdWriteI + 1) % MUSICRAD_CMD_QUEUE_SIZE)) {
+        rad->CmdReadI = (rad->CmdReadI + 1) & MUSICRAD_CMD_QUEUE_MASK;
+    }
+    pt_musicrad_cmd* cmd = &rad->CmdQueue[rad->CmdWriteI];
+    rad->CmdWriteI = (rad->CmdWriteI + 1) & MUSICRAD_CMD_QUEUE_MASK;
+    cmd->type = type;
+    return cmd;
+}
+
+pt_musicrad_cmd* rad_cmd_pop(RADPlayer* rad)
+{
+    if (rad->CmdWriteI == rad->CmdReadI)
+        return NULL;
+    pt_musicrad_cmd* result = &rad->CmdQueue[rad->CmdReadI];
+    rad->CmdReadI = (rad->CmdReadI + 1) & MUSICRAD_CMD_QUEUE_MASK;
+    return result;
+}
+
 void rad_update_fade(RADPlayer* rad)
 {
     if (rad->FadeState && rad->FadeTotalTicks && rad->Playing) {
@@ -252,6 +280,7 @@ void rad_update_fade(RADPlayer* rad)
             }
             rad->FadeState = fadeNone;
             rad->FadeVol = 255;
+            rad_set_master_volume(rad, rad->MasterVolExt);
         }
     }
 }
@@ -261,11 +290,35 @@ uint32_t radplayer_callback(void* data, uint32_t id, uint32_t interval)
     // Defer play and stop commands until OPL is initialised.
     if (!pt_sys.opl->is_ready())
         return interval;
-    if (rad_player.PlayLatch && !rad_player.Playing) {
-        rad_stop(&rad_player); // zero registers, set OPL3 flags
-        rad_play(&rad_player);
-    } else if (!rad_player.PlayLatch && rad_player.Playing) {
-        rad_stop(&rad_player);
+    pt_musicrad_cmd* cmd = NULL;
+    while ((cmd = rad_cmd_pop(&rad_player))) {
+        switch (cmd->type) {
+        case MUSICRAD_CMD_PLAY:
+            if (!rad_player.Playing) {
+                rad_stop(&rad_player);
+                rad_play(&rad_player);
+            }
+            break;
+        case MUSICRAD_CMD_STOP:
+            if (rad_player.Playing) {
+                rad_stop(&rad_player);
+            }
+            break;
+        case MUSICRAD_CMD_SET_MASTER_VOLUME:
+            rad_set_master_volume(&rad_player, cmd->volume.vol);
+            break;
+        case MUSICRAD_CMD_SET_POSITION:
+            rad_set_position(&rad_player, cmd->position.order, cmd->position.line);
+            break;
+        case MUSICRAD_CMD_FADE_IN:
+            rad_fade_in(&rad_player, cmd->fade.duration);
+            break;
+        case MUSICRAD_CMD_FADE_OUT:
+            rad_fade_out(&rad_player, cmd->fade.duration);
+            break;
+        default:
+            break;
+        }
     }
     rad_update_fade(&rad_player);
     rad_update(&rad_player);
@@ -274,9 +327,6 @@ uint32_t radplayer_callback(void* data, uint32_t id, uint32_t interval)
 
 bool radplayer_load_file(const char* path)
 {
-    if (pt_sys.opl->is_ready())
-        rad_stop(&rad_player);
-
     PHYSFS_File* fp = fs_fopen(path, "rb");
     if (!fp)
         return false;
@@ -291,12 +341,15 @@ bool radplayer_load_file(const char* path)
         fs_fclose(fp);
         return false;
     }
+    if (rad_timer)
+        pt_sys.opl->remove_callback(rad_timer);
+
+    if (pt_sys.opl->is_ready())
+        rad_stop(&rad_player);
+
     fs_fread(rad_player.Data, rad_size, 1, fp);
     fs_fclose(fp);
     rad_load(&rad_player);
-
-    if (rad_timer)
-        pt_sys.opl->remove_callback(rad_timer);
 
     rad_timer = pt_sys.opl->add_callback(1000 / rad_get_hertz(&rad_player), radplayer_callback, NULL);
 
@@ -305,12 +358,12 @@ bool radplayer_load_file(const char* path)
 
 void radplayer_play()
 {
-    rad_player.PlayLatch = true;
+    pt_musicrad_cmd* cmd = rad_cmd_push(&rad_player, MUSICRAD_CMD_PLAY);
 }
 
 void radplayer_stop()
 {
-    rad_player.PlayLatch = false;
+    pt_musicrad_cmd* cmd = rad_cmd_push(&rad_player, MUSICRAD_CMD_STOP);
 }
 
 char* radplayer_get_path()
@@ -318,39 +371,44 @@ char* radplayer_get_path()
     return rad_player.Path;
 }
 
-void radplayer_set_master_volume(int vol)
+void radplayer_set_master_volume(uint8_t vol)
 {
-    rad_set_master_volume(&rad_player, vol);
+    pt_musicrad_cmd* cmd = rad_cmd_push(&rad_player, MUSICRAD_CMD_SET_MASTER_VOLUME);
+    cmd->volume.vol = vol;
 }
 
-int radplayer_get_master_volume()
+uint8_t radplayer_get_master_volume()
 {
     return rad_get_master_volume(&rad_player);
 }
 
-void radplayer_set_position(int order, int line)
+void radplayer_set_position(uint8_t order, uint8_t line)
 {
-    rad_set_position(&rad_player, order, line);
+    pt_musicrad_cmd* cmd = rad_cmd_push(&rad_player, MUSICRAD_CMD_SET_POSITION);
+    cmd->position.order = order;
+    cmd->position.line = line;
 }
 
-int radplayer_get_order()
+uint8_t radplayer_get_order()
 {
     return rad_get_order(&rad_player);
 }
 
-int radplayer_get_line()
+uint8_t radplayer_get_line()
 {
     return rad_get_line(&rad_player);
 }
 
 void radplayer_fade_in(uint32_t duration)
 {
-    rad_fade_in(&rad_player, duration);
+    pt_musicrad_cmd* cmd = rad_cmd_push(&rad_player, MUSICRAD_CMD_FADE_IN);
+    cmd->fade.duration = duration;
 }
 
 void radplayer_fade_out(uint32_t duration)
 {
-    rad_fade_out(&rad_player, duration);
+    pt_musicrad_cmd* cmd = rad_cmd_push(&rad_player, MUSICRAD_CMD_FADE_OUT);
+    cmd->fade.duration = duration;
 }
 
 //==================================================================================================
@@ -494,6 +552,12 @@ void rad_load(RADPlayer* rad)
     for (int i = 0; i < 512; i++)
         rad->OPL3Regs[i] = 255;
 
+    rad->FadeState = fadeNone;
+    rad->FadeTicks = 0;
+    rad->FadeTotalTicks = 0;
+    rad->FadeVol = 255;
+    rad_set_master_volume(rad, rad->MasterVolExt);
+
     rad->Initialised = true;
 }
 
@@ -634,11 +698,10 @@ int rad_get_tune_line(RADPlayer* rad)
     return rad->Line;
 }
 
-void rad_set_master_volume(RADPlayer* rad, int vol)
+void rad_set_master_volume(RADPlayer* rad, uint8_t vol)
 {
-    vol = MAX(MIN(vol, 255), 0);
     rad->MasterVolExt = vol;
-    vol = rad->FadeVol * vol / 255;
+    vol = (uint8_t)(((int)(rad->FadeVol) * vol) / 255);
     rad->MasterVol = rad_volume_lut[vol];
     if (rad->Playing) {
         for (int i = 0; i < kChannels; i++) {
@@ -647,17 +710,17 @@ void rad_set_master_volume(RADPlayer* rad, int vol)
     }
 }
 
-int rad_get_master_volume(RADPlayer* rad)
+uint8_t rad_get_master_volume(RADPlayer* rad)
 {
     return rad->MasterVolExt;
 }
 
-int rad_get_speed(RADPlayer* rad)
+uint8_t rad_get_speed(RADPlayer* rad)
 {
     return rad->Speed;
 }
 
-void rad_set_position(RADPlayer* rad, int order, int line)
+void rad_set_position(RADPlayer* rad, uint8_t order, uint8_t line)
 {
     rad_stop(rad);
     rad->Order = order;
@@ -666,12 +729,12 @@ void rad_set_position(RADPlayer* rad, int order, int line)
     rad_play(rad);
 }
 
-int rad_get_order(RADPlayer* rad)
+uint8_t rad_get_order(RADPlayer* rad)
 {
     return rad->Order;
 }
 
-int rad_get_line(RADPlayer* rad)
+uint8_t rad_get_line(RADPlayer* rad)
 {
     return rad->Line;
 }
