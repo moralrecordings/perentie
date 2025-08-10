@@ -823,9 +823,8 @@ PTActorTalk = function(actor, message, font, colour)
         return
     end
     local text = PTText(message, font, 200, "center", colour)
-
+    PTSetImageOriginSimple(text, "bottom")
     local width, height = PTGetImageDims(text)
-    PTSetImageOrigin(text, width / 2, height)
     local sx, sy = PTRoomToScreen(actor.x + actor.talk_x, actor.y + actor.talk_y)
     local sw, sh = _PTGetScreenDims()
 
@@ -1047,6 +1046,36 @@ PTSetImageOrigin = function(image, x, y)
         return
     end
     _PTSetImageOrigin(image.ptr, x, y)
+end
+
+--- Set the origin position of an image.
+-- @tparam PTImage image Image to query.
+-- @tparam string origin Origin location; one of "top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"
+PTSetImageOriginSimple = function(image, origin)
+    if not image or image._type ~= "PTImage" then
+        return
+    end
+    local w, h = _PTGetImageDims(image.ptr)
+    local w2, h2 = w / 2, h / 2
+    if origin == "top-left" then
+        _PTSetImageOrigin(image.ptr, 0, 0)
+    elseif origin == "top" then
+        _PTSetImageOrigin(image.ptr, w2, 0)
+    elseif origin == "top-right" then
+        _PTSetImageOrigin(image.ptr, w, 0)
+    elseif origin == "left" then
+        _PTSetImageOrigin(image.ptr, 0, h2)
+    elseif origin == "center" then
+        _PTSetImageOrigin(image.ptr, w2, h2)
+    elseif origin == "right" then
+        _PTSetImageOrigin(image.ptr, w, h2)
+    elseif origin == "bottom-left" then
+        _PTSetImageOrigin(image.ptr, 0, h)
+    elseif origin == "bottom" then
+        _PTSetImageOrigin(image.ptr, w2, h)
+    elseif origin == "bottom-right" then
+        _PTSetImageOrigin(image.ptr, w, h)
+    end
 end
 
 --- Blit a @{PTImage}/@{PT9Slice} to the screen.
