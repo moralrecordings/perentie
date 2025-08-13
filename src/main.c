@@ -1,7 +1,8 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "argparse/argparse.h"
 
 #include "colour.h"
 #include "event.h"
@@ -11,6 +12,7 @@
 #include "pcspeak.h"
 #include "script.h"
 #include "system.h"
+#include "version.h"
 
 #ifdef SYSTEM_SDL
 #include "sdl.h"
@@ -30,7 +32,12 @@ static uint32_t blits[16] = { 0 };
 static uint32_t flips[16] = { 0 };
 static uint32_t sample_idx = 0;
 
-void perentie_init(int argc, char** argv)
+static const char* const usages[] = {
+    "perentie [--version] [--debug] PATH [PATH ...]",
+    NULL,
+};
+
+void perentie_init(int argc, const char** argv)
 {
 #ifdef SYSTEM_DOS
     pt_sys.app = &dos_app;
@@ -53,16 +60,37 @@ void perentie_init(int argc, char** argv)
 #else
     exit(1);
 #endif
+
+    const char* argv0 = argc > 0 ? argv[0] : "perentie";
+    int version = 0;
+    int log = 0;
+    struct argparse_option options[]
+        = { OPT_HELP(), OPT_BOOLEAN('v', "version", &version, "print version and exit", NULL, 0, 0),
+              OPT_BOOLEAN('l', "log", &log, "run with debug logging", NULL, 0, 0), OPT_END() };
+    struct argparse argparse;
+    argparse_init(&argparse, options, usages, 0);
+    argc = argparse_parse(&argparse, argc, argv);
+    if (version) {
+        printf("Perentie %s (%s)\n", VERSION, PLATFORM);
+        exit(0);
+    }
+
     // seed the RNG in the most basic way
     srand(time(NULL));
 
     // Initialise driver system
     pt_sys.app->init();
 
-    fs_init(argc > 0 ? argv[0] : "perentie");
+    log_init(log);
+    fs_init(argv0, argc, argv);
     radplayer_init();
-    log_init();
     event_init();
+
+    if (!fs_exists("main.lua")) {
+        printf("main.lua not found! Perentie needs a main.lua file in order to start.\n");
+        exit(1);
+    }
+
     script_init();
     palette_init();
 
@@ -150,7 +178,7 @@ static void perentie_loop()
     sample_idx = (sample_idx + 1) % 16;
 }
 
-int main(int argc, char** argv)
+int main(int argc, const char** argv)
 {
     perentie_init(argc, argv);
 

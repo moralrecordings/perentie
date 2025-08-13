@@ -1,15 +1,21 @@
 
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdio.h>
 
 #ifdef SYSTEM_DOS
 static FILE* log_output = NULL;
 #endif
 
-void log_init()
+static bool log_flag = false;
+
+void log_init(bool enable)
 {
+    log_flag = enable;
 #ifdef SYSTEM_DOS
-    log_output = fopen("perentie.log", "w");
+    if (log_flag) {
+        log_output = fopen("perentie.log", "w");
+    }
 #endif
 }
 
@@ -25,6 +31,8 @@ void log_shutdown()
 
 int log_print(const char* format, ...)
 {
+    if (!log_flag)
+        return 0;
     va_list args;
     va_start(args, format);
     int result = 0;

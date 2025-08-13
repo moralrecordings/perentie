@@ -85,9 +85,8 @@ bool fs_mount(const char* path, int append)
     return result != 0;
 }
 
-void fs_init(const char* argv0)
+void fs_automount()
 {
-    PHYSFS_init(argv0);
     fs_mount(".", 1);
     // add all files with the .pt file extension
     DIR* dp = opendir("./");
@@ -125,6 +124,23 @@ void fs_init(const char* argv0)
         fs_mount(dirs[i], 1);
         free(dirs[i]);
     }
+}
+
+void fs_init(const char* argv0, int argc, const char** argv)
+{
+    PHYSFS_init(argv0);
+    if (argc) {
+        for (int i = 0; i < argc; i++) {
+            fs_mount(argv[i], 1);
+        }
+    } else {
+        fs_automount();
+    }
+}
+
+bool fs_exists(const char* path)
+{
+    return PHYSFS_exists(path);
 }
 
 int fs_set_write_dir(const char* path)

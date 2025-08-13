@@ -3,10 +3,12 @@
 
 #include "physfs/physfs.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 
-void fs_init(const char* argv0);
+void fs_init(const char* argv0, int argc, const char** argv);
+bool fs_exists(const char* path);
 int fs_set_write_dir(const char* path);
 void fs_shutdown();
 

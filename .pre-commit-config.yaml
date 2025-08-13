@@ -1,4 +1,4 @@
-exclude: (?x)^src/(lua/.+|miniz/.+|spng/.+|stb/.+|wave/.+|woodyopl/.+|siphash/.+|physfs/.+)$
+exclude: (?x)^src/(lua/.+|miniz/.+|spng/.+|stb/.+|wave/.+|woodyopl/.+|siphash/.+|physfs/.+|argparse/.+)$
 repos:
   - repo: https://github.com/pocc/pre-commit-hooks
     rev: v1.3.5

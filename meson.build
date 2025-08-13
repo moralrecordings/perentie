@@ -210,6 +210,13 @@ simplex = static_library(
   ],
 )
 
+argparse = static_library(
+  'argparse',
+  [
+    'src/argparse/argparse.c',
+  ],
+)
+
 if host_machine.system() == 'msdos'
   physfs_args = ['-DPHYSFS_NO_64BIT_SUPPORT']
 else
@@ -331,8 +338,9 @@ libs = [
   libspng,
   libwave,
   siphash,
+  argparse,
   simplex,
-  physfs
+  physfs,
 ]
 
 exe = executable(

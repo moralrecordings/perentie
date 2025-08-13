@@ -82,13 +82,13 @@ You will also need:
    cd build_wasm
    ninja
 
-You will need to package your game contents into a prefetch module in order for Perentie to be able to start.
+You will need to package your entire game contents into a single `data.pt` file, and store it in the same directory as the WebAssembly build.
 
 .. code-block:: bash
 
-   /usr/lib/emscripten/tools/file_packager game.data --js-output=game.js --preload ../example
+   ../scripts/pack.py data.pt ../my_game/*.lua ../my_game/assets
 
-To test the WebAssembly version locally, the following command will start a Python webserver with the correct COOP/COEP headers set:
+To test the WebAssembly version locally, the following command will start a Python webserver:
 
 .. code-block:: bash
 
@@ -127,6 +127,7 @@ Perentie wouldn't be possible without the following third-party components:
 - `SipHash <https://github.com/veorq/SipHash>`_ - fast cryptographic hash function
 - `SimplexNoise <https://github.com/SRombauts/SimplexNoise>`_ - Simplex noise generator
 - `PhysicsFS <https://icculus.org/physfs/>`_ - File system interface
+- `argparse <https://github.com/cofyc/argparse>`_ - Command line argument parser.
 
 In addition, Perentie incorporates code and algorithms from the following projects:
 
