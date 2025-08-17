@@ -12,8 +12,7 @@ PTLog("something went wrong: %s, value=%d\n", errormsg, errcode)
 
 `PTLog` uses the same syntax as [Lua's string.format](https://www.luadocs.com/docs/functions/string/format). If you need to print the contents of a table, you can run them through the bundled copy of [inspect.lua](https://github.com/kikito/inspect.lua), which does a good job converting these to human-readable strings. Be aware that this conversion can be expensive in terms of cycles.
 
-For DOS, `PTLog` will write logs to the file `perentie.log`. For SDL, `PTLog` will print logs to the console.
-
+You can enable logging by passing the `--log` command line option. For DOS builds, `PTLog` will write logs to the file `perentie.log`. For SDL builds, `PTLog` will print logs to the console.
 
 
 ## Lua shell

@@ -420,6 +420,9 @@ PTImportState = function(state)
     end
 end
 
+--- Get a summary of a single save state file.
+-- @tparam integer index Save game index to use. This will be fetched from the user's app data path, as provided by @{PTGetAppDataPath}, with the filename provided by @{PTSaveFileName}.
+-- @treturn table A table containing "index", "name" and "timestamp" keys, or nil if the file wasn't found.
 PTGetSaveStateSummary = function(index)
     local result = nil
     local path = PTSaveFileName(index)
@@ -483,6 +486,8 @@ PTGetSaveStateSummary = function(index)
     return result
 end
 
+--- Fetch summaries for all available save state files.
+-- @treturn table A list of tables containing "index", "name" and "timestamp" keys; one for each available save state file.
 PTListSavedStates = function()
     local results = {}
     for i = 0, 999 do
@@ -495,7 +500,7 @@ PTListSavedStates = function()
 end
 
 --- Return a unique 32-bit hash for a string.
--- @taparam string src String to process.
+-- @tparam string src String to process.
 -- @treturn integer 32-bit hash, encoded as an integer.
 PTHash = function(src)
     if type(src) ~= "string" then
@@ -504,26 +509,65 @@ PTHash = function(src)
     return _PTHash(src)
 end
 
+--- Generate 1D Perlin simplex noise.
+-- @tparam float x X coordinate.
+-- @treturn float Noise value, [-1, 1]. 0 on all integer coordinates.
 PTSimplexNoise1D = function(x)
     return _PTSimplexNoise1D(x)
 end
 
+--- Generate 2D Perlin simplex noise.
+-- @tparam float x X coordinate.
+-- @tparam float y Y coordinate.
+-- @treturn float Noise value, [-1, 1]. 0 on all integer coordinates.
 PTSimplexNoise2D = function(x, y)
     return _PTSimplexNoise2D(x, y)
 end
 
+--- Generate 3D Perlin simplex noise.
+-- @tparam float x X coordinate.
+-- @tparam float y Y coordinate.
+-- @tparam float z Z coordinate.
+-- @treturn float Noise value, [-1, 1]. 0 on all integer coordinates.
 PTSimplexNoise3D = function(x, y, z)
     return _PTSimplexNoise1D(x, y, z)
 end
 
+--- Generate fractal brownian motion summation of 1D Perlin simplex noise.
+-- @tparam float frequency Frequency of the first octave of noise.
+-- @tparam float amplitude Amplitude of the first octave of noise.
+-- @tparam float lacunarity Frequency multiplier between successive octaves.
+-- @tparam float persistence Loss of amplitude between successive octaves.
+-- @tparam integer octaves Number of fraction of noise to sum.
+-- @tparam float x X coordinate.
+-- @treturn float Noise value, [-1, 1]. 0 on all integer coordinates.
 PTSimplexFractal1D = function(frequency, amplitude, lacunarity, persistence, octaves, x)
     return _PTSimplexFractal1D(frequency, amplitude, lacunarity, persistence, octaves, x)
 end
 
+--- Generate fractal brownian motion summation of 2D Perlin simplex noise.
+-- @tparam float frequency Frequency of the first octave of noise.
+-- @tparam float amplitude Amplitude of the first octave of noise.
+-- @tparam float lacunarity Frequency multiplier between successive octaves.
+-- @tparam float persistence Loss of amplitude between successive octaves.
+-- @tparam integer octaves Number of fraction of noise to sum.
+-- @tparam float x X coordinate.
+-- @tparam float y Y coordinate.
+-- @treturn float Noise value, [-1, 1]. 0 on all integer coordinates.
 PTSimplexFractal2D = function(frequency, amplitude, lacunarity, persistence, octaves, x, y)
     return _PTSimplexFractal2D(frequency, amplitude, lacunarity, persistence, octaves, x, y)
 end
 
+--- Generate fractal brownian motion summation of 3D Perlin simplex noise.
+-- @tparam float frequency Frequency of the first octave of noise.
+-- @tparam float amplitude Amplitude of the first octave of noise.
+-- @tparam float lacunarity Frequency multiplier between successive octaves.
+-- @tparam float persistence Loss of amplitude between successive octaves.
+-- @tparam integer octaves Number of fraction of noise to sum.
+-- @tparam float x X coordinate.
+-- @tparam float y Y coordinate.
+-- @tparam float z Z coordinate.
+-- @treturn float Noise value, [-1, 1]. 0 on all integer coordinates.
 PTSimplexFractal3D = function(frequency, amplitude, lacunarity, persistence, octaves, x, y, z)
     return _PTSimplexFractal3D(frequency, amplitude, lacunarity, persistence, octaves, x, y, z)
 end
@@ -1261,7 +1305,7 @@ end
 --- Calculate the angle of a 2D direction vector.
 -- @tparam number dx Direction vector x coordinate.
 -- @tparam number dy Vector y coordinate.
--- @tparam integer Direction in degrees clockwise from north.
+-- @treturn integer Direction in degrees clockwise from north.
 PTAngleDirection = function(dx, dy)
     -- dx and dy reversed, so that 0 degrees is at (0, 1)
     -- also dy inverted, as screen coordinates are positive-downwards
@@ -1990,15 +2034,21 @@ PTObjectIsMoving = function(object)
     return _PTObjectIsMoving(object)
 end
 
-PTSimplexShakeFunc = function(x_amplitude, y_amplitude)
+--- Return a function for shaking using simplex noise.
+-- @tparam float x_amplitude X amplitude of the shake.
+-- @tparam float y_amplitude Y amplitude of the shake.
+-- @tparam float x_frequency X frequency of the shake, in Hz.
+-- @tparam float y_frequency Y frequency of the shake, in Hz.
+-- @treturn function Callable that takes a time value in millieseconds and returns an (x, y) pair of coordinates.
+PTSimplexShake = function(x_amplitude, y_amplitude, x_frequency, y_frequency)
     local simplex_x = math.random() * 2048.0 - 1024.0
     local simplex_y = math.random() * 2048.0 - 1024.0
     local last_offset_x = 0.0
     local last_offset_y = 0.0
     return function(time)
         local shake = 1.0
-        local offset_x = x_amplitude * shake * PTSimplexNoise1D(time + simplex_x)
-        local offset_y = y_amplitude * shake * PTSimplexNoise1D(time + simplex_y)
+        local offset_x = x_amplitude * shake * PTSimplexNoise1D((time * x_frequency * 0.001) + simplex_x)
+        local offset_y = y_amplitude * shake * PTSimplexNoise1D((time * y_frequency * 0.001) + simplex_y)
         local result_x, result_y = offset_x - last_offset_x, offset_y - last_offset_y
         last_offset_x = offset_x
         last_offset_y = offset_y
@@ -2006,8 +2056,22 @@ PTSimplexShakeFunc = function(x_amplitude, y_amplitude)
     end
 end
 
+--- Shake reference structure
+-- @tfield string _type "PTShakeRef"
+-- @tfield integer start_time Shake start time, in milliseconds.
+-- @tfield integer duration Movement duration, in milliseconds.
+-- @tfield table object Any object with "sx" and "sy" parameters to move.
+-- @tfield function shake_func Shake function to use, such as the return value of @{PTSimplexShake}.
+-- @tparam boolean while_paused Whether to shake the object while the game is paused.
+-- @table PTShakeRef
+
+--- Create a new shake reference.
+-- @tparam table object Any object with "sx" and "sy" parameters to move.
+-- @tparam function shake_func Shake function to use, such as the return value of @{PTSimplexShake}.
+-- @tparam integer start_time Shake start time, in milliseconds.
+-- @tparam integer duration Movement duration, in milliseconds.
+-- @tparam boolean while_paused Whether to shake the object while the game is paused.
 PTShakeRef = function(object, shake_func, start_time, duration, while_paused)
-    -- timing functions nicked from the CSS animation-timing-function spec
     return {
         _type = "PTShakeRef",
         start_time = start_time,
@@ -2019,23 +2083,28 @@ PTShakeRef = function(object, shake_func, start_time, duration, while_paused)
 end
 
 local _PTShakeRefList = {}
-PTShakeObject = function(object, amplitude, duration, while_paused)
+--- Shake an object without changing its position.
+-- On every rendered frame, Perentie will adjust the "sx" and "sy" parameters on the target object
+-- to adjust the offset from the (x, y) position.
+-- You can only have one shake instruction per object. If an existing
+-- shake instruction is found for an object, Perentie will replace it.
+-- @tparam table object Any object with "sx" and "sy" parameters.
+-- @tparam integer duration Duration of shake in milliseconds.
+-- @tparam function shake_func Shake function to use, such as the return value of @{PTSimplexShake}.
+-- @tparam[opt=false] boolean while_paused Whether to shake the object while the game is paused.
+PTShakeObject = function(object, duration, shake_func, while_paused)
     for i, obj in ipairs(_PTShakeRefList) do
         if object == obj.object then
             table.remove(_PTShakeRefList, i)
             break
         end
     end
-    local shakeref = PTShakeRef(object, PTSimplexShakeFunc(amplitude, amplitude), PTGetMillis(), duration, while_paused)
+    local shakeref = PTShakeRef(object, shake_func, PTGetMillis(), duration, while_paused)
     table.insert(_PTShakeRefList, shakeref)
 end
 
 --- GUI controls
 -- @section controls
-
---- Button structure.
--- @tfield string _type "PTButton"
--- @table PTButton
 
 -- How do we want to deal with the GUI?
 -- We don't need a layout engine. Assume fixed positioning.
@@ -2064,6 +2133,7 @@ end
 -- @tfield table image ${PTImage}/${PT9Slice} to use as a background.
 -- @tfield integer x X coordinate in screen space.
 -- @tfield integer y Y coordinate in screen space.
+-- @tfield integer z Depth coordinate; a higher number renders to the front.
 -- @tfield integer width Width of panel.
 -- @tfield integer height Height of panel.
 -- @tfield boolean visible Whether panel is visible.
@@ -2100,6 +2170,30 @@ PTPanel = function(image, x, y, width, height, visible)
     }
 end
 
+--- Horizontal slider structure.
+-- @tfield string _type "PTHorizSlider"
+-- @tfield integer value Start value of the slider.
+-- @tfield integer min_value Minimum permitted value.
+-- @tfield integer max_value Maximum permitted value.
+-- @tfield table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled", "track"
+-- @tfield integer x X coordinate of widget.
+-- @tfield integer y Y coordinate of widget.
+-- @tfield integer z Depth coordinate; a higher number renders to the front.
+-- @tfield integer width Width of the slider.
+-- @tfield integer height Height of the slider.
+-- @tfield integer track_size Height of the track image.
+-- @tfield integer handle_size Width of the handle image.
+-- @tfield boolean hover Whether the widget is currently hovered over.
+-- @tfield boolean active Whether the widget is currently active.
+-- @tfield boolean disabled Whether the widget is disabled.
+-- @tfield boolean visible Whether the widget is visible.
+-- @tfield integer origin_x X coordinate of the widget offset.
+-- @tfield integer origin_y Y coordinate of the widget offset.
+-- @tfield function change_callback Callback to run when slider changes position.
+-- @tfield function set_callback Callback to run when the value is set.
+-- @tfield table objects Child objects held by widget.
+-- @table PTHorizSlider
+
 --- Create a new horizontal slider control.
 -- @tparam table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled", "track"
 -- @tparam integer x X coordinate.
@@ -2113,6 +2207,7 @@ end
 -- @tparam integer max_value Maximum permitted value.
 -- @tparam function change_callback Callback to run when slider changes position.
 -- @tparam function set_callback Callback to run when the value is set.
+-- @treturn PTHorizSlider The new horizontal slider.
 PTHorizSlider = function(
     images,
     x,
@@ -2173,6 +2268,10 @@ PTHorizSlider = function(
     return result
 end
 
+--- Convert a slider position to a value.
+-- @tparam any slider Slider object to modify.
+-- @tparam integer pos New slider position, in screen units.
+-- @treturn integer Slider value.
 PTSliderPosToValue = function(slider, pos)
     return (
         slider.min_value
@@ -2180,15 +2279,49 @@ PTSliderPosToValue = function(slider, pos)
     )
 end
 
+--- Convert a slider value to a position.
+-- @tparam any slider Slider object to modify.
+-- @tparam integer value New value to have.
+-- @treturn integer Slider position, in screen units.
 PTSliderValueToPos = function(slider, value)
     return ((slider.width - slider.handle_size) * (value - slider.min_value) // (slider.max_value - slider.min_value))
 end
 
+--- Set a slider to a value.
+-- @tparam any slider Slider object to modify.
+-- @tparam integer value New value to have.
 PTSliderSetValue = function(slider, value)
     slider.value = value
     slider.objects[2].x = PTSliderValueToPos(slider, value)
 end
 
+--- Button structure.
+-- @tfield string _type "PTButton"
+-- @tfield table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled"
+-- @tfield integer x X coordinate.
+-- @tfield integer y Y coordinate.
+-- @tfield integer z Depth coordinate; a higher number renders to the front.
+-- @tfield integer width Width of the control.
+-- @tfield integer height Height of the control.
+-- @tfield table objects Child objects held by widget.
+-- @tfield boolean hover Whether the widget is currently hovered over.
+-- @tfield boolean active Whether the widget is currently active.
+-- @tfield boolean disabled Whether the widget is disabled.
+-- @tfield boolean visible Whether the widget is visible.
+-- @tfield integer origin_x X coordinate of the widget offset.
+-- @tfield integer origin_y Y coordinate of the widget offset.
+-- @tfield function callback Callback to run when the button is activated.
+-- @table PTButton
+
+--- Create a new button control.
+-- @tparam table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled"
+-- @tparam integer x X coordinate.
+-- @tparam integer y Y coordinate.
+-- @tparam integer width Width of the control.
+-- @tparam integer height Height of the control.
+-- @tparam table objects Child objects held by widget.
+-- @tparam function callback Callback to run when the button is activated.
+-- @treturn PTButton The new button.
 PTButton = function(images, x, y, width, height, objects, callback)
     local target_images = {}
     if images then
@@ -2219,6 +2352,8 @@ PTButton = function(images, x, y, width, height, objects, callback)
     }
 end
 
+--- Add a panel to the engine state.
+-- @tparam PTPanel panel The panel to add.
 local _PTPanelList = {}
 PTAddPanel = function(panel)
     if panel and panel._type == "PTPanel" then
@@ -2229,6 +2364,8 @@ PTAddPanel = function(panel)
     end)
 end
 
+--- Remove a panel from the engine state.
+-- @tparam PTPanel panel The panel to remove.
 PTRemovePanel = function(panel)
     if not panel or panel._type ~= "PTPanel" then
         error("PTRemovePanel: expected PTPanel for first argument")
@@ -2239,6 +2376,9 @@ PTRemovePanel = function(panel)
     end)
 end
 
+--- Add a renderable (@{PTBackground}/@{PTSprite}/@{PTGroup}) object to the panel rendering list.
+-- @tparam PTPanel panel Panel to modify.
+-- @tparam table object Object to add.
 PTPanelAddObject = function(panel, object)
     if not panel or panel._type ~= "PTPanel" then
         error("PTPanelAddObject: expected PTPanel for first argument")
@@ -2249,6 +2389,9 @@ PTPanelAddObject = function(panel, object)
     end)
 end
 
+--- Remove a renderable (@{PTBackground}/@{PTSprite}/@{PTGroup}) object from the panel rendering list.
+-- @tparam PTPanel panel Panel to modify.
+-- @tparam table object Object to add.
 PTPanelRemoveObject = function(panel, object)
     if not panel or panel._type ~= "PTPanel" then
         error("PTPanelRemoveObject: expected PTPanel for first argument")
@@ -3146,6 +3289,14 @@ end
 --- Audio
 -- @section audio
 
+--- Wave structure
+-- @tfield string _type "PTWave"
+-- @tfield userdata ptr Pointer to C data.
+-- @table PTWave
+
+--- Load a new wave file.
+-- @tparam string path Path of the wave file.
+-- @treturn PTWave The new wave.
 PTWave = function(path)
     return { _type = "PTWave", ptr = _PTWave(path) }
 end
@@ -3176,6 +3327,10 @@ PTMIDIToFreq = function(midi)
     return 440 * 2 ^ ((midi - 69) / 12)
 end
 
+--- Convert a tone frequency to an Inverse Frequency Sound value.
+-- This is the value expected by the PC speaker's square wave generator.
+-- @tparam float freq Tone frequency, in Hz.
+-- @treturn integer IFS, in PC speaker timing units.
 PTFreqToIFS = function(freq)
     if freq == 0 then
         return 0
@@ -3183,16 +3338,43 @@ PTFreqToIFS = function(freq)
     return math.max(1, math.min(65534, math.floor(PC_TIMER_FREQ / freq)))
 end
 
-PTPCSpeakerData = function(data, playback_freq)
-    return { _type = "PTPCSpeakerData", ptr = _PTPCSpeakerData(data, playback_freq) }
+--- PC speaker data structure.
+-- @tfield string _type "PTPCSpeakerData"
+-- @tfield[opt=nil] string name Name of the sample.
+-- @tfield userdata ptr Pointer to C data.
+-- @table PTPCSpeakerData
+
+--- Create a new PC speaker data buffer.
+-- This can be played back using @{PTPCSpeakerPlayData}.
+-- @tparam table data List of IFS values, in PC speaker timing units.
+-- @tparam[opt=140] integer playback_rate Playback rate for data, in Hz. Defaults to 140, which was the standard rate used by Apogee.
+-- @treturn PTPCSpeakerData The new data buffer.
+PTPCSpeakerData = function(data, playback_rate)
+    if not playback_rate then
+        playback_rate = 140
+    end
+    return { _type = "PTPCSpeakerData", ptr = _PTPCSpeakerData(data, playback_rate) }
 end
 
-PTPCSpeakerDataFreq = function(data, playback_freq)
+--- Create a new PC speaker data buffer, using tone frequency values.
+-- This can be played back using @{PTPCSpeakerPlayData}.
+-- @tparam table data List of tone frequencies, in Hz.
+-- @tparam[opt=140] integer playback_rate Playback rate for data, in Hz. Defaults to 140, which was the standard rate used by Apogee.
+-- @treturn PTPCSpeakerData The new data buffer.
+PTPCSpeakerDataFreq = function(data, playback_rate)
+    if not playback_rate then
+        playback_rate = 140
+    end
     local new_data = {}
     for i, v in ipairs(data) do
         table.insert(new_data, PTFreqToIFS(v))
-    end
-    return { _type = "PTPCSpeakerData", ptr = _PTPCSpeakerData(new_data, playback_freq) }
+    end --- Create a new PC speaker data buffer.
+    -- This can be played back using @{PTPCSpeakerPlayData}.
+    -- @tparam table data List of IFS values, in PC speaker timing units.
+    -- @tparam[opt=140] integer playback_rate Playback rate for data, in Hz. Defaults to 140, which is the standard rate used by Apogee.
+    -- @treturn PTPCSpeakerData The new data buffer.
+
+    return { _type = "PTPCSpeakerData", ptr = _PTPCSpeakerData(new_data, playback_rate) }
 end
 
 -- PTGetWaveSampleRate
@@ -3202,7 +3384,7 @@ end
 -- PTGetWaveSampleSize
 
 --- Play a square wave tone on the PC speaker.
--- The note will play until it is stopped by a call to PTStopBeep.
+-- The note will play until it is stopped by a call to @{PTPCSpeakerStop}.
 -- @tparam number freq Audio frequency of the tone.
 PTPCSpeakerPlayTone = function(freq)
     return _PTPCSpeakerTone(freq)
@@ -3211,31 +3393,37 @@ end
 --- Play an audio sample through the PC speaker.
 -- This abuses the same timer-driven impulse trick that Access Software's
 -- RealSound uses, producing ~6-bit PCM audio.
+-- This will not play back if DOS Perentie is running inside Windows.
 -- @tparam PTWave wave PTWave to play back. Must be mono unsigned 8-bit samples, either 8000Hz or 16000Hz sample rate.
 PTPCSpeakerPlaySample = function(wave)
     if not wave or wave._type ~= "PTWave" then
         error("PTPCSpeakerPlaySample: expected PTWave for first argument")
     end
-    return _PTPCSpeakerPlaySample(wave.ptr)
+    _PTPCSpeakerPlaySample(wave.ptr)
 end
 
+--- Play a data buffer through the PC speaker.
+-- @tparam PTPCSpeakerData data Data buffer to play back.
 PTPCSpeakerPlayData = function(data)
     if not data or data._type ~= "PTPCSpeakerData" then
         error("PTPCSpeakerPlayData: expected PTPCSpeakerData for first argument")
     end
-    return _PTPCSpeakerPlayData(data.ptr)
+    _PTPCSpeakerPlayData(data.ptr)
 end
 
---- Stop playing a tone on the PC speaker.
+--- Stop all playback through the PC speaker.
 PTPCSpeakerStop = function()
-    return _PTPCSpeakerStop()
+    _PTPCSpeakerStop()
 end
 
+--- Load a PC speaker sound file in Inverse Frequency Sound format.
+-- @tparam string path The path to the file.
+-- @treturn table List of @{PTPCSpeakerData} objects for each sound in the file.
 PTPCSpeakerLoadIFS = function(path)
     return _PTPCSpeakerLoadIFS(path)
 end
 
---- Load a music file in Reality Adlib Tracker format
+--- Load a music file in Reality Adlib Tracker format.
 -- @tparam string path The path to the file.
 -- @treturn boolean Whether the file was successfully loaded.
 PTRadLoad = function(path)
@@ -3328,7 +3516,6 @@ local _PTThreadsFastForward = {}
 -- Perentie runs threads with cooperative multitasking; that is,
 -- a long-running thread must use a sleep function like @{PTSleep}
 -- to yield control back to the engine.
--- Perentie will exit when all threads have stopped.
 -- @tparam string name Name of the thread. Must be unique.
 -- @tparam function func Function to run.
 -- @param ... Arguments to pass to the function.
@@ -3379,6 +3566,10 @@ PTStopThread = function(name, ignore_self, ignore_missing)
     _PTThreadsFastForward[name] = nil
 end
 
+--- Fast forward a thread.
+-- This will cause the engine to skip all sleep/wait instructions.
+-- @tparam string name Name of the thread.
+-- @tparam boolean ignore_missing If true, ignore if this thread isn't running.
 PTFastForwardThread = function(name, ignore_missing)
     if not _PTThreads[name] then
         if not ignore_missing then
@@ -3390,6 +3581,10 @@ PTFastForwardThread = function(name, ignore_missing)
     _PTThreadsFastForward[name] = true
 end
 
+--- Perform a talk skip on the htread.
+-- If the thread is still waiting for an actor, the engine will skip the wait.
+-- @tparam string name Name of the thread.
+-- @tparam boolean ignore_missing If true, ignore if this thread isn't running.
 PTTalkSkipThread = function(name, ignore_missing)
     if not _PTThreads[name] then
         if not ignore_missing then
@@ -3454,10 +3649,8 @@ PTSleep = function(millis)
     error(string.format("PTSleep(): thread not found"))
 end
 
---PTDefer = function
-
 --- Sleep the current thread until an actor finishes the action in progress.
--- @tparam PTActor actor The PTActor to wait for.
+-- @tparam PTActor actor The @{PTActor} to wait for.
 PTWaitForActor = function(actor)
     if type(actor) ~= "table" or actor._type ~= "PTActor" then
         error(string.format("PTWaitForActor(): argument must be a PTActor"))
@@ -3473,6 +3666,8 @@ PTWaitForActor = function(actor)
     error(string.format("PTWaitForActor(): thread not found"))
 end
 
+--- Sleep the current thread until an object finishes moving.
+-- @tparam table object The @{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup} to wait for.
 PTWaitForMoveObject = function(object)
     local thread, _ = coroutine.running()
     for k, v in pairs(_PTThreads) do
@@ -3485,6 +3680,8 @@ PTWaitForMoveObject = function(object)
     error(string.format("PTWaitForMoveObject(): thread not found"))
 end
 
+--- Sleep the current thread until a PTAnimation reaches the end.
+-- @tparam PTAnimation animation The animation to wait for.
 PTWaitForAnimation = function(animation)
     local thread, _ = coroutine.running()
     for k, v in pairs(_PTThreads) do

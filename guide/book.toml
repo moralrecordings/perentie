@@ -1,9 +1,9 @@
 [book]
-title = "Perentie User Guide"
+title = "Perentie Developer Guide"
 authors = ["Scott Percival"]
 language = "en"
 src = "src"
-description = "User guide for the Perentie adventure game engine."
+description = "Developer guide for the Perentie adventure game engine."
 
 [output.html]
 git-repository-url = "https://github.com/moralrecordings/perentie"
