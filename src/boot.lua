@@ -18,9 +18,12 @@ end
 
 local _PTActorList = {}
 local _PTRoomList = {}
+local _PTGlobalRenderList = {}
 local _PTCurrentRoom = nil
 local _PTOnRoomLoadHandlers = {}
 local _PTOnRoomUnloadHandlers = {}
+local _PTOnRoomEnterHandlers = {}
+local _PTOnRoomExitHandlers = {}
 
 local _PTGameID = nil
 local _PTGameVersion = nil
@@ -46,11 +49,21 @@ PTSetGameInfo = function(id, version, name)
     _PTSetGameInfo(id, version, name)
 end
 
---- Print a message to the Perentie log file. This is a more accessible replacement for Lua's @{print} function, which will only output to the debug console.
+--- Print a message to the Perentie log.
+-- By default, this is only visible if Perentie is started with the --log option.
+-- This is a more accessible replacement for Lua's @{print} function, which will only output to the debug console.
 -- @tparam string format Format string in @{string.format} syntax.
 -- @param ... Arguments for format string.
 PTLog = function(...)
     return _PTLog(string.format(...))
+end
+
+--- Print an error message to the Perentie log.
+-- This will always display.
+-- @tparam string format Format string in @{string.format} syntax.
+-- @param ... Arguments for format string.
+PTLogError = function(...)
+    return _PTLogError(string.format(...))
 end
 
 --- Get the number of milliseconds elapsed since the engine started.
@@ -95,6 +108,9 @@ PTVars = function()
     return _PTVars
 end
 
+--- Save/Load
+-- @section saveload
+
 --- Return the file name for a saved state.
 -- @tparam integer index Index, between 0 and 999.
 -- @treturn string The file name.
@@ -129,26 +145,6 @@ end
 
 local _PTOnLoadStateHandler = nil
 local _PTOnSaveStateHandler = nil
---- Set the callback to run when loading a game state.
--- Perentie will first load all of your game's code, then read the
--- save file, then call this callback with the state contents, then
--- apply that state to the running game.
--- You can use this as a hook to e.g. check for an earlier game version
--- and apply manual variable fixups to the state.
--- @tparam function callback Function body to call. Takes the state object as an argument.
-PTOnLoadState = function(callback)
-    _PTOnLoadStateHandler = callback
-end
-
---- Set the callback to run when saving a game state.
--- Perentie will first generate a state from the running game,
--- call this callback with the state contents, then write that state to a file.
--- Ideally you shouldn't ever need this.
--- @tparam function callback Function body to call. Takes the state object as an argument.
-PTOnSaveState = function(callback)
-    _PTOnSaveStateHandler = callback
-end
-
 --- Load a saved state as part of the initial engine setup.
 -- @local
 _PTInitFromStateFile = function(filename)
@@ -499,6 +495,40 @@ PTListSavedStates = function()
     return results
 end
 
+--- Math
+-- @section math
+
+--- Calculate the angle of a 2D direction vector.
+-- @tparam number dx Direction vector x coordinate.
+-- @tparam number dy Vector y coordinate.
+-- @treturn integer Direction in degrees clockwise from north.
+PTAngleDirection = function(dx, dy)
+    -- dx and dy reversed, so that 0 degrees is at (0, 1)
+    -- also dy inverted, as screen coordinates are positive-downwards
+    local ang = math.floor(180 * math.atan(dx, -dy) / math.pi)
+    if ang < 0 then
+        ang = ang + 360
+    end
+    return ang
+end
+
+--- Calculate the delta angle between two directions.
+-- @tparam integer src Start direction, in degrees clockwise from north.
+-- @tparam integer dest End direction, in degrees clockwise from north.
+-- @treturn integer Angle between the two directions, in degrees clockwise.
+PTAngleDelta = function(src, dest)
+    return ((dest - src + 180) % 360) - 180
+end
+
+--- Calculate a direction angle mirrored by a plane.
+-- @tparam integer src Start direction, in degrees clockwise from north.
+-- @tparam integer plane Plane direction, in degrees clockwise from north.
+-- @treturn integer Reflected direction, in degrees clockwise from north.
+PTAngleMirror = function(src, plane)
+    local delta = PTAngleDelta(plane, src)
+    return (plane - delta + 360) % 360
+end
+
 --- Return a unique 32-bit hash for a string.
 -- @tparam string src String to process.
 -- @treturn integer 32-bit hash, encoded as an integer.
@@ -594,8 +624,8 @@ local _PTRemoveFromList = function(list, object)
     end
 end
 
---- Events
--- @section events
+--- Callbacks
+-- @section callbacks
 
 KEY_FLAG_CTRL = 1
 KEY_FLAG_ALT = 2
@@ -622,6 +652,121 @@ local _PTEventConsumers = {}
 -- @tparam function callback Function body to call, with the @{PTEvent} object as an argument.
 PTOnEvent = function(type, callback)
     _PTEventConsumers[type] = callback
+end
+
+local _PTMouseOverConsumer = nil
+--- Set a callback for when the mouse moves over a new @{PTActor}/@{PTBackground}/@{PTSprite}.
+-- @tparam function callback Function body to call, with the moused-over object as an argument.
+PTOnMouseOver = function(callback)
+    _PTMouseOverConsumer = callback
+end
+
+local _PTRenderFrameConsumer = nil
+--- Set a callback for before rendering the current frame to the screen. Useful for animating object positions.
+-- @tparam function callback Function body to call.
+PTOnRenderFrame = function(callback)
+    _PTRenderFrameConsumer = callback
+end
+
+local _PTTalkSkipWhileGrabbed = nil
+--- Set a callback for when the user indicates they wish to skip a single spoken line (i.e. clicking or hitting"." while the input is grabbed).
+-- This is separate to the verb thread, which will always be fast-forwarded.
+-- @tparam function callback Function body to call.
+PTOnTalkSkipWhileGrabbed = function(callback)
+    _PTTalkSkipWhileGrabbed = callback
+end
+
+local _PTFastForwardWhileGrabbed = nil
+--- Set a callback for when the user indicates they wish to fast-forward a sequence (i.e. hitting Escape while the input is grabbed).
+-- This is separate to the verb thread, which will always be fast-forwarded.
+-- @tparam function callback Function body to call.
+PTOnFastForwardWhileGrabbed = function(callback)
+    _PTFastForwardWhileGrabbed = callback
+end
+
+--- Set a callback for setting up a particular room.
+-- This code will be called whenever @{PTSwitchRoom} is
+-- triggered, and also during restoration of a save game.
+-- It is recommended to use this callback function to e.g.
+-- arrange the room contents based on variables from the @{PTVars}.
+-- @tparam string name Name of the room.
+-- @tparam function func Function body to call, with an optional argument
+-- for context data.
+PTOnRoomLoad = function(name, func)
+    if type(name) ~= "string" then
+        error("PTOnRoomLoad: expected string for first argument")
+    end
+    if _PTOnRoomLoadHandlers[name] then
+        PTLog("PTOnRoomLoad: overwriting handler for %s", name)
+    end
+    _PTOnRoomLoadHandlers[name] = func
+end
+
+--- Set a callback for unloading a particular room.
+-- This code will be called whenever @{PTSwitchRoom} is
+-- triggered.
+-- @tparam string name Name of the room.
+-- @tparam function func Function body to call, with an optional argument
+-- for context data.
+PTOnRoomUnload = function(name, func)
+    if type(name) ~= "string" then
+        error("PTOnRoomUnload: expected string for first argument")
+    end
+    if _PTOnRoomUnloadHandlers[name] then
+        PTLog("PTOnRoomUnload: overwriting handler for %s", name)
+    end
+    _PTOnRoomUnloadHandlers[name] = func
+end
+
+--- Set a callback for switching to a particular room.
+-- This code will only be called during gameplay, i.e. when
+-- @{PTSwitchRoom} is triggered. For code that sets up the
+-- state of the room, use @{PTOnRoomLoad}.
+-- @tparam string name Name of the room.
+-- @tparam function func Function body to call, with an optional argument
+-- for context data.
+PTOnRoomEnter = function(name, func)
+    if type(name) ~= "string" then
+        error("PTOnRoomEnter: expected string for first argument")
+    end
+    if _PTOnRoomEnterHandlers[name] then
+        PTLog("PTOnRoomEnter: overwriting handler for %s", name)
+    end
+    _PTOnRoomEnterHandlers[name] = func
+end
+
+--- Set a callback for switching away from a room.
+-- @tparam string name Name of the room.
+-- @tparam function func Function body to call, with an optional argument
+-- for context data.
+PTOnRoomExit = function(name, func)
+    if type(name) ~= "string" then
+        error("PTOnRoomExit: expected string for first argument")
+    end
+    if _PTOnRoomExitHandlers[name] then
+        PTLog("PTOnRoomExit: overwriting handler for %s", name)
+    end
+    _PTOnRoomExitHandlers[name] = func
+end
+
+--- Set the callback to run when loading a game state.
+-- Perentie will first load all of your game's code, then read the
+-- save file, then call this callback with the state contents, then
+-- apply that state to the running game.
+-- You can use this as a hook to e.g. check for an earlier game version
+-- and apply manual variable fixups to the state.
+-- @tparam function callback Function body to call. Takes the state object as an argument.
+PTOnLoadState = function(callback)
+    _PTOnLoadStateHandler = callback
+end
+
+--- Set the callback to run when saving a game state.
+-- Perentie will first generate a state from the running game,
+-- call this callback with the state contents, then write that state to a file.
+-- Ideally you shouldn't ever need this.
+-- @tparam function callback Function body to call. Takes the state object as an argument.
+PTOnSaveState = function(callback)
+    _PTOnSaveStateHandler = callback
 end
 
 --- Input
@@ -665,1863 +810,74 @@ PTUsingTouch = function()
     return _PTUsingTouch()
 end
 
---- Actors
--- @section actor
-
---- Actor structure.
--- @tfield string _type "PTActor"
--- @tfield[opt=0] integer x X coordinate in room space.
--- @tfield[opt=0] integer y Y coordinate in room space.
--- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
--- @tfield[opt=true] boolean visible Whether the actor is rendered to the screen.
--- @tfield[opt=nil] PTRoom room The room the actor is located.
--- @tfield[opt=nil] table sprite The @{PTBackground}/@{PTSprite} object used for drawing. Perentie will proxy this; you only need to add the actor object to the rendering list.
--- @tfield[opt=0] integer talk_x X coordinate in actor space for talk text.
--- @tfield[opt=0] integer talk_y Y coordinate in actor space for talk text.
--- @tfield[opt=nil] PTBackground talk_img Handle used by the engine for caching the rendered talk text.
--- @tfield[opt=nil] PTFont talk_font Font to use for rendering talk text.
--- @tfield[opt={ 0xff 0xff 0xff }] table talk_colour Colour to use for rendering talk text.
--- @tfield[opt=0] integer talk_next_wait The millisecond count at which to remove the talk text.
--- @tfield[opt=0] integer facing Direction of the actor; angle in degrees clockwise from north.
--- @tfield[opt="stand"] string anim_stand Name of the sprite animation to use for standing.
--- @tfield[opt="walk"] string anim_walk Name of the sprite animation to use for walking.
--- @tfield[opt="talk"] string anim_talk Name of the sprite animation to use for talking.
--- @tfield[opt=true] boolean use_walkbox Whether the actor snaps to the room's walkboxes.
--- @table PTActor
-
---- Create a new actor.
--- @tparam string name Name of the actor.
--- @tparam[opt=0] integer x X coordinate in room space.
--- @tparam[opt=0] integer y Y coordinate in room space.
--- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
--- @treturn PTActor The new actor.
-PTActor = function(name, x, y, z)
-    if not x then
-        x = 0
-    end
-    if not y then
-        y = 0
-    end
-    if not z then
-        z = 0
-    end
-    return {
-        _type = "PTActor",
-        name = name,
-        x = x,
-        y = y,
-        z = z,
-        visible = true,
-        room = nil,
-        sprite = nil,
-        talk_x = 0,
-        talk_y = 0,
-        talk_img = nil,
-        talk_font = nil,
-        talk_colour = { 0xff, 0xff, 0xff },
-        talk_next_wait = 0,
-        walkdata_dest = PTPoint(0, 0),
-        walkdata_cur = PTPoint(0, 0),
-        walkdata_next = PTPoint(0, 0),
-        walkdata_frac = PTPoint(0, 0),
-        walkdata_delta_factor = PTPoint(0, 0),
-        walkdata_destbox = nil,
-        walkdata_curbox = nil,
-        walkdata_facing = nil,
-        walkbox = nil,
-        use_walkbox = true,
-        facing = 0,
-        scale_x = 0xff,
-        scale_y = 0xff,
-        speed_x = 8,
-        speed_y = 4,
-        walk_rate = 12,
-        anim_stand = "stand",
-        anim_walk = "walk",
-        anim_talk = "talk",
-        walkdata_next_wait = 0,
-        moving = 0,
-    }
-end
-
---- Set an actor's walk box.
--- @tparam PTActor actor The actor.
--- @tparam PTWalkBox box Walk box to use.
-PTActorSetWalkBox = function(actor, box)
-    if not actor or actor._type ~= "PTActor" then
-        error("PTActorSetWalkBox: expected PTActor for first argument")
-    end
-    if not box or box._type ~= "PTWalkBox" then
-        error("PTActorSetWalkBox: expected PTWalkBox for second argument")
-    end
-    if actor.walkbox ~= box then
-        actor.walkbox = box
-        if box.on_enter then
-            box.on_enter(box, actor)
-        end
-    end
-    if box.z and box.z ~= actor.z then
-        actor.z = box.z
-        -- update the render list order
-        PTRoomAddObject(actor.room, nil)
-    end
-end
-
-local _PTActorUpdate = function(actor, fast_forward)
-    if not actor or actor._type ~= "PTActor" then
-        error("_PTActorUpdate: expected PTActor for first argument")
-    end
-    local result = true
-    if actor.moving > 0 then
-        if PTGetMillis() > actor.walkdata_next_wait then
-            PTActorWalk(actor)
-            PTSpriteIncrementFrame(actor.sprite)
-            actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
-            local room = PTCurrentRoom()
-            if room and room._type == "PTRoom" and actor == room.camera_actor then
-                room.x, room.y = actor.x, actor.y
-            end
-        end
-        result = false
-    end
-    if actor.talk_next_wait then
-        if actor.talk_next_wait < 0 then
-            -- negative talk wait time means wait until click
-            result = false
-        elseif not fast_forward and _PTGetMillis() < actor.talk_next_wait then
-            result = false
-        else
-            PTActorSilence(actor)
-        end
-    end
-
-    return result
-end
-
-local _PTActorWaitAfterTalk = true
---- Set whether to automatically wait after a PTActor starts talking.
--- If enabled, this means threads can make successive calls to
--- @{PTActorTalk} and the engine will treat them as a conversation;
--- you don't need to explicitly call @{PTWaitForActor} after each one.
--- If you want to do manual conversation timing, disable this feature.
--- Defaults to true.
--- @tparam boolean enable Whether to wait after talking.
-PTSetActorWaitAfterTalk = function(enable)
-    _PTActorWaitAfterTalk = enable
-end
-
-TALK_BASE_DELAY = 1000
-TALK_CHAR_DELAY = 85
-
-local _PTTalkBaseDelay = TALK_BASE_DELAY
-local _PTTalkCharDelay = TALK_CHAR_DELAY
-
---- Get the base delay for talking.
--- When a @{PTActor} is talking, this is the fixed amount of time to wait, regardless of text length.
--- @treturn integer The base delay, in milliseconds. Defaults to 1000.
-PTGetTalkBaseDelay = function()
-    return _PTTalkBaseDelay
-end
-
---- Get the character delay for talking.
--- When a @{PTActor} is talking, this is the variable amount of time to wait, as a multiple of the number of characters in the text.
--- @treturn integer The character delay, in milliseconds. Defaults to 85.
-PTGetTalkCharDelay = function()
-    return _PTTalkCharDelay
-end
-
---- Set the base delay for talking.
--- @tparam integer delay The base delay, in milliseconds.
-PTSetTalkBaseDelay = function(delay)
-    _PTTalkBaseDelay = delay
-end
-
---- Set the chracter delay for talking.
--- @tparam integer delay The character delay, in milliseconds.
-PTSetTalkCharDelay = function(delay)
-    _PTTalkCharDelay = delay
-end
-
---- Make an actor talk.
--- This will trigger the actor's talk animation, as defined in actor.anim_talk.
--- By default, this will wait the thread until the actor finishes talking. You can disable this by calling @{PTSetActorWaitAfterTalk}.
--- @tparam PTActor actor The actor.
--- @tparam string message Message to show on the screen.
--- @tparam[opt=nil] PTFont font Font to use. Defaults to actor.talk_font
--- @tparam[opt=nil] table colour Inner colour; list of 3 8-bit numbers. Defaults to actor.talk_colour.
-PTActorTalk = function(actor, message, font, colour)
-    if not actor or actor._type ~= "PTActor" then
-        error("PTActorTalk: expected PTActor for first argument")
-    end
-    if not font then
-        font = actor.talk_font
-    end
-    if not font or font._type ~= "PTFont" then
-        PTLog("PTActorTalk: no font argument, or actor has invalid talk_font")
-        return
-    end
-    if not colour then
-        colour = actor.talk_colour
-    end
-    if PTThreadInFastForward() then
-        return
-    end
-    local text = PTText(message, font, 200, "center", colour)
-    PTSetImageOriginSimple(text, "bottom")
-    local width, height = PTGetImageDims(text)
-    local sx, sy = PTRoomToScreen(actor.x + actor.talk_x, actor.y + actor.talk_y)
-    local sw, sh = _PTGetScreenDims()
-
-    sx = math.min(math.max(sx, width / 2), sw - width / 2)
-    sy = math.min(math.max(sy, height), sh)
-    local x, y = PTScreenToRoom(sx, sy)
-
-    if not actor.talk_img then
-        actor.talk_img = PTBackground(nil, 0, 0, 20)
-    end
-    actor.talk_img.x = x
-    actor.talk_img.y = y
-    actor.talk_img.image = text
-
-    if _PTTalkBaseDelay < 0 or _PTTalkCharDelay < 0 then
-        actor.talk_next_wait = -1
-    else
-        actor.talk_next_wait = _PTGetMillis() + _PTTalkBaseDelay + #message * _PTTalkCharDelay
-    end
-    PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
-    PTSpriteSetAnimation(actor.sprite, actor.anim_talk, actor.facing)
-    actor.current_frame = 1
-    if _PTActorWaitAfterTalk then
-        PTWaitForActor(actor)
-    end
-end
-
---- Make an actor stop talking.
--- This will remove any speech bubble, and trigger the actor's stand animation, as defined in actor.anim_stand.
--- @tparam PTActor actor The actor.
-PTActorSilence = function(actor)
-    if not actor or actor._type ~= "PTActor" then
-        error("PTActorSilence: expected PTActor for first argument")
-    end
-    if actor.talk_img then
-        PTRoomRemoveObject(actor.room, actor.talk_img)
-        actor.talk_img = nil
-    end
-    PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
-    actor.talk_next_wait = nil
-end
-
---- Sleep the current thread.
--- This is mechanically the same as @{PTSleep}, however it uses the same
--- timer as PTActorTalk, meaning it can be skipped by clicking the mouse.
--- This is useful for e.g. dramatic pauses in dialogue.
--- @tparam PTActor actor The actor.
--- @tparam integer millis Time to wait in milliseconds.
-PTActorSleep = function(actor, millis)
-    if not actor or actor._type ~= "PTActor" then
-        error("PTActorSleep: expected PTActor for first argument")
-    end
-    if PTThreadInFastForward() then
-        return
-    end
-    actor.talk_next_wait = _PTGetMillis() + millis
-    if _PTActorWaitAfterTalk then
-        PTWaitForActor(actor)
-    end
-end
-
---- Add an actor to the engine state.
--- @tparam PTActor actor The actor to add.
-PTAddActor = function(actor)
-    if not actor or actor._type ~= "PTActor" then
-        error("PTAddActor: expected PTActor for first argument")
-    end
-    if type(actor.name) ~= "string" then
-        error("PTAddActor: actor object needs a name")
-    end
-    _PTActorList[actor.name] = actor
-end
-
---- Remove an actor from the engine state.
--- @tparam PTActor actor The actor to remove.
-PTRemoveRoom = function(actor)
-    if not actor or actor._type ~= "PTActor" then
-        error("PTRemoveActor: expected PTActor for first argument")
-    end
-    if type(actor.name) ~= "string" then
-        error("PTRemoveActor: actor object needs a name")
-    end
-
-    _PTActorList[actor.name] = nil
-end
-
---- Rendering
--- @section rendering
-
---- Image structure.
--- @tfield string _type "PTImage"
--- @tfield userdata ptr Pointer to C data.
--- @tfield[opt=true] collision_mask boolean Whether to use the transparency mask for collision detection.
--- @table PTImage
-
---- Load a new image.
--- @tparam string path Path of the image (must be 8-bit indexed or grayscale PNG).
--- @tparam[opt=0] integer origin_x Origin x coordinate, relative to top-left corner.
--- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
--- @tparam[opt=-1] integer colourkey Palette index to use as colourkey.
--- @tparam[opt=true] boolean collision_mask Whether to use the transparency mask for collision detection.
--- @treturn PTImage The new image.
-PTImage = function(path, origin_x, origin_y, colourkey, collision_mask)
-    if not origin_x then
-        origin_x = 0
-    end
-    if not origin_y then
-        origin_y = 0
-    end
-    if not colourkey then
-        colourkey = -1
-    end
-    if collision_mask == nil then
-        collision_mask = true
-    end
-    return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey), collision_mask = collision_mask }
-end
-
---- Load a sequence of images.
--- @tparam string path_format Path of the image (must be 8-bit indexed or grayscale PNG), with %d placeholder for index.
--- @tparam integer start Start index.
--- @tparam integer finish End index (inclusive).
--- @tparam[opt=0] integer origin_x Origin x coordinate, relative to top-left corner.
--- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
--- @treturn table List of new images.
-PTImageSequence = function(path_format, start, finish, origin_x, origin_y)
-    local result = {}
-    for i = start, finish do
-        table.insert(result, PTImage(string.format(path_format, i), origin_x, origin_y))
-    end
-    return result
-end
-
---- 9-slice image reference structure.
--- @tfield string _type "PT9Slice"
--- @tfield PTImage image Image to use as an atlas.
--- @tfield integer x1 X coordinate in image space of left slice plane.
--- @tfield integer y1 Y coordinate in image space of top slice plane.
--- @tfield integer x2 X coordinate in image space of right slice plane.
--- @tfield integer y2 Y coordinate in image space of bottom slice plane.
--- @tfield integer width Width of resulting 9-slice image.
--- @tfield integer height Height of resulting 9-slice image.
--- @table PT9Slice
-
---- Create a new 9-slice image reference.
--- @tparam PTImage image Image to use as an atlas.
--- @tparam integer x1 X coordinate in image space of left slice plane.
--- @tparam integer y1 Y coordinate in image space of top slice plane.
--- @tparam integer x2 X coordinate in image space of right slice plane.
--- @tparam integer y2 Y coordinate in image space of bottom slice plane.
--- @tparam[opt=0] integer width Width of resulting 9-slice image.
--- @tparam[opt=0] integer height Height of resulting 9-slice image.
--- @treturn PT9Slice The new image reference.
-PT9Slice = function(image, x1, y1, x2, y2, width, height)
-    if not width then
-        width = 0
-    end
-    if not height then
-        height = 0
-    end
-    return { _type = "PT9Slice", image = image, x1 = x1, y1 = y1, x2 = x2, y2 = y2, width = width, height = height }
-end
-
---- Create a copy of a 9-slice image reference with different dimensions.
--- @tparam PTSlice slice 9-slice image reference to use as a reference.
--- @tparam integer width Width of resulting 9-slice image.
--- @tparam integer height Height of resulting 9-slice image.
--- @treturn PT9Slice The new image reference.
-PT9SliceCopy = function(slice, width, height)
-    if not slice then
-        return nil
-    end
-    if slice._type ~= "PT9Slice" then
-        return nil
-    end
-    return PT9Slice(slice.image, slice.x1, slice.y1, slice.x2, slice.y2, width, height)
-end
-
-FLIP_H = 0x01
-FLIP_V = 0x02
-
---- Get the dimensions of an image.
--- @tparam table image @{PTImage}/@{PT9Slice} to query.
--- @treturn integer Width of the image.
--- @treturn integer Height of the image.
-PTGetImageDims = function(image)
-    if not image then
-        return 0, 0
-    end
-    if image._type == "PTImage" then
-        return _PTGetImageDims(image.ptr)
-    elseif image._type == "PT9Slice" then
-        return image.width, image.height
-    end
-    return 0, 0
-end
-
---- Get the origin position of an image.
--- This is the position in image coordinates to use as the origin point;
--- so if the image is e.g. used by a PTBackground object with
--- position (x, y), the image will be rendered with the top-left at position
--- (x - origin_x, y - origin_y).
--- @tparam PTImage image Image to query.
--- @treturn integer X coordinate in image space.
--- @treturn integer Y coordinate in image space.
-PTGetImageOrigin = function(image)
-    if not image or image._type ~= "PTImage" then
-        return 0, 0
-    end
-    return _PTGetImageOrigin(image.ptr)
-end
-
---- Set the origin position of an image.
--- @tparam PTImage image Image to query.
--- @tparam integer x X coordinate in image space.
--- @tparam integer y Y coordinate in image space.
-PTSetImageOrigin = function(image, x, y)
-    if not image or image._type ~= "PTImage" then
-        return
-    end
-    _PTSetImageOrigin(image.ptr, x, y)
-end
-
---- Set the origin position of an image.
--- @tparam PTImage image Image to query.
--- @tparam string origin Origin location; one of "top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"
-PTSetImageOriginSimple = function(image, origin)
-    if not image or image._type ~= "PTImage" then
-        return
-    end
-    local w, h = _PTGetImageDims(image.ptr)
-    local w2, h2 = w / 2, h / 2
-    if origin == "top-left" then
-        _PTSetImageOrigin(image.ptr, 0, 0)
-    elseif origin == "top" then
-        _PTSetImageOrigin(image.ptr, w2, 0)
-    elseif origin == "top-right" then
-        _PTSetImageOrigin(image.ptr, w, 0)
-    elseif origin == "left" then
-        _PTSetImageOrigin(image.ptr, 0, h2)
-    elseif origin == "center" then
-        _PTSetImageOrigin(image.ptr, w2, h2)
-    elseif origin == "right" then
-        _PTSetImageOrigin(image.ptr, w, h2)
-    elseif origin == "bottom-left" then
-        _PTSetImageOrigin(image.ptr, 0, h)
-    elseif origin == "bottom" then
-        _PTSetImageOrigin(image.ptr, w2, h)
-    elseif origin == "bottom-right" then
-        _PTSetImageOrigin(image.ptr, w, h)
-    end
-end
-
---- Blit a @{PTImage}/@{PT9Slice} to the screen.
--- Normally not called directly; Perentie will render
--- everything in the display lists managed by @{PTRoomAddObject} and
--- @{PTGlobalAddObject}.
--- @tparam table image Image to blit to the screen.
--- @tparam integer x X coordinate in screen space.
--- @tparam integer y Y coordinate in screen space.
--- @tparam integer flags Flags for rendering the image.
-PTDrawImage = function(image, x, y, flags)
-    if image then
-        if image._type == "PTImage" then
-            _PTDrawImage(image.ptr, x, y, flags)
-        elseif image._type == "PT9Slice" then
-            _PTDraw9Slice(
-                image.image.ptr,
-                x,
-                y,
-                flags,
-                image.width,
-                image.height,
-                image.x1,
-                image.y1,
-                image.x2,
-                image.y2
-            )
-        end
-    end
-end
-
---- Perform a collision test for an image.
--- @tparam table image @{PTImage}/@{PT9Slice} to test.
--- @tparam integer x X coordinate in image space.
--- @tparam integer y Y coordinate in image space.
--- @tparam integer flags Flags for rendering the image.
--- @tparam boolean collision_mask If true, test the masked image (i.e. excluding transparent areas), else use the image's bounding box.
-PTTestImageCollision = function(image, x, y, flags, collision_mask)
-    if not image then
-        return false
-    end
-    if image._type == "PTImage" then
-        return _PTImageTestCollision(image.ptr, x, y, flags, collision_mask)
-    end
-    if image._type == "PT9Slice" and image.image then
-        return _PT9SliceTestCollision(
-            image.image.ptr,
-            x,
-            y,
-            flags,
-            collision_mask,
-            image.width,
-            image.height,
-            image.x1,
-            image.y1,
-            image.x2,
-            image.y2
-        )
-    end
-    return false
-end
-
---- Return the current palette.
--- @treturn table A table containing colours from the current palette. Each colour is a table containing three 8-bit numbers.
-PTGetPalette = function()
-    return _PTGetPalette()
-end
-
-REMAPPER_NONE = 0
-REMAPPER_EGA = 1
-REMAPPER_CGA0A = 2
-REMAPPER_CGA0B = 3
-REMAPPER_CGA1A = 4
-REMAPPER_CGA1B = 5
-REMAPPER_CGA2A = 6
-REMAPPER_CGA2B = 7
-
-REMAPPER_MODE_NEAREST = 0
-REMAPPER_MODE_HALF = 1
-REMAPPER_MODE_QUARTER = 2
-REMAPPER_MODE_QUARTER_ALT = 3
-REMAPPER_MODE_HALF_NEAREST = 4
-REMAPPER_MODE_QUARTER_NEAREST = 5
-
---- Set the automatic palette remapper to use.
--- This will remove any of the current dithering hints and replace them with the output of the remapper. Subsequent hints can be added.
--- @tparam[opt="none"] string remapper Remapper to use. Choices are: "none", "ega"
--- @tparam[opt="nearest"] string mode Default dither mode to use. Choices are: "nearest", "half", "quarter", "quarter-alt", "half-nearest", "quarter-nearest".
-PTSetPaletteRemapper = function(remapper, mode)
-    local rm, md = REMAPPER_NONE, REMAPPER_MODE_NEAREST
-    if remapper == "none" then
-        rm = REMAPPER_NONE
-    elseif remapper == "ega" then
-        rm = REMAPPER_EGA
-    elseif remapper == "cga0a" then
-        rm = REMAPPER_CGA0A
-    elseif remapper == "cga0b" then
-        rm = REMAPPER_CGA0B
-    elseif remapper == "cga1a" then
-        rm = REMAPPER_CGA1A
-    elseif remapper == "cga1b" then
-        rm = REMAPPER_CGA1B
-    elseif remapper == "cga2a" then
-        rm = REMAPPER_CGA2A
-    elseif remapper == "cga2b" then
-        rm = REMAPPER_CGA2B
-    end
-
-    if mode == "nearest" then
-        md = REMAPPER_MODE_NEAREST
-    elseif mode == "half" then
-        md = REMAPPER_MODE_HALF
-    elseif mode == "quarter" then
-        md = REMAPPER_MODE_QUARTER
-    elseif mode == "quarter-alt" then
-        md = REMAPPER_MODE_QUARTER_ALT
-    elseif mode == "half-nearest" then
-        md = REMAPPER_MODE_HALF_NEAREST
-    elseif mode == "quarter-nearest" then
-        md = REMAPPER_MODE_QUARTER_NEAREST
-    end
-
-    if rm ~= -1 then
-        _PTSetPaletteRemapper(rm, md)
-    end
-end
-
---- Set the overscan colour.
--- For DOS, this is the colour used for the non-drawable area on a CRT/LCD monitor. For SDL, this is the colour used for filling the spare area around the viewport.
--- @tparam table colour Table containing three 8-bit numbers.
-PTSetOverscanColour = function(colour)
-    return _PTSetOverscanColour(colour)
-end
-
-DITHER_NONE = 0
-DITHER_FILL_A = 1
-DITHER_FILL_B = 2
-DITHER_QUARTER = 3
-DITHER_QUARTER_ALT = 4
-DITHER_HALF = 5
-
-EGA_BLACK = { 0x00, 0x00, 0x00 }
-EGA_BLUE = { 0x00, 0x00, 0xaa }
-EGA_GREEN = { 0x00, 0xaa, 0x00 }
-EGA_CYAN = { 0x00, 0xaa, 0xaa }
-EGA_RED = { 0xaa, 0x00, 0x00 }
-EGA_MAGENTA = { 0xaa, 0x00, 0xaa }
-EGA_BROWN = { 0xaa, 0x55, 0x00 }
-EGA_LGRAY = { 0xaa, 0xaa, 0xaa }
-EGA_DGRAY = { 0x55, 0x55, 0x55 }
-EGA_BRBLUE = { 0x55, 0x55, 0xff }
-EGA_BRGREEN = { 0x55, 0xff, 0x55 }
-EGA_BRCYAN = { 0x55, 0xff, 0xff }
-EGA_BRRED = { 0xff, 0x55, 0x55 }
-EGA_BRMAGENTA = { 0xff, 0x55, 0xff }
-EGA_BRYELLOW = { 0xff, 0xff, 0x55 }
-EGA_WHITE = { 0xff, 0xff, 0xff }
-
---- Set a dithering hint. Used for remapping a VGA-style palette to a smaller colour range such as EGA or CGA.
--- @tparam table src Source colour, table containing three 8-bit numbers.
--- @tparam string dither_type Type of dithering algorithm to use. Choices are: "none", "fill-a", "fill-b", "quarter", "quarter-alt", "half"
--- @tparam table dest_a Destination mixing colour A, table containing three 8-bit numbers.
--- @tparam table dest_b Destination mixing colour B, table containing three 8-bit numbers.
-PTSetDitherHint = function(src, dither_type, dest_a, dest_b)
-    local dt = DITHER_NONE
-    if dither_type == "none" then
-        dt = DITHER_NONE
-    elseif dither_type == "fill-a" then
-        dt = DITHER_FILL_A
-    elseif dither_type == "fill-b" then
-        dt = DITHER_FILL_B
-    elseif dither_type == "quarter" then
-        dt = DITHER_QUARTER
-    elseif dither_type == "quarter-alt" then
-        dt = DITHER_QUARTER_ALT
-    elseif dither_type == "half" then
-        dt = DITHER_HALF
-    end
-
-    return _PTSetDitherHint(src, dt, dest_a, dest_b)
-end
-
---- Calculate the angle of a 2D direction vector.
--- @tparam number dx Direction vector x coordinate.
--- @tparam number dy Vector y coordinate.
--- @treturn integer Direction in degrees clockwise from north.
-PTAngleDirection = function(dx, dy)
-    -- dx and dy reversed, so that 0 degrees is at (0, 1)
-    -- also dy inverted, as screen coordinates are positive-downwards
-    local ang = math.floor(180 * math.atan(dx, -dy) / math.pi)
-    if ang < 0 then
-        ang = ang + 360
-    end
-    return ang
-end
-
---- Calculate the delta angle between two directions.
--- @tparam integer src Start direction, in degrees clockwise from north.
--- @tparam integer dest End direction, in degrees clockwise from north.
--- @treturn integer Angle between the two directions, in degrees clockwise.
-PTAngleDelta = function(src, dest)
-    return ((dest - src + 180) % 360) - 180
-end
-
---- Calculate a direction angle mirrored by a plane.
--- @tparam integer src Start direction, in degrees clockwise from north.
--- @tparam integer plane Plane direction, in degrees clockwise from north.
--- @treturn integer Reflected direction, in degrees clockwise from north.
-PTAngleMirror = function(src, plane)
-    local delta = PTAngleDelta(plane, src)
-    return (plane - delta + 360) % 360
-end
-
---- Background structure.
--- @tfield string _type "PTBackground"
--- @tfield[opt=0] integer x X coordinate.
--- @tfield[opt=0] integer y Y coordinate.
--- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
--- @tfield[opt=1] float parallax_x X parallax scaling factor.
--- @tfield[opt=1] float parallax_y Y parallax scaling factor.
--- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
--- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
--- @table PTBackground
-
---- Create a new background.
--- @tparam PTImage image Image to use.
--- @tparam[opt=0] integer x X coordinate.
--- @tparam[opt=0] integer y Y coordinate.
--- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
--- @tparam[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
--- @treturn PTBackground The new background.
-PTBackground = function(image, x, y, z, collision)
-    if not x then
-        x = 0
-    end
-    if not y then
-        y = 0
-    end
-    if not z then
-        z = 0
-    end
-    if collision == nil then
-        collision = false
-    end
-    return {
-        _type = "PTBackground",
-        image = image,
-        x = x,
-        y = y,
-        z = z,
-        parallax_x = 1,
-        parallax_y = 1,
-        collision = collision,
-        visible = true,
-    }
-end
-
---- Animation structure.
--- @tfield string _type "PTAnimation"
--- @tfield string name Name of the animation.
--- @tfield table frames List of @{PTImage} objects; one per frame.
--- @tfield[opt=0] integer rate Frame rate to use for playback.
--- @tfield[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
--- @tfield[opt=true] boolean looping Whether to loop the animation when completed.
--- @tfield[opt=0] integer current_frame The current frame in the sequence to display.
--- @tfield[opt=0] integer next_wait The millisecond count at which to show the next frame.
--- @tfield[opt=0] integer flags Flags for rendering the image.
--- @table PTAnimation
-
---- Create a new animation.
--- @tparam string name Name of the animation.
--- @tparam table frames List of @{PTImage} objects; one per frame.
--- @tparam[opt=0] integer rate Frame rate to use for playback.
--- @tparam[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
--- @tparam[opt=false] boolean h_mirror Whether the animation can be mirrored horizontally.
--- @tparam[opt=false] boolean v_mirror Whether the animation can be mirrored vertically.
--- @tparam[opt=true] boolean looping Whether to loop the animation when completed.
--- @treturn PTAnimation The new animation.
-PTAnimation = function(name, frames, rate, facing, h_mirror, v_mirror, looping)
-    if rate == nil then
-        rate = 0
-    end
-    if facing == nil then
-        facing = 0
-    end
-    if h_mirror == nil then
-        h_mirror = false
-    end
-    if v_mirror == nil then
-        v_mirror = false
-    end
-    if looping == nil then
-        looping = true
-    end
-    return {
-        _type = "PTAnimation",
-        name = name,
-        frames = frames,
-        rate = rate,
-        facing = facing,
-        looping = looping,
-        current_frame = 0,
-        next_wait = 0,
-        h_mirror = h_mirror,
-        v_mirror = v_mirror,
-        flags = 0,
-    }
-end
-
---- Sprite structure.
--- @tfield string _type "PTSprite"
--- @tfield table animations Table of @{PTAnimation} objects.
--- @tfield[opt=0] integer x X coordinate.
--- @tfield[opt=0] integer y Y coordinate.
--- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
--- @tfield[opt=1] float parallax_x X parallax scaling factor.
--- @tfield[opt=1] float parallax_y Y parallax scaling factor.
--- @tfield[opt=nil] integer anim_index Index of the current animation from the animations table.
--- @tfield[opt=0] integer anim_flags Transformation flags to be applied to the frames.
--- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
--- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
--- @table PTSprite
-
---- Create a new sprite.
--- @tparam table animations Table of @{PTAnimation} objects.
--- @tparam[opt=0] integer x X coordinate.
--- @tparam[opt=0] integer y Y coordinate.
--- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
--- @treturn PTSprite The new sprite.
-PTSprite = function(animations, x, y, z)
-    if not x then
-        x = 0
-    end
-    if not y then
-        y = 0
-    end
-    if not z then
-        z = 0
-    end
-    return {
-        _type = "PTSprite",
-        animations = animations,
-        x = x,
-        y = y,
-        z = z,
-        x_parallax = 1,
-        y_parallax = 1,
-        anim_index = nil,
-        anim_flags = 0,
-        collision = false,
-        visible = true,
-    }
-end
-
---- Set the current animation to play on a sprite.
--- @tparam PTSprite sprite The sprite to modify.
--- @tparam string name Name of the animation.
--- @tparam[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
--- @treturn boolean Whether the current animation was changed.
-PTSpriteSetAnimation = function(sprite, name, facing)
-    if not sprite or sprite._type ~= "PTSprite" then
-        return false
-    end
-
-    if not facing then
-        facing = 0
-    end
-
-    local best_index = nil
-    local best_delta = 0
-    local best_flags = 0
-
-    for i, anim in pairs(sprite.animations) do
-        if anim.name == name then
-            local new_delta = math.abs(PTAngleDelta(facing, anim.facing))
-            if not best_index or new_delta < best_delta then
-                best_index = i
-                best_delta = new_delta
-                best_flags = 0
-            end
-            if anim.h_mirror then
-                new_delta = math.abs(PTAngleDelta(facing, PTAngleMirror(anim.facing, 0)))
-                if new_delta < best_delta then
-                    best_index = i
-                    best_delta = new_delta
-                    best_flags = FLIP_H
-                end
-            end
-            if anim.v_mirror then
-                new_delta = math.abs(PTAngleDelta(facing, PTAngleMirror(anim.facing, 90)))
-                if new_delta < best_delta then
-                    best_index = i
-                    best_delta = new_delta
-                    best_flags = FLIP_V
-                end
-                if anim.h_mirror then
-                    new_delta = math.abs(PTAngleDelta(facing, PTAngleMirror(PTAngleMirror(anim.facing, 90), 0)))
-                    if new_delta < best_delta then
-                        best_index = i
-                        best_delta = new_delta
-                        best_flags = FLIP_H | FLIP_V
-                    end
-                end
-            end
-        end
-    end
-    if best_index then
-        if sprite.anim_index ~= best_index or sprite.anim_flags ~= best_flags then
-            --PTLog("PTSpriteSetAnimation name: %s, facing: %d, best_index: %d, best_flags: %d", name, facing,  best_index, best_flags)
-            sprite.anim_index = best_index
-            sprite.anim_flags = best_flags
-            sprite.animations[sprite.anim_index].current_frame = 1
-            return true
-        end
-    end
-    return false
-end
-
---- Increment a sprite's current animation frame.
--- This does not take into account the playback rate.
--- @tparam PTSprite object Sprite to update.
-PTSpriteIncrementFrame = function(object)
-    if object and object._type == "PTSprite" then
-        local anim = object.animations[object.anim_index]
-        if anim then
-            if anim.current_frame == 0 then
-                anim.current_frame = 1
-            elseif not anim.looping then
-                if anim.current_frame < #anim.frames then
-                    anim.current_frame = anim.current_frame + 1
-                end
-            else
-                anim.current_frame = (anim.current_frame % #anim.frames) + 1
-            end
-            --print(string.format("PTSpriteIncrementFrame: %d", anim.current_frame))
-        end
-    end
-end
-
---- Group structure.
--- @tfield string _type "PTGroup"
--- @tfield table objects List of member objects.
--- @tfield integer x X coordinate.
--- @tfield integer y Y coordinate.
--- @tfield integer z Depth coordinate; a higher number renders to the front.
--- @tfield integer origin_x Origin x coordinate, relative to top-left corner..
--- @tfield integer origin_y Origin y coordinate, relative to top-left corner.
--- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
--- @table PTGroup
-
---- Create a new group.
--- @tparam table objects List of member objects.
--- @tparam integer x X coordinate.
--- @tparam integer y Y coordinate.
--- @tparam integer z Depth coordinate; a higher number renders to the front.
--- @tparam integer origin_x Origin x coordinate, relative to top-left corner..
--- @tparam integer origin_y Origin y coordinate, relative to top-left corner.
--- @treturn PTGroup The new group.
-PTGroup = function(objects, x, y, z, origin_x, origin_y)
-    if not objects then
-        objects = {}
-    end
-    table.sort(objects, function(a, b)
-        return a.z < b.z
-    end)
-    if not x then
-        x = 0
-    end
-    if not y then
-        y = 0
-    end
-    if not z then
-        z = 0
-    end
-    if not origin_x then
-        origin_x = 0
-    end
-    if not origin_y then
-        origin_y = 0
-    end
-
-    return {
-        _type = "PTGroup",
-        objects = objects,
-        x = x,
-        y = y,
-        z = z,
-        origin_x = origin_x,
-        origin_y = origin_y,
-        visible = true,
-    }
-end
-
---- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object to a group rendering list.
--- @tparam PTGroup group Group to add object to.
--- @tparam table object Object to add.
-PTGroupAddObject = function(group, object)
-    if object then
-        _PTAddToList(group.objects, object)
-    end
-    table.sort(group.objects, function(a, b)
-        return a.z < b.z
-    end)
-end
-
---- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object from a group rendering list.
--- @tparam PTGroup group Group to remove object from.
--- @tparam table object Object to remove.
-PTGroupRemoveObject = function(group, object)
-    if object then
-        _PTRemoveFromList(group.objects, object)
-    end
-    table.sort(group.objects, function(a, b)
-        return a.z < b.z
-    end)
-end
-
---- Iterate through a list of renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) objects. PTGroups will be flattened, leaving only PTActor/PTBackground/PTSprite objects with adjusted positions.
--- @tparam table objects List of objects.
--- @tparam[opt=false] boolean reverse Whether to iterate in reverse.
--- @tparam[opt=true] boolean visible_only Whether to only output visible objects.
--- @treturn function An iterator function that returns an object, a x coordinate and a y coordinate.
-PTIterObjects = function(objects, reverse, visible_only)
-    if reverse == nil then
-        reverse = false
-    end
-    if visible_only == nil then
-        visible_only = true
-    end
-    local i = 1
-    local group_iter = nil
-    return function()
-        local obj
-        if group_iter then
-            if reverse then
-                obj = objects[#objects + 1 - i]
-            else
-                obj = objects[i]
-            end
-            local inner, inner_x, inner_y = group_iter()
-            if inner then
-                return inner,
-                    obj.x + inner_x - obj.origin_x + (obj.sx or 0),
-                    obj.y + inner_y - obj.origin_y + (obj.sy or 0)
-            end
-            group_iter = nil
-            i = i + 1
-        end
-
-        while i <= #objects do
-            if reverse then
-                obj = objects[#objects + 1 - i]
-            else
-                obj = objects[i]
-            end
-            if obj._type == "PTGroup" and (not visible_only or obj.visible) and #obj.objects > 0 then
-                group_iter = PTIterObjects(obj.objects, reverse, visible_only)
-                local inner, inner_x, inner_y = group_iter()
-                if inner then
-                    return inner,
-                        obj.x + inner_x - obj.origin_x + (obj.sx or 0),
-                        obj.y + inner_y - obj.origin_y + (obj.sy or 0)
-                end
-                group_iter = nil
-            elseif obj._type == "PTPanel" and (not visible_only or obj.visible) then
-                if #obj.objects > 0 then
-                    group_iter = PTIterObjects(obj.objects, reverse, visible_only)
-                end
-                return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
-            elseif obj._type == "PTButton" and (not visible_only or obj.visible) then
-                if #obj.objects > 0 then
-                    group_iter = PTIterObjects(obj.objects, reverse, visible_only)
-                end
-                return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
-            elseif obj._type == "PTHorizSlider" and (not visible_only or obj.visible) and #obj.objects > 0 then
-                group_iter = PTIterObjects(obj.objects, reverse, visible_only)
-                return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
-            elseif obj._type == "PTActor" or obj._type == "PTBackground" or obj._type == "PTSprite" then
-                if not visible_only or obj.visible then
-                    i = i + 1
-                    return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
-                end
-            end
-            i = i + 1
-        end
-    end
-end
-
---- Fetch the image to use when rendering a @{PTActor}/@{PTBackground}/@{PTSprite} object.
--- @tparam table object The object to query.
--- @treturn table The PTImage or PT9Slice for the current frame.
--- @treturn integer Flags to render the image with.
-PTGetImageFromObject = function(object)
-    if object then
-        if object._type == "PTSprite" then
-            local anim = object.animations[object.anim_index]
-            if anim then
-                if anim.rate == 0 then
-                    -- Rate is 0, don't automatically change frames
-                    if anim.current_frame == 0 then
-                        anim.current_frame = 1
-                    end
-                elseif anim.current_frame == 0 then
-                    anim.current_frame = 1
-                    anim.next_wait = PTGetMillis() + (1000 // anim.rate)
-                elseif PTGetMillis() > anim.next_wait then
-                    if not anim.looping then
-                        if anim.current_frame < #anim.frames then
-                            anim.current_frame = anim.current_frame + 1
-                        end
-                    else
-                        anim.current_frame = (anim.current_frame % #anim.frames) + 1
-                    end
-                    anim.next_wait = PTGetMillis() + (1000 // anim.rate)
-                end
-                return anim.frames[anim.current_frame], object.anim_flags
-            end
-        elseif object._type == "PTBackground" then
-            return object.image, 0
-        elseif object._type == "PTActor" then
-            return PTGetImageFromObject(object.sprite)
-        elseif object._type == "PTPanel" then
-            return object.image, 0
-        elseif object._type == "PTButton" then
-            if object.disabled and object.images.disabled then
-                return object.images.disabled, 0
-            elseif object.active and object.images.active then
-                return object.images.active, 0
-            elseif object.hover and object.images.hover then
-                return object.images.hover, 0
-            elseif object.images.default then
-                return object.images.default, 0
-            end
-        end
-    end
-    return nil, 0
-end
-
-local _PTGlobalRenderList = {}
---- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object to the global rendering list.
--- @tparam table object Object to add.
-PTGlobalAddObject = function(object)
-    if object then
-        _PTAddToList(_PTGlobalRenderList, object)
-    end
-    table.sort(_PTGlobalRenderList, function(a, b)
-        return a.z < b.z
-    end)
-end
-
---- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object from the global rendering list.
--- @tparam table object Object to remove.
-PTGlobalRemoveObject = function(object)
-    if object then
-        _PTRemoveFromList(_PTGlobalRenderList, object)
-    end
-    table.sort(_PTGlobalRenderList, function(a, b)
-        return a.z < b.z
-    end)
-end
-
---- Return a function for linear interpolation.
--- @tparam[opt={0.0 1.0}] table points List of control points to interpolate between.
--- @treturn function Callable that takes a progress value from 0.0-1.0 and returns an output from 0.0-1.0.
-PTLinear = function(points)
-    if points == nil then
-        points = { 0.0, 1.0 }
-    end
-    return function(progress)
-        if #points == 0 then
-            return 0.0
-        elseif #points == 1 then
-            return points[1]
-        end
-        if progress < 0.0 then
-            return points[1]
-        elseif progress > 1.0 then
-            return points[#points]
-        end
-        local prog = (#points - 1) * progress
-        local lower = math.floor(prog)
-        local upper = math.min(#points, lower + 2)
-        --PTLog("PTLinear: %s %d %f\n", inspect(points), lower, prog)
-        return points[1 + lower] + (points[upper] - points[1 + lower]) * (prog - lower)
-    end
-end
-
---- Return a function for a unit cubic bezier curve.
--- Start point is always (0, 0), end point is always (1, 1).
--- @tparam float x1 Curve control point 1 x coordinate.
--- @tparam float y1 Curve control point 1 y coordinate.
--- @tparam float x2 Curve control point 2 x coordinate.
--- @tparam float y2 Curve control point 2 y coordinate.
--- @treturn function Callable that takes a progress value from 0.0-1.0 and returns an output from 0.0-1.0.
-PTCubicBezier = function(x1, y1, x2, y2)
-    -- Algorithm nicked from Stylo's cubic bezier code, which
-    -- was originally based on code from WebKit
-    x1 = x1 + 0.0
-    y1 = y1 + 0.0
-    x2 = x2 + 0.0
-    y2 = y2 + 0.0
-    --print(string.format("PTCubicBezier(%f, %f, %f, %f)", x1, y1, x2, y2))
-    local cx = 3.0 * x1
-    local bx = 3.0 * (x2 - x1) - cx
-    local ax = 1.0 - cx - bx
-    local cy = 3.0 * y1
-    local by = 3.0 * (y2 - y1) - cy
-    local ay = 1.0 - cy - by
-
-    local f_x = function(t)
-        return ((ax * t + bx) * t + cx) * t
-    end
-
-    local f_y = function(t)
-        return ((ay * t + by) * t + cy) * t
-    end
-
-    local f_dx = function(t)
-        return (3.0 * ax * t + 2.0 * bx) * t + cx
-    end
-
-    local solve_x = function(x, epsilon)
-        local t = x
-        for _ = 0, 8 do
-            local sx = f_x(t)
-            if math.abs(sx - x) <= epsilon then
-                return t
-            end
-            local dx = f_dx(t)
-            if math.abs(dx) < 1e-6 then
-                break
-            end
-            t = t - ((sx - x) / dx)
-        end
-
-        local lo = 0.0
-        local hi = 1.0
-        t = x
-        if t < lo then
-            return lo
-        elseif t > hi then
-            return hi
-        end
-
-        while lo < hi do
-            local sx = f_x(t)
-            if math.abs(sx - x) < epsilon then
-                return t
-            end
-            if x > sx then
-                lo = t
-            else
-                hi = t
-            end
-            t = ((hi - lo) / 2.0) + lo
-        end
-        return t
-    end
-
-    return function(progress)
-        if x1 == y1 and x2 == y2 then
-            return progress
-        end
-        if progress == 0.0 then
-            return 0.0
-        elseif progress == 1.0 then
-            return 1.0
-        end
-        if progress < 0.0 then
-            if x1 > 0.0 then
-                return progress * y1 / x1
-            elseif y1 == 0.0 and x2 > 0.0 then
-                return progress * y2 / x2
-            end
-            return 0.0
-        end
-        if progress > 1.0 then
-            if x2 < 1.0 then
-                return 1.0 + (progress - 1.0) * (y2 - 1.0) / (x2 - 1.0)
-            elseif y2 == 1.0 and x1 < 1.0 then
-                return 1.0 + (progress - 1.0) * (y1 - 1.0) / (x1 - 1.0)
-            end
-            return 1.0
-        end
-
-        return f_y(solve_x(progress, 1e-6))
-    end
-end
-
---- Return a preset timing function.
--- A timing function is a callable that accepts a progress value between 0.0-1.0, and returns an output value between 0.0-1.0.
--- The presets are the same as in the CSS animation-timing-function specification.
--- "linear" - Even speed.
--- "ease" - Increases in speed towards the middle of the animation, slowing back down at the end.
--- "ease-in" - Starts off slowly, with the speed increasing until complete.
--- "ease-out" - Starts off quickly, with the speed decreasing until complete.
--- "ease-in-out" - Starts off slowly, speeds up in the middle, and then the speed decreases until complete.
--- @tparam[opt="linear"] any timing Alias of a builtin function, or a timing function such as one generated from @{PTCubicBezier} or @{PTLinear}.
--- @treturn The timing function.
-PTTimingFunction = function(timing)
-    if timing == "linear" then
-        timing = PTLinear()
-    elseif timing == "ease" then
-        timing = PTCubicBezier(0.25, 0.1, 0.25, 1.0)
-    elseif timing == "ease-in" then
-        timing = PTCubicBezier(0.42, 0.0, 1.0, 1.0)
-    elseif timing == "ease-out" then
-        timing = PTCubicBezier(0.0, 0.0, 0.58, 1.0)
-    elseif timing == "ease-in-out" then
-        timing = PTCubicBezier(0.42, 0.0, 0.58, 1.0)
-    end
-
-    -- Default to linear
-    if type(timing) ~= "function" then
-        timing = PTLinear()
-    end
-    return timing
-end
-
---- Movement reference structure.
--- @tfield string _type "PTMoveRef"
--- @tfield function timing Timing function, such as returned from @{PTTimingFunction}.
--- @tfield integer start_time Movement start time, in milliseconds.
--- @tfield integer duration Movement duration, in milliseconds.
--- @tfield table object Any object with "x" and "y" parameters to move.
--- @tfield integer x_a Start X coordinate of the object in room space.
--- @tfield integer y_a Start Y coordinate of the object in room space.
--- @tfield integer x_b Finish X coordinate of the object in room space.
--- @tfield integer y_b Finish Y coordinate of the object in room space.
--- @tfield boolean while_paused Whether to move the object while the game is paused.
--- @table PTMoveRef
-
---- Create a new movement reference.
--- @tparam table object Any object with "x" and "y" parameters to move.
--- @tparam integer x Finish X coordinate of the object in room space.
--- @tparam integer y Finish Y coordinate of the object in room space.
--- @tparam integer start_time Movement start time, in milliseconds.
--- @tparam integer duration Movement duration, in milliseconds.
--- @tparam function timing Timing function, such as returned from @{PTTimingFunction}.
--- @tparam boolean while_paused Whether to move the object while the game is paused.
--- @treturn PTMoveRef The new movement refrence.
-PTMoveRef = function(object, x, y, start_time, duration, timing, while_paused)
-    -- timing functions nicked from the CSS animation-timing-function spec
-    timing = PTTimingFunction(timing)
-    return {
-        _type = "PTMoveRef",
-        timing = timing,
-        start_time = start_time,
-        duration = duration,
-        object = object,
-        x_a = object.x,
-        y_a = object.y,
-        x_b = x,
-        y_b = y,
-        while_paused = while_paused,
-    }
-end
-
-local _PTMoveRefList = {}
---- Move an object smoothly to a destination point.
--- On every rendered frame, Perentie will adjust the "x" and "y" parameters on the target object
--- to move it to the destination, with the speed determined by a duration and a timing function.
--- You can only have one movement instruction per object. If an existing
--- move instruction is found for an object, Perentie will replace it.
--- @tparam table object Any object with "x" and "y" parameters.
--- @tparam integer x Absolute x coordinate to move towards.
--- @tparam integer y Absolute y coordinate to move towards.
--- @tparam integer duration Duration of movement in milliseconds.
--- @tparam any timing Timing function or alias to use, same as timing argument of @{PTTimingFunction}.
--- @tparam[opt=false] boolean while_paused Whether to move the object while the game is paused.
-PTMoveObject = function(object, x, y, duration, timing, while_paused)
-    for i, obj in ipairs(_PTMoveRefList) do
-        if object == obj.object then
-            table.remove(_PTMoveRefList, i)
-            break
-        end
-    end
-    local moveref = PTMoveRef(object, x, y, PTGetMillis(), duration, timing, while_paused)
-    table.insert(_PTMoveRefList, moveref)
-end
-
---- Move an object smoothly to a destination point relative to the object's current position.
--- @tparam table object Any object with "x" and "y" parameters
--- @tparam integer dx X distance relative to the object's current position to move towards.
--- @tparam integer dy Y distance relative to the object's current position to move towards.
--- @tparam integer duration Duration of movement in milliseconds.
--- @tparam any timing Timing function or alias to use, same as timing argument of @{PTTimingFunction}.
--- @tparam[opt=false] boolean while_paused Whether to move the object while the game is paused.
-PTMoveObjectRelative = function(object, dx, dy, duration, timing, while_paused)
-    PTMoveObject(object, object.x + dx, object.y + dy, duration, timing, while_paused)
-end
-
-local _PTObjectIsMoving = function(object, fast_forward)
-    for i, obj in ipairs(_PTMoveRefList) do
-        if object == obj.object then
-            if fast_forward then
-                -- fast forward the movement
-                obj.start_time = PTGetMillis() - obj.duration
-                return false
-            else
-                return true
-            end
-        end
-    end
-    return false
-end
-
---- Check if an object is moving.
--- @tparam table object Any object with "x" and "y" parameters
--- @treturn boolean Whether the object is moving.
-PTObjectIsMoving = function(object)
-    return _PTObjectIsMoving(object)
-end
-
---- Return a function for shaking using simplex noise.
--- @tparam float x_amplitude X amplitude of the shake.
--- @tparam float y_amplitude Y amplitude of the shake.
--- @tparam float x_frequency X frequency of the shake, in Hz.
--- @tparam float y_frequency Y frequency of the shake, in Hz.
--- @treturn function Callable that takes a time value in millieseconds and returns an (x, y) pair of coordinates.
-PTSimplexShake = function(x_amplitude, y_amplitude, x_frequency, y_frequency)
-    local simplex_x = math.random() * 2048.0 - 1024.0
-    local simplex_y = math.random() * 2048.0 - 1024.0
-    local last_offset_x = 0.0
-    local last_offset_y = 0.0
-    return function(time)
-        local shake = 1.0
-        local offset_x = x_amplitude * shake * PTSimplexNoise1D((time * x_frequency * 0.001) + simplex_x)
-        local offset_y = y_amplitude * shake * PTSimplexNoise1D((time * y_frequency * 0.001) + simplex_y)
-        local result_x, result_y = offset_x - last_offset_x, offset_y - last_offset_y
-        last_offset_x = offset_x
-        last_offset_y = offset_y
-        return result_x, result_y
-    end
-end
-
---- Shake reference structure
--- @tfield string _type "PTShakeRef"
--- @tfield integer start_time Shake start time, in milliseconds.
--- @tfield integer duration Movement duration, in milliseconds.
--- @tfield table object Any object with "sx" and "sy" parameters to move.
--- @tfield function shake_func Shake function to use, such as the return value of @{PTSimplexShake}.
--- @tparam boolean while_paused Whether to shake the object while the game is paused.
--- @table PTShakeRef
-
---- Create a new shake reference.
--- @tparam table object Any object with "sx" and "sy" parameters to move.
--- @tparam function shake_func Shake function to use, such as the return value of @{PTSimplexShake}.
--- @tparam integer start_time Shake start time, in milliseconds.
--- @tparam integer duration Movement duration, in milliseconds.
--- @tparam boolean while_paused Whether to shake the object while the game is paused.
-PTShakeRef = function(object, shake_func, start_time, duration, while_paused)
-    return {
-        _type = "PTShakeRef",
-        start_time = start_time,
-        duration = duration,
-        object = object,
-        shake_func = shake_func,
-        while_paused = while_paused,
-    }
-end
-
-local _PTShakeRefList = {}
---- Shake an object without changing its position.
--- On every rendered frame, Perentie will adjust the "sx" and "sy" parameters on the target object
--- to adjust the offset from the (x, y) position.
--- You can only have one shake instruction per object. If an existing
--- shake instruction is found for an object, Perentie will replace it.
--- @tparam table object Any object with "sx" and "sy" parameters.
--- @tparam integer duration Duration of shake in milliseconds.
--- @tparam function shake_func Shake function to use, such as the return value of @{PTSimplexShake}.
--- @tparam[opt=false] boolean while_paused Whether to shake the object while the game is paused.
-PTShakeObject = function(object, duration, shake_func, while_paused)
-    for i, obj in ipairs(_PTShakeRefList) do
-        if object == obj.object then
-            table.remove(_PTShakeRefList, i)
-            break
-        end
-    end
-    local shakeref = PTShakeRef(object, shake_func, PTGetMillis(), duration, while_paused)
-    table.insert(_PTShakeRefList, shakeref)
-end
-
---- GUI controls
--- @section controls
-
--- How do we want to deal with the GUI?
--- We don't need a layout engine. Assume fixed positioning.
--- Assume we give it an x, y, width and height
--- Assume we have three images for button state (default, hover, active, disabled)
--- Assume whatever thing is the focus sits in the middle.
--- We can't use the image collision detection routine?
--- Have GetImageFromObject return the correct image.
--- Main thing is we don't want to have to do boilerplate
--- for rendering or clicking.
-
--- PTPanel
--- PTButton
---- Has one callback for activation
--- PTSlider
---- Has one callback for value change
--- PTRadio
---- Has one callback for activation
--- PTCheckBox
---- Has one callback for activation
--- PTTextBox
---- Has a callback for edit and a callback for submit
-
---- Panel structure
--- @tfield string _type "PTPanel"
--- @tfield table image ${PTImage}/${PT9Slice} to use as a background.
--- @tfield integer x X coordinate in screen space.
--- @tfield integer y Y coordinate in screen space.
--- @tfield integer z Depth coordinate; a higher number renders to the front.
--- @tfield integer width Width of panel.
--- @tfield integer height Height of panel.
--- @tfield boolean visible Whether panel is visible.
--- @tfield table objects Child widgets held by panel.
--- @table PTPanel
-
---- Create a new panel.
--- @tparam table image ${PTImage}/${PT9Slice} to use as a background.
--- @tparam integer x X coordinate in screen space.
--- @tparam integer y Y coordinate in screen space.
--- @tparam integer width Width of panel.
--- @tparam integer height Height of panel.
--- @tparam[opt=true] boolean visible Whether panel is visible.
--- @treturn PTPanel The new panel.
-PTPanel = function(image, x, y, width, height, visible)
-    if image and image._type == "PT9Slice" then
-        image = PT9SliceCopy(image, width, height)
-    end
-    if visible == nil then
-        visible = true
-    end
-    return {
-        _type = "PTPanel",
-        image = image,
-        x = x,
-        y = y,
-        z = 0,
-        width = width,
-        height = height,
-        objects = {},
-        visible = visible,
-        origin_x = 0,
-        origin_y = 0,
-    }
-end
-
---- Horizontal slider structure.
--- @tfield string _type "PTHorizSlider"
--- @tfield integer value Start value of the slider.
--- @tfield integer min_value Minimum permitted value.
--- @tfield integer max_value Maximum permitted value.
--- @tfield table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled", "track"
--- @tfield integer x X coordinate of widget.
--- @tfield integer y Y coordinate of widget.
--- @tfield integer z Depth coordinate; a higher number renders to the front.
--- @tfield integer width Width of the slider.
--- @tfield integer height Height of the slider.
--- @tfield integer track_size Height of the track image.
--- @tfield integer handle_size Width of the handle image.
--- @tfield boolean hover Whether the widget is currently hovered over.
--- @tfield boolean active Whether the widget is currently active.
--- @tfield boolean disabled Whether the widget is disabled.
--- @tfield boolean visible Whether the widget is visible.
--- @tfield integer origin_x X coordinate of the widget offset.
--- @tfield integer origin_y Y coordinate of the widget offset.
--- @tfield function change_callback Callback to run when slider changes position.
--- @tfield function set_callback Callback to run when the value is set.
--- @tfield table objects Child objects held by widget.
--- @table PTHorizSlider
-
---- Create a new horizontal slider control.
--- @tparam table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled", "track"
--- @tparam integer x X coordinate.
--- @tparam integer y Y coordinate.
--- @tparam integer width Width of the control.
--- @tparam integer height Height of the control.
--- @tparam integer track_size Height of the track image.
--- @tparam integer handle_size Width of the handle image.
--- @tparam integer value Start value of the slider.
--- @tparam integer min_value Minimum permitted value.
--- @tparam integer max_value Maximum permitted value.
--- @tparam function change_callback Callback to run when slider changes position.
--- @tparam function set_callback Callback to run when the value is set.
--- @treturn PTHorizSlider The new horizontal slider.
-PTHorizSlider = function(
-    images,
-    x,
-    y,
-    width,
-    height,
-    track_size,
-    handle_size,
-    value,
-    min_value,
-    max_value,
-    change_callback,
-    set_callback
-)
-    local target_images = {}
-    if images then
-        for _, key in ipairs({ "default", "hover", "active", "disabled" }) do
-            if images[key] and images[key]._type == "PT9Slice" then
-                target_images[key] = PT9SliceCopy(images[key], handle_size, height)
-            else
-                target_images[key] = images[key]
-            end
-        end
-        if images["track"] and images["track"]._type == "PT9Slice" then
-            target_images["track"] = PT9SliceCopy(images["track"], width, track_size)
-        else
-            target_images["track"] = images["track"]
-        end
-    end
-
-    local result = {
-        _type = "PTHorizSlider",
-        value = value,
-        min_value = min_value,
-        max_value = max_value,
-        images = target_images,
-        x = x,
-        y = y,
-        z = 0,
-        width = width,
-        height = height,
-        track_size = track_size,
-        handle_size = handle_size,
-        hover = false,
-        active = false,
-        disabled = false,
-        visible = true,
-        origin_x = 0,
-        origin_y = 0,
-        change_callback = change_callback,
-        set_callback = set_callback,
-        objects = {
-            PTBackground(target_images["track"], 0, (height - track_size) // 2),
-            PTBackground(target_images["default"]),
-        },
-    }
-    PTSliderSetValue(result, value)
-    return result
-end
-
---- Convert a slider position to a value.
--- @tparam any slider Slider object to modify.
--- @tparam integer pos New slider position, in screen units.
--- @treturn integer Slider value.
-PTSliderPosToValue = function(slider, pos)
-    return (
-        slider.min_value
-        + (((pos * 2 * (slider.max_value - slider.min_value)) // (slider.width - slider.handle_size) + 1) // 2)
-    )
-end
-
---- Convert a slider value to a position.
--- @tparam any slider Slider object to modify.
--- @tparam integer value New value to have.
--- @treturn integer Slider position, in screen units.
-PTSliderValueToPos = function(slider, value)
-    return ((slider.width - slider.handle_size) * (value - slider.min_value) // (slider.max_value - slider.min_value))
-end
-
---- Set a slider to a value.
--- @tparam any slider Slider object to modify.
--- @tparam integer value New value to have.
-PTSliderSetValue = function(slider, value)
-    slider.value = value
-    slider.objects[2].x = PTSliderValueToPos(slider, value)
-end
-
---- Button structure.
--- @tfield string _type "PTButton"
--- @tfield table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled"
--- @tfield integer x X coordinate.
--- @tfield integer y Y coordinate.
--- @tfield integer z Depth coordinate; a higher number renders to the front.
--- @tfield integer width Width of the control.
--- @tfield integer height Height of the control.
--- @tfield table objects Child objects held by widget.
--- @tfield boolean hover Whether the widget is currently hovered over.
--- @tfield boolean active Whether the widget is currently active.
--- @tfield boolean disabled Whether the widget is disabled.
--- @tfield boolean visible Whether the widget is visible.
--- @tfield integer origin_x X coordinate of the widget offset.
--- @tfield integer origin_y Y coordinate of the widget offset.
--- @tfield function callback Callback to run when the button is activated.
--- @table PTButton
-
---- Create a new button control.
--- @tparam table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled"
--- @tparam integer x X coordinate.
--- @tparam integer y Y coordinate.
--- @tparam integer width Width of the control.
--- @tparam integer height Height of the control.
--- @tparam table objects Child objects held by widget.
--- @tparam function callback Callback to run when the button is activated.
--- @treturn PTButton The new button.
-PTButton = function(images, x, y, width, height, objects, callback)
-    local target_images = {}
-    if images then
-        for _, key in ipairs({ "default", "hover", "active", "disabled" }) do
-            if images[key] and images[key]._type == "PT9Slice" then
-                target_images[key] = PT9SliceCopy(images[key], width, height)
-            else
-                target_images[key] = images[key]
-            end
-        end
-    end
-    return {
-        _type = "PTButton",
-        images = target_images,
-        x = x,
-        y = y,
-        z = 0,
-        width = width,
-        height = height,
-        objects = objects,
-        hover = false,
-        active = false,
-        disabled = false,
-        visible = true,
-        origin_x = 0,
-        origin_y = 0,
-        callback = callback,
-    }
-end
-
---- Add a panel to the engine state.
--- @tparam PTPanel panel The panel to add.
-local _PTPanelList = {}
-PTAddPanel = function(panel)
-    if panel and panel._type == "PTPanel" then
-        _PTAddToList(_PTPanelList, panel)
-    end
-    table.sort(_PTPanelList, function(a, b)
-        return a.z < b.z
-    end)
-end
-
---- Remove a panel from the engine state.
--- @tparam PTPanel panel The panel to remove.
-PTRemovePanel = function(panel)
-    if not panel or panel._type ~= "PTPanel" then
-        error("PTRemovePanel: expected PTPanel for first argument")
-    end
-    _PTRemoveFromList(_PTPanelList, panel)
-    table.sort(_PTPanelList, function(a, b)
-        return a.z < b.z
-    end)
-end
-
---- Add a renderable (@{PTBackground}/@{PTSprite}/@{PTGroup}) object to the panel rendering list.
--- @tparam PTPanel panel Panel to modify.
--- @tparam table object Object to add.
-PTPanelAddObject = function(panel, object)
-    if not panel or panel._type ~= "PTPanel" then
-        error("PTPanelAddObject: expected PTPanel for first argument")
-    end
-    _PTAddToList(panel.objects, object)
-    table.sort(panel.objects, function(a, b)
-        return a.z < b.z
-    end)
-end
-
---- Remove a renderable (@{PTBackground}/@{PTSprite}/@{PTGroup}) object from the panel rendering list.
--- @tparam PTPanel panel Panel to modify.
--- @tparam table object Object to add.
-PTPanelRemoveObject = function(panel, object)
-    if not panel or panel._type ~= "PTPanel" then
-        error("PTPanelRemoveObject: expected PTPanel for first argument")
-    end
-    _PTRemoveFromList(panel.objects, object)
-    table.sort(panel.objects, function(a, b)
-        return a.z < b.z
-    end)
-end
-
-local _PTWithinRect = function(x, y, width, height, test_x, test_y)
-    return (test_x >= x) and (test_x < (x + width)) and (test_y >= y) and (test_y < (y + height))
+local _PTMouseOver = nil
+--- Get the current object which the mouse is hovering over
+-- @treturn table The object (@{PTActor}/@{PTBackground}/@{PTSprite}), or nil.
+PTGetMouseOver = function()
+    return _PTMouseOver
 end
 
-local _PTGUIActiveObject = nil
-local _PTGUIMouseOver = nil
-local _PTUpdateGUI = function()
-    local has_changed = false
+local _PTUpdateMouseOver = function()
     local mouse_x, mouse_y = PTGetMousePos()
-    for _, panel in ipairs(_PTPanelList) do
-        if panel.visible then
-            for obj, x, y in PTIterObjects({ panel }) do
-                if obj._type == "PTButton" then
-                    local test = _PTWithinRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
-                    obj.hover = test
-                    if test then
-                        _PTGUIMouseOver = obj
-                        has_changed = true
-                    end
-                    obj.active = test and (obj == _PTGUIActiveObject)
-                elseif obj._type == "PTHorizSlider" then
-                    local test = _PTWithinRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
-                    obj.hover = test
-                    if test then
-                        _PTGUIMouseOver = obj
-                        has_changed = true
-                    end
-                    obj.active = (obj == _PTGUIActiveObject)
-                    if obj.active then
-                        local x_rel = math.min(math.max(mouse_x, x), x + obj.width - obj.handle_size) - x
-                        local new_value = PTSliderPosToValue(obj, x_rel)
-                        --print(x_rel, x_snap, new_value)
-                        if obj.value ~= new_value then
-                            PTSliderSetValue(obj, new_value)
-                            PTStartThread("__gui", obj.change_callback, obj)
-                        end
+    local room_x, room_y = PTScreenToRoom(mouse_x, mouse_y)
+    local room = PTCurrentRoom()
+    if not room or room._type ~= "PTRoom" then
+        return
+    end
+    -- Need to iterate through objects in reverse draw order
+    for obj, x, y in PTIterObjects(_PTGlobalRenderList, true, false) do
+        if obj.collision then
+            local frame, flags = PTGetImageFromObject(obj)
+            if
+                frame
+                and PTTestImageCollision(
+                    frame,
+                    math.floor(mouse_x - x),
+                    math.floor(mouse_y - y),
+                    flags,
+                    frame.collision_mask
+                )
+            then
+                if _PTMouseOver ~= obj then
+                    _PTMouseOver = obj
+                    if _PTMouseOverConsumer then
+                        _PTMouseOverConsumer(_PTMouseOver)
                     end
                 end
+                return
             end
         end
     end
-    if not has_changed then
-        _PTGUIMouseOver = nil
-    end
-end
-
-local _PTGUIEvent = function(ev)
-    if ev.type == "mouseDown" and _PTGUIMouseOver then
-        if _PTGUIMouseOver._type == "PTButton" or _PTGUIMouseOver._type == "PTHorizSlider" then
-            _PTGUIActiveObject = _PTGUIMouseOver
+    for obj, x, y in PTIterObjects(room.render_list, true, false) do
+        if obj.collision then
+            frame, flags = PTGetImageFromObject(obj)
+            if
+                frame
+                and PTTestImageCollision(
+                    frame,
+                    math.floor(room_x - x),
+                    math.floor(room_y - y),
+                    flags,
+                    frame.collision_mask
+                )
+            then
+                if _PTMouseOver ~= obj then
+                    _PTMouseOver = obj
+                    if _PTMouseOverConsumer then
+                        _PTMouseOverConsumer(_PTMouseOver)
+                    end
+                end
+                return
+            end
         end
-    elseif ev.type == "mouseUp" and _PTGUIActiveObject then
-        if _PTGUIActiveObject._type == "PTButton" and _PTGUIActiveObject == _PTGUIMouseOver then
-            PTStartThread("__gui", _PTGUIActiveObject.callback, _PTGUIActiveObject)
-        elseif _PTGUIActiveObject._type == "PTHorizSlider" then
-            PTStartThread("__gui", _PTGUIActiveObject.set_callback, _PTGUIActiveObject)
+    end
+
+    if _PTMouseOver ~= nil then
+        _PTMouseOver = nil
+        if _PTMouseOverConsumer then
+            _PTMouseOverConsumer(_PTMouseOver)
         end
-        _PTGUIActiveObject = nil
     end
-end
-
---- Text
--- @section text
-
---- Bitmap font structure.
--- @tfield string _type "PTFont"
--- @tfield userdata ptr Pointer to C data.
--- @table PTFont
-
---- Create a new bitmap font.
--- @tparam string path Path of the bitmap font (must be BMFont V3 binary).
--- @treturn PTFont The new font.
-PTFont = function(path)
-    return { _type = "PTFont", ptr = _PTFont(path) }
-end
-
---- Create an new image containing rendered text.
--- @tparam string text Unicode text to render.
--- @tparam PTFont font Font object to use.
--- @tparam[opt=200] integer width Width of bounding area in pixels.
--- @tparam[opt="left"] string align Text alignment; one of "left", "center" or "right".
--- @tparam[opt={ 0xff 0xff 0xff }] table colour Inner colour; list of 3 8-bit numbers.
--- @tparam[opt={ 0x00 0x00 0x00 }] table border Border colour; list of 3 8-bit numbers.
--- @treturn PTImage The new image.
-PTText = function(text, font, width, align, colour, border)
-    if not width then
-        width = 200
-    end
-    local align_enum = 1
-    if align == "center" then
-        align_enum = 2
-    elseif align == "right" then
-        align_enum = 3
-    end
-    local r = 0xff
-    local g = 0xff
-    local b = 0xff
-    if colour and colour[1] then
-        r = colour[1]
-    end
-    if colour and colour[2] then
-        g = colour[2]
-    end
-    if colour and colour[3] then
-        b = colour[3]
-    end
-    local brd_r = 0x00
-    local brd_g = 0x00
-    local brd_b = 0x00
-    if border and border[1] then
-        brd_r = border[1]
-    end
-    if border and border[2] then
-        brd_g = border[2]
-    end
-    if border and border[3] then
-        brd_b = border[3]
-    end
-
-    return { _type = "PTImage", ptr = _PTText(text, font.ptr, width, align_enum, r, g, b, brd_r, brd_g, brd_b) }
 end
 
 --- Walk box
@@ -3073,6 +1429,271 @@ local _PTCalcMovementFactor = function(actor, next)
     return _PTActorWalkStep(actor)
 end
 
+--- Actors
+-- @section actor
+
+--- Actor structure.
+-- @tfield string _type "PTActor"
+-- @tfield[opt=0] integer x X coordinate in room space.
+-- @tfield[opt=0] integer y Y coordinate in room space.
+-- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tfield[opt=true] boolean visible Whether the actor is rendered to the screen.
+-- @tfield[opt=nil] PTRoom room The room the actor is located.
+-- @tfield[opt=nil] table sprite The @{PTBackground}/@{PTSprite} object used for drawing. Perentie will proxy this; you only need to add the actor object to the rendering list.
+-- @tfield[opt=0] integer talk_x X coordinate in actor space for talk text.
+-- @tfield[opt=0] integer talk_y Y coordinate in actor space for talk text.
+-- @tfield[opt=nil] PTBackground talk_img Handle used by the engine for caching the rendered talk text.
+-- @tfield[opt=nil] PTFont talk_font Font to use for rendering talk text.
+-- @tfield[opt={ 0xff 0xff 0xff }] table talk_colour Colour to use for rendering talk text.
+-- @tfield[opt=0] integer talk_next_wait The millisecond count at which to remove the talk text.
+-- @tfield[opt=0] integer facing Direction of the actor; angle in degrees clockwise from north.
+-- @tfield[opt="stand"] string anim_stand Name of the sprite animation to use for standing.
+-- @tfield[opt="walk"] string anim_walk Name of the sprite animation to use for walking.
+-- @tfield[opt="talk"] string anim_talk Name of the sprite animation to use for talking.
+-- @tfield[opt=true] boolean use_walkbox Whether the actor snaps to the room's walkboxes.
+-- @table PTActor
+
+--- Create a new actor.
+-- @tparam string name Name of the actor.
+-- @tparam[opt=0] integer x X coordinate in room space.
+-- @tparam[opt=0] integer y Y coordinate in room space.
+-- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @treturn PTActor The new actor.
+PTActor = function(name, x, y, z)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
+    return {
+        _type = "PTActor",
+        name = name,
+        x = x,
+        y = y,
+        z = z,
+        visible = true,
+        room = nil,
+        sprite = nil,
+        talk_x = 0,
+        talk_y = 0,
+        talk_img = nil,
+        talk_font = nil,
+        talk_colour = { 0xff, 0xff, 0xff },
+        talk_next_wait = 0,
+        walkdata_dest = PTPoint(0, 0),
+        walkdata_cur = PTPoint(0, 0),
+        walkdata_next = PTPoint(0, 0),
+        walkdata_frac = PTPoint(0, 0),
+        walkdata_delta_factor = PTPoint(0, 0),
+        walkdata_destbox = nil,
+        walkdata_curbox = nil,
+        walkdata_facing = nil,
+        walkbox = nil,
+        use_walkbox = true,
+        facing = 0,
+        scale_x = 0xff,
+        scale_y = 0xff,
+        speed_x = 8,
+        speed_y = 4,
+        walk_rate = 12,
+        anim_stand = "stand",
+        anim_walk = "walk",
+        anim_talk = "talk",
+        walkdata_next_wait = 0,
+        moving = 0,
+    }
+end
+
+--- Set an actor's walk box.
+-- @tparam PTActor actor The actor.
+-- @tparam PTWalkBox box Walk box to use.
+PTActorSetWalkBox = function(actor, box)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorSetWalkBox: expected PTActor for first argument")
+    end
+    if not box or box._type ~= "PTWalkBox" then
+        error("PTActorSetWalkBox: expected PTWalkBox for second argument")
+    end
+    if actor.walkbox ~= box then
+        actor.walkbox = box
+        if box.on_enter then
+            box.on_enter(box, actor)
+        end
+    end
+    if box.z and box.z ~= actor.z then
+        actor.z = box.z
+        -- update the render list order
+        PTRoomAddObject(actor.room, nil)
+    end
+end
+
+local _PTActorUpdate = function(actor, fast_forward)
+    if not actor or actor._type ~= "PTActor" then
+        error("_PTActorUpdate: expected PTActor for first argument")
+    end
+    local result = true
+    if actor.moving > 0 then
+        if PTGetMillis() > actor.walkdata_next_wait then
+            PTActorWalk(actor)
+            PTSpriteIncrementFrame(actor.sprite)
+            actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
+            local room = PTCurrentRoom()
+            if room and room._type == "PTRoom" and actor == room.camera_actor then
+                room.x, room.y = actor.x, actor.y
+            end
+        end
+        result = false
+    end
+    if actor.talk_next_wait then
+        if actor.talk_next_wait < 0 then
+            -- negative talk wait time means wait until click
+            result = false
+        elseif not fast_forward and _PTGetMillis() < actor.talk_next_wait then
+            result = false
+        else
+            PTActorSilence(actor)
+        end
+    end
+
+    return result
+end
+
+local _PTActorWaitAfterTalk = true
+--- Set whether to automatically wait after a PTActor starts talking.
+-- If enabled, this means threads can make successive calls to
+-- @{PTActorTalk} and the engine will treat them as a conversation;
+-- you don't need to explicitly call @{PTWaitForActor} after each one.
+-- If you want to do manual conversation timing, disable this feature.
+-- Defaults to true.
+-- @tparam boolean enable Whether to wait after talking.
+PTSetActorWaitAfterTalk = function(enable)
+    _PTActorWaitAfterTalk = enable
+end
+
+TALK_BASE_DELAY = 1000
+TALK_CHAR_DELAY = 85
+
+local _PTTalkBaseDelay = TALK_BASE_DELAY
+local _PTTalkCharDelay = TALK_CHAR_DELAY
+
+--- Get the base delay for talking.
+-- When a @{PTActor} is talking, this is the fixed amount of time to wait, regardless of text length.
+-- @treturn integer The base delay, in milliseconds. Defaults to 1000.
+PTGetTalkBaseDelay = function()
+    return _PTTalkBaseDelay
+end
+
+--- Get the character delay for talking.
+-- When a @{PTActor} is talking, this is the variable amount of time to wait, as a multiple of the number of characters in the text.
+-- @treturn integer The character delay, in milliseconds. Defaults to 85.
+PTGetTalkCharDelay = function()
+    return _PTTalkCharDelay
+end
+
+--- Set the base delay for talking.
+-- @tparam integer delay The base delay, in milliseconds.
+PTSetTalkBaseDelay = function(delay)
+    _PTTalkBaseDelay = delay
+end
+
+--- Set the chracter delay for talking.
+-- @tparam integer delay The character delay, in milliseconds.
+PTSetTalkCharDelay = function(delay)
+    _PTTalkCharDelay = delay
+end
+
+--- Make an actor talk.
+-- This will trigger the actor's talk animation, as defined in actor.anim_talk.
+-- By default, this will wait the thread until the actor finishes talking. You can disable this by calling @{PTSetActorWaitAfterTalk}.
+-- @tparam PTActor actor The actor.
+-- @tparam string message Message to show on the screen.
+-- @tparam[opt=nil] PTFont font Font to use. Defaults to actor.talk_font
+-- @tparam[opt=nil] table colour Inner colour; list of 3 8-bit numbers. Defaults to actor.talk_colour.
+PTActorTalk = function(actor, message, font, colour)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorTalk: expected PTActor for first argument")
+    end
+    if not font then
+        font = actor.talk_font
+    end
+    if not font or font._type ~= "PTFont" then
+        PTLog("PTActorTalk: no font argument, or actor has invalid talk_font")
+        return
+    end
+    if not colour then
+        colour = actor.talk_colour
+    end
+    if PTThreadInFastForward() then
+        return
+    end
+    local text = PTText(message, font, 200, "center", colour)
+    PTSetImageOriginSimple(text, "bottom")
+    local width, height = PTGetImageDims(text)
+    local sx, sy = PTRoomToScreen(actor.x + actor.talk_x, actor.y + actor.talk_y)
+    local sw, sh = _PTGetScreenDims()
+
+    sx = math.min(math.max(sx, width / 2), sw - width / 2)
+    sy = math.min(math.max(sy, height), sh)
+    local x, y = PTScreenToRoom(sx, sy)
+
+    if not actor.talk_img then
+        actor.talk_img = PTBackground(nil, 0, 0, 20)
+    end
+    actor.talk_img.x = x
+    actor.talk_img.y = y
+    actor.talk_img.image = text
+
+    if _PTTalkBaseDelay < 0 or _PTTalkCharDelay < 0 then
+        actor.talk_next_wait = -1
+    else
+        actor.talk_next_wait = _PTGetMillis() + _PTTalkBaseDelay + #message * _PTTalkCharDelay
+    end
+    PTRoomAddObject(PTCurrentRoom(), actor.talk_img)
+    PTSpriteSetAnimation(actor.sprite, actor.anim_talk, actor.facing)
+    actor.current_frame = 1
+    if _PTActorWaitAfterTalk then
+        PTWaitForActor(actor)
+    end
+end
+
+--- Make an actor stop talking.
+-- This will remove any speech bubble, and trigger the actor's stand animation, as defined in actor.anim_stand.
+-- @tparam PTActor actor The actor.
+PTActorSilence = function(actor)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorSilence: expected PTActor for first argument")
+    end
+    if actor.talk_img then
+        PTRoomRemoveObject(actor.room, actor.talk_img)
+        actor.talk_img = nil
+    end
+    PTSpriteSetAnimation(actor.sprite, actor.anim_stand, actor.facing)
+    actor.talk_next_wait = nil
+end
+
+--- Sleep the current thread.
+-- This is mechanically the same as @{PTSleep}, however it uses the same
+-- timer as PTActorTalk, meaning it can be skipped by clicking the mouse.
+-- This is useful for e.g. dramatic pauses in dialogue.
+-- @tparam PTActor actor The actor.
+-- @tparam integer millis Time to wait in milliseconds.
+PTActorSleep = function(actor, millis)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTActorSleep: expected PTActor for first argument")
+    end
+    if PTThreadInFastForward() then
+        return
+    end
+    actor.talk_next_wait = _PTGetMillis() + millis
+    if _PTActorWaitAfterTalk then
+        PTWaitForActor(actor)
+    end
+end
+
 --- Set an actor moving towards a point in the room.
 -- @tparam PTActor actor Actor to modify.
 -- @tparam integer x X coordinate in room space.
@@ -3225,6 +1846,31 @@ PTActorWalk = function(actor)
     _PTCalcMovementFactor(actor, actor.walkdata_dest)
 end
 
+--- Add an actor to the engine state.
+-- @tparam PTActor actor The actor to add.
+PTAddActor = function(actor)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTAddActor: expected PTActor for first argument")
+    end
+    if type(actor.name) ~= "string" then
+        error("PTAddActor: actor object needs a name")
+    end
+    _PTActorList[actor.name] = actor
+end
+
+--- Remove an actor from the engine state.
+-- @tparam PTActor actor The actor to remove.
+PTRemoveActor = function(actor)
+    if not actor or actor._type ~= "PTActor" then
+        error("PTRemoveActor: expected PTActor for first argument")
+    end
+    if type(actor.name) ~= "string" then
+        error("PTRemoveActor: actor object needs a name")
+    end
+
+    _PTActorList[actor.name] = nil
+end
+
 --- Move an actor into a different room.
 -- @tparam PTActor actor The actor to move.
 -- @tparam PTRoom room Destination room.
@@ -3284,6 +1930,1595 @@ PTActorSetAnimation = function(actor, name, facing)
 
     actor.facing = facing
     return PTSpriteSetAnimation(actor.sprite, name, facing)
+end
+
+--- Rendering
+-- @section rendering
+
+--- Image structure.
+-- @tfield string _type "PTImage"
+-- @tfield userdata ptr Pointer to C data.
+-- @tfield[opt=true] collision_mask boolean Whether to use the transparency mask for collision detection.
+-- @table PTImage
+
+--- Load a new image.
+-- @tparam string path Path of the image (must be 8-bit indexed or grayscale PNG).
+-- @tparam[opt=0] integer origin_x Origin x coordinate, relative to top-left corner.
+-- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
+-- @tparam[opt=-1] integer colourkey Palette index to use as colourkey.
+-- @tparam[opt=true] boolean collision_mask Whether to use the transparency mask for collision detection.
+-- @treturn PTImage The new image.
+PTImage = function(path, origin_x, origin_y, colourkey, collision_mask)
+    if not origin_x then
+        origin_x = 0
+    end
+    if not origin_y then
+        origin_y = 0
+    end
+    if not colourkey then
+        colourkey = -1
+    end
+    if collision_mask == nil then
+        collision_mask = true
+    end
+    return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey), collision_mask = collision_mask }
+end
+
+--- Load a sequence of images.
+-- @tparam string path_format Path of the image (must be 8-bit indexed or grayscale PNG), with %d placeholder for index.
+-- @tparam integer start Start index.
+-- @tparam integer finish End index (inclusive).
+-- @tparam[opt=0] integer origin_x Origin x coordinate, relative to top-left corner.
+-- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
+-- @treturn table List of new images.
+PTImageSequence = function(path_format, start, finish, origin_x, origin_y)
+    local result = {}
+    for i = start, finish do
+        table.insert(result, PTImage(string.format(path_format, i), origin_x, origin_y))
+    end
+    return result
+end
+
+--- 9-slice image reference structure.
+-- @tfield string _type "PT9Slice"
+-- @tfield PTImage image Image to use as an atlas.
+-- @tfield integer x1 X coordinate in image space of left slice plane.
+-- @tfield integer y1 Y coordinate in image space of top slice plane.
+-- @tfield integer x2 X coordinate in image space of right slice plane.
+-- @tfield integer y2 Y coordinate in image space of bottom slice plane.
+-- @tfield integer width Width of resulting 9-slice image.
+-- @tfield integer height Height of resulting 9-slice image.
+-- @table PT9Slice
+
+--- Create a new 9-slice image reference.
+-- @tparam PTImage image Image to use as an atlas.
+-- @tparam integer x1 X coordinate in image space of left slice plane.
+-- @tparam integer y1 Y coordinate in image space of top slice plane.
+-- @tparam integer x2 X coordinate in image space of right slice plane.
+-- @tparam integer y2 Y coordinate in image space of bottom slice plane.
+-- @tparam[opt=0] integer width Width of resulting 9-slice image.
+-- @tparam[opt=0] integer height Height of resulting 9-slice image.
+-- @treturn PT9Slice The new image reference.
+PT9Slice = function(image, x1, y1, x2, y2, width, height)
+    if not width then
+        width = 0
+    end
+    if not height then
+        height = 0
+    end
+    return { _type = "PT9Slice", image = image, x1 = x1, y1 = y1, x2 = x2, y2 = y2, width = width, height = height }
+end
+
+--- Create a copy of a 9-slice image reference with different dimensions.
+-- @tparam PTSlice slice 9-slice image reference to use as a reference.
+-- @tparam integer width Width of resulting 9-slice image.
+-- @tparam integer height Height of resulting 9-slice image.
+-- @treturn PT9Slice The new image reference.
+PT9SliceCopy = function(slice, width, height)
+    if not slice then
+        return nil
+    end
+    if slice._type ~= "PT9Slice" then
+        return nil
+    end
+    return PT9Slice(slice.image, slice.x1, slice.y1, slice.x2, slice.y2, width, height)
+end
+
+FLIP_H = 0x01
+FLIP_V = 0x02
+
+--- Get the dimensions of an image.
+-- @tparam table image @{PTImage}/@{PT9Slice} to query.
+-- @treturn integer Width of the image.
+-- @treturn integer Height of the image.
+PTGetImageDims = function(image)
+    if not image then
+        return 0, 0
+    end
+    if image._type == "PTImage" then
+        return _PTGetImageDims(image.ptr)
+    elseif image._type == "PT9Slice" then
+        return image.width, image.height
+    end
+    return 0, 0
+end
+
+--- Get the origin position of an image.
+-- This is the position in image coordinates to use as the origin point;
+-- so if the image is e.g. used by a PTBackground object with
+-- position (x, y), the image will be rendered with the top-left at position
+-- (x - origin_x, y - origin_y).
+-- @tparam PTImage image Image to query.
+-- @treturn integer X coordinate in image space.
+-- @treturn integer Y coordinate in image space.
+PTGetImageOrigin = function(image)
+    if not image or image._type ~= "PTImage" then
+        return 0, 0
+    end
+    return _PTGetImageOrigin(image.ptr)
+end
+
+--- Set the origin position of an image.
+-- @tparam PTImage image Image to query.
+-- @tparam integer x X coordinate in image space.
+-- @tparam integer y Y coordinate in image space.
+PTSetImageOrigin = function(image, x, y)
+    if not image or image._type ~= "PTImage" then
+        return
+    end
+    _PTSetImageOrigin(image.ptr, x, y)
+end
+
+--- Set the origin position of an image.
+-- @tparam PTImage image Image to query.
+-- @tparam string origin Origin location; one of "top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"
+PTSetImageOriginSimple = function(image, origin)
+    if not image or image._type ~= "PTImage" then
+        return
+    end
+    local w, h = _PTGetImageDims(image.ptr)
+    local w2, h2 = w / 2, h / 2
+    if origin == "top-left" then
+        _PTSetImageOrigin(image.ptr, 0, 0)
+    elseif origin == "top" then
+        _PTSetImageOrigin(image.ptr, w2, 0)
+    elseif origin == "top-right" then
+        _PTSetImageOrigin(image.ptr, w, 0)
+    elseif origin == "left" then
+        _PTSetImageOrigin(image.ptr, 0, h2)
+    elseif origin == "center" then
+        _PTSetImageOrigin(image.ptr, w2, h2)
+    elseif origin == "right" then
+        _PTSetImageOrigin(image.ptr, w, h2)
+    elseif origin == "bottom-left" then
+        _PTSetImageOrigin(image.ptr, 0, h)
+    elseif origin == "bottom" then
+        _PTSetImageOrigin(image.ptr, w2, h)
+    elseif origin == "bottom-right" then
+        _PTSetImageOrigin(image.ptr, w, h)
+    end
+end
+
+--- Blit a @{PTImage}/@{PT9Slice} to the screen.
+-- Normally not called directly; Perentie will render
+-- everything in the display lists managed by @{PTRoomAddObject} and
+-- @{PTGlobalAddObject}.
+-- @tparam table image Image to blit to the screen.
+-- @tparam integer x X coordinate in screen space.
+-- @tparam integer y Y coordinate in screen space.
+-- @tparam integer flags Flags for rendering the image.
+PTDrawImage = function(image, x, y, flags)
+    if image then
+        if image._type == "PTImage" then
+            _PTDrawImage(image.ptr, x, y, flags)
+        elseif image._type == "PT9Slice" then
+            _PTDraw9Slice(
+                image.image.ptr,
+                x,
+                y,
+                flags,
+                image.width,
+                image.height,
+                image.x1,
+                image.y1,
+                image.x2,
+                image.y2
+            )
+        end
+    end
+end
+
+--- Perform a collision test for an image.
+-- @tparam table image @{PTImage}/@{PT9Slice} to test.
+-- @tparam integer x X coordinate in image space.
+-- @tparam integer y Y coordinate in image space.
+-- @tparam integer flags Flags for rendering the image.
+-- @tparam boolean collision_mask If true, test the masked image (i.e. excluding transparent areas), else use the image's bounding box.
+PTTestImageCollision = function(image, x, y, flags, collision_mask)
+    if not image then
+        return false
+    end
+    if image._type == "PTImage" then
+        return _PTImageTestCollision(image.ptr, x, y, flags, collision_mask)
+    end
+    if image._type == "PT9Slice" and image.image then
+        return _PT9SliceTestCollision(
+            image.image.ptr,
+            x,
+            y,
+            flags,
+            collision_mask,
+            image.width,
+            image.height,
+            image.x1,
+            image.y1,
+            image.x2,
+            image.y2
+        )
+    end
+    return false
+end
+
+--- Return the current palette.
+-- @treturn table A table containing colours from the current palette. Each colour is a table containing three 8-bit numbers.
+PTGetPalette = function()
+    return _PTGetPalette()
+end
+
+REMAPPER_NONE = 0
+REMAPPER_EGA = 1
+REMAPPER_CGA0A = 2
+REMAPPER_CGA0B = 3
+REMAPPER_CGA1A = 4
+REMAPPER_CGA1B = 5
+REMAPPER_CGA2A = 6
+REMAPPER_CGA2B = 7
+
+REMAPPER_MODE_NEAREST = 0
+REMAPPER_MODE_HALF = 1
+REMAPPER_MODE_QUARTER = 2
+REMAPPER_MODE_QUARTER_ALT = 3
+REMAPPER_MODE_HALF_NEAREST = 4
+REMAPPER_MODE_QUARTER_NEAREST = 5
+
+--- Set the automatic palette remapper to use.
+-- This will remove any of the current dithering hints and replace them with the output of the remapper. Subsequent hints can be added.
+-- @tparam[opt="none"] string remapper Remapper to use. Choices are: "none", "ega"
+-- @tparam[opt="nearest"] string mode Default dither mode to use. Choices are: "nearest", "half", "quarter", "quarter-alt", "half-nearest", "quarter-nearest".
+PTSetPaletteRemapper = function(remapper, mode)
+    local rm, md = REMAPPER_NONE, REMAPPER_MODE_NEAREST
+    if remapper == "none" then
+        rm = REMAPPER_NONE
+    elseif remapper == "ega" then
+        rm = REMAPPER_EGA
+    elseif remapper == "cga0a" then
+        rm = REMAPPER_CGA0A
+    elseif remapper == "cga0b" then
+        rm = REMAPPER_CGA0B
+    elseif remapper == "cga1a" then
+        rm = REMAPPER_CGA1A
+    elseif remapper == "cga1b" then
+        rm = REMAPPER_CGA1B
+    elseif remapper == "cga2a" then
+        rm = REMAPPER_CGA2A
+    elseif remapper == "cga2b" then
+        rm = REMAPPER_CGA2B
+    end
+
+    if mode == "nearest" then
+        md = REMAPPER_MODE_NEAREST
+    elseif mode == "half" then
+        md = REMAPPER_MODE_HALF
+    elseif mode == "quarter" then
+        md = REMAPPER_MODE_QUARTER
+    elseif mode == "quarter-alt" then
+        md = REMAPPER_MODE_QUARTER_ALT
+    elseif mode == "half-nearest" then
+        md = REMAPPER_MODE_HALF_NEAREST
+    elseif mode == "quarter-nearest" then
+        md = REMAPPER_MODE_QUARTER_NEAREST
+    end
+
+    if rm ~= -1 then
+        _PTSetPaletteRemapper(rm, md)
+    end
+end
+
+local _PTAutoClearScreen = true
+--- Set whether to clear the screen at the start of every frame
+-- @tparam bool val true if the screen is to be cleared, false otherwise.
+PTSetAutoClearScreen = function(val)
+    _PTAutoClearScreen = val
+end
+
+--- Set the overscan colour.
+-- For DOS, this is the colour used for the non-drawable area on a CRT/LCD monitor. For SDL, this is the colour used for filling the spare area around the viewport.
+-- @tparam table colour Table containing three 8-bit numbers.
+PTSetOverscanColour = function(colour)
+    return _PTSetOverscanColour(colour)
+end
+
+DITHER_NONE = 0
+DITHER_FILL_A = 1
+DITHER_FILL_B = 2
+DITHER_QUARTER = 3
+DITHER_QUARTER_ALT = 4
+DITHER_HALF = 5
+
+EGA_BLACK = { 0x00, 0x00, 0x00 }
+EGA_BLUE = { 0x00, 0x00, 0xaa }
+EGA_GREEN = { 0x00, 0xaa, 0x00 }
+EGA_CYAN = { 0x00, 0xaa, 0xaa }
+EGA_RED = { 0xaa, 0x00, 0x00 }
+EGA_MAGENTA = { 0xaa, 0x00, 0xaa }
+EGA_BROWN = { 0xaa, 0x55, 0x00 }
+EGA_LGRAY = { 0xaa, 0xaa, 0xaa }
+EGA_DGRAY = { 0x55, 0x55, 0x55 }
+EGA_BRBLUE = { 0x55, 0x55, 0xff }
+EGA_BRGREEN = { 0x55, 0xff, 0x55 }
+EGA_BRCYAN = { 0x55, 0xff, 0xff }
+EGA_BRRED = { 0xff, 0x55, 0x55 }
+EGA_BRMAGENTA = { 0xff, 0x55, 0xff }
+EGA_BRYELLOW = { 0xff, 0xff, 0x55 }
+EGA_WHITE = { 0xff, 0xff, 0xff }
+
+--- Set a dithering hint. Used for remapping a VGA-style palette to a smaller colour range such as EGA or CGA.
+-- @tparam table src Source colour, table containing three 8-bit numbers.
+-- @tparam string dither_type Type of dithering algorithm to use. Choices are: "none", "fill-a", "fill-b", "quarter", "quarter-alt", "half"
+-- @tparam table dest_a Destination mixing colour A, table containing three 8-bit numbers.
+-- @tparam table dest_b Destination mixing colour B, table containing three 8-bit numbers.
+PTSetDitherHint = function(src, dither_type, dest_a, dest_b)
+    local dt = DITHER_NONE
+    if dither_type == "none" then
+        dt = DITHER_NONE
+    elseif dither_type == "fill-a" then
+        dt = DITHER_FILL_A
+    elseif dither_type == "fill-b" then
+        dt = DITHER_FILL_B
+    elseif dither_type == "quarter" then
+        dt = DITHER_QUARTER
+    elseif dither_type == "quarter-alt" then
+        dt = DITHER_QUARTER_ALT
+    elseif dither_type == "half" then
+        dt = DITHER_HALF
+    end
+
+    return _PTSetDitherHint(src, dt, dest_a, dest_b)
+end
+
+--- Background structure.
+-- @tfield string _type "PTBackground"
+-- @tfield[opt=0] integer x X coordinate.
+-- @tfield[opt=0] integer y Y coordinate.
+-- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tfield[opt=1] float parallax_x X parallax scaling factor.
+-- @tfield[opt=1] float parallax_y Y parallax scaling factor.
+-- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
+-- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
+-- @table PTBackground
+
+--- Create a new background.
+-- @tparam PTImage image Image to use.
+-- @tparam[opt=0] integer x X coordinate.
+-- @tparam[opt=0] integer y Y coordinate.
+-- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tparam[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
+-- @treturn PTBackground The new background.
+PTBackground = function(image, x, y, z, collision)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
+    if collision == nil then
+        collision = false
+    end
+    return {
+        _type = "PTBackground",
+        image = image,
+        x = x,
+        y = y,
+        z = z,
+        parallax_x = 1,
+        parallax_y = 1,
+        collision = collision,
+        visible = true,
+    }
+end
+
+--- Animation structure.
+-- @tfield string _type "PTAnimation"
+-- @tfield string name Name of the animation.
+-- @tfield table frames List of @{PTImage} objects; one per frame.
+-- @tfield[opt=0] integer rate Frame rate to use for playback.
+-- @tfield[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
+-- @tfield[opt=true] boolean looping Whether to loop the animation when completed.
+-- @tfield[opt=0] integer current_frame The current frame in the sequence to display.
+-- @tfield[opt=0] integer next_wait The millisecond count at which to show the next frame.
+-- @tfield[opt=0] integer flags Flags for rendering the image.
+-- @table PTAnimation
+
+--- Create a new animation.
+-- @tparam string name Name of the animation.
+-- @tparam table frames List of @{PTImage} objects; one per frame.
+-- @tparam[opt=0] integer rate Frame rate to use for playback.
+-- @tparam[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
+-- @tparam[opt=false] boolean h_mirror Whether the animation can be mirrored horizontally.
+-- @tparam[opt=false] boolean v_mirror Whether the animation can be mirrored vertically.
+-- @tparam[opt=true] boolean looping Whether to loop the animation when completed.
+-- @treturn PTAnimation The new animation.
+PTAnimation = function(name, frames, rate, facing, h_mirror, v_mirror, looping)
+    if rate == nil then
+        rate = 0
+    end
+    if facing == nil then
+        facing = 0
+    end
+    if h_mirror == nil then
+        h_mirror = false
+    end
+    if v_mirror == nil then
+        v_mirror = false
+    end
+    if looping == nil then
+        looping = true
+    end
+    return {
+        _type = "PTAnimation",
+        name = name,
+        frames = frames,
+        rate = rate,
+        facing = facing,
+        looping = looping,
+        current_frame = 0,
+        next_wait = 0,
+        h_mirror = h_mirror,
+        v_mirror = v_mirror,
+        flags = 0,
+    }
+end
+
+--- Sprite structure.
+-- @tfield string _type "PTSprite"
+-- @tfield table animations Table of @{PTAnimation} objects.
+-- @tfield[opt=0] integer x X coordinate.
+-- @tfield[opt=0] integer y Y coordinate.
+-- @tfield[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @tfield[opt=1] float parallax_x X parallax scaling factor.
+-- @tfield[opt=1] float parallax_y Y parallax scaling factor.
+-- @tfield[opt=nil] integer anim_index Index of the current animation from the animations table.
+-- @tfield[opt=0] integer anim_flags Transformation flags to be applied to the frames.
+-- @tfield[opt=false] boolean collision Whether to test this object's sprite mask for collisions; e.g. when updating the current @{PTGetMouseOver} object.
+-- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
+-- @table PTSprite
+
+--- Create a new sprite.
+-- @tparam table animations Table of @{PTAnimation} objects.
+-- @tparam[opt=0] integer x X coordinate.
+-- @tparam[opt=0] integer y Y coordinate.
+-- @tparam[opt=0] integer z Depth coordinate; a higher number renders to the front.
+-- @treturn PTSprite The new sprite.
+PTSprite = function(animations, x, y, z)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
+    return {
+        _type = "PTSprite",
+        animations = animations,
+        x = x,
+        y = y,
+        z = z,
+        x_parallax = 1,
+        y_parallax = 1,
+        anim_index = nil,
+        anim_flags = 0,
+        collision = false,
+        visible = true,
+    }
+end
+
+--- Set the current animation to play on a sprite.
+-- @tparam PTSprite sprite The sprite to modify.
+-- @tparam string name Name of the animation.
+-- @tparam[opt=0] integer facing Direction of the animation; angle in degrees clockwise from north.
+-- @treturn boolean Whether the current animation was changed.
+PTSpriteSetAnimation = function(sprite, name, facing)
+    if not sprite or sprite._type ~= "PTSprite" then
+        return false
+    end
+
+    if not facing then
+        facing = 0
+    end
+
+    local best_index = nil
+    local best_delta = 0
+    local best_flags = 0
+
+    for i, anim in pairs(sprite.animations) do
+        if anim.name == name then
+            local new_delta = math.abs(PTAngleDelta(facing, anim.facing))
+            if not best_index or new_delta < best_delta then
+                best_index = i
+                best_delta = new_delta
+                best_flags = 0
+            end
+            if anim.h_mirror then
+                new_delta = math.abs(PTAngleDelta(facing, PTAngleMirror(anim.facing, 0)))
+                if new_delta < best_delta then
+                    best_index = i
+                    best_delta = new_delta
+                    best_flags = FLIP_H
+                end
+            end
+            if anim.v_mirror then
+                new_delta = math.abs(PTAngleDelta(facing, PTAngleMirror(anim.facing, 90)))
+                if new_delta < best_delta then
+                    best_index = i
+                    best_delta = new_delta
+                    best_flags = FLIP_V
+                end
+                if anim.h_mirror then
+                    new_delta = math.abs(PTAngleDelta(facing, PTAngleMirror(PTAngleMirror(anim.facing, 90), 0)))
+                    if new_delta < best_delta then
+                        best_index = i
+                        best_delta = new_delta
+                        best_flags = FLIP_H | FLIP_V
+                    end
+                end
+            end
+        end
+    end
+    if best_index then
+        if sprite.anim_index ~= best_index or sprite.anim_flags ~= best_flags then
+            --PTLog("PTSpriteSetAnimation name: %s, facing: %d, best_index: %d, best_flags: %d", name, facing,  best_index, best_flags)
+            sprite.anim_index = best_index
+            sprite.anim_flags = best_flags
+            sprite.animations[sprite.anim_index].current_frame = 1
+            return true
+        end
+    end
+    return false
+end
+
+--- Increment a sprite's current animation frame.
+-- This does not take into account the playback rate.
+-- @tparam PTSprite object Sprite to update.
+PTSpriteIncrementFrame = function(object)
+    if object and object._type == "PTSprite" then
+        local anim = object.animations[object.anim_index]
+        if anim then
+            if anim.current_frame == 0 then
+                anim.current_frame = 1
+            elseif not anim.looping then
+                if anim.current_frame < #anim.frames then
+                    anim.current_frame = anim.current_frame + 1
+                end
+            else
+                anim.current_frame = (anim.current_frame % #anim.frames) + 1
+            end
+            --print(string.format("PTSpriteIncrementFrame: %d", anim.current_frame))
+        end
+    end
+end
+
+--- Group structure.
+-- @tfield string _type "PTGroup"
+-- @tfield table objects List of member objects.
+-- @tfield integer x X coordinate.
+-- @tfield integer y Y coordinate.
+-- @tfield integer z Depth coordinate; a higher number renders to the front.
+-- @tfield integer origin_x Origin x coordinate, relative to top-left corner..
+-- @tfield integer origin_y Origin y coordinate, relative to top-left corner.
+-- @tfield[opt=true] boolean visible Whether to draw this object to the screen.
+-- @table PTGroup
+
+--- Create a new group.
+-- @tparam table objects List of member objects.
+-- @tparam integer x X coordinate.
+-- @tparam integer y Y coordinate.
+-- @tparam integer z Depth coordinate; a higher number renders to the front.
+-- @tparam integer origin_x Origin x coordinate, relative to top-left corner..
+-- @tparam integer origin_y Origin y coordinate, relative to top-left corner.
+-- @treturn PTGroup The new group.
+PTGroup = function(objects, x, y, z, origin_x, origin_y)
+    if not objects then
+        objects = {}
+    end
+    table.sort(objects, function(a, b)
+        return a.z < b.z
+    end)
+    if not x then
+        x = 0
+    end
+    if not y then
+        y = 0
+    end
+    if not z then
+        z = 0
+    end
+    if not origin_x then
+        origin_x = 0
+    end
+    if not origin_y then
+        origin_y = 0
+    end
+
+    return {
+        _type = "PTGroup",
+        objects = objects,
+        x = x,
+        y = y,
+        z = z,
+        origin_x = origin_x,
+        origin_y = origin_y,
+        visible = true,
+    }
+end
+
+--- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object to a group rendering list.
+-- @tparam PTGroup group Group to add object to.
+-- @tparam table object Object to add.
+PTGroupAddObject = function(group, object)
+    if object then
+        _PTAddToList(group.objects, object)
+    end
+    table.sort(group.objects, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object from a group rendering list.
+-- @tparam PTGroup group Group to remove object from.
+-- @tparam table object Object to remove.
+PTGroupRemoveObject = function(group, object)
+    if object then
+        _PTRemoveFromList(group.objects, object)
+    end
+    table.sort(group.objects, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Iterate through a list of renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) objects. PTGroups will be flattened, leaving only PTActor/PTBackground/PTSprite objects with adjusted positions.
+-- @tparam table objects List of objects.
+-- @tparam[opt=false] boolean reverse Whether to iterate in reverse.
+-- @tparam[opt=true] boolean visible_only Whether to only output visible objects.
+-- @treturn function An iterator function that returns an object, a x coordinate and a y coordinate.
+PTIterObjects = function(objects, reverse, visible_only)
+    if reverse == nil then
+        reverse = false
+    end
+    if visible_only == nil then
+        visible_only = true
+    end
+    local i = 1
+    local group_iter = nil
+    return function()
+        local obj
+        if group_iter then
+            if reverse then
+                obj = objects[#objects + 1 - i]
+            else
+                obj = objects[i]
+            end
+            local inner, inner_x, inner_y = group_iter()
+            if inner then
+                return inner,
+                    obj.x + inner_x - obj.origin_x + (obj.sx or 0),
+                    obj.y + inner_y - obj.origin_y + (obj.sy or 0)
+            end
+            group_iter = nil
+            i = i + 1
+        end
+
+        while i <= #objects do
+            if reverse then
+                obj = objects[#objects + 1 - i]
+            else
+                obj = objects[i]
+            end
+            if obj._type == "PTGroup" and (not visible_only or obj.visible) and #obj.objects > 0 then
+                group_iter = PTIterObjects(obj.objects, reverse, visible_only)
+                local inner, inner_x, inner_y = group_iter()
+                if inner then
+                    return inner,
+                        obj.x + inner_x - obj.origin_x + (obj.sx or 0),
+                        obj.y + inner_y - obj.origin_y + (obj.sy or 0)
+                end
+                group_iter = nil
+            elseif obj._type == "PTPanel" and (not visible_only or obj.visible) then
+                if #obj.objects > 0 then
+                    group_iter = PTIterObjects(obj.objects, reverse, visible_only)
+                end
+                return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
+            elseif obj._type == "PTButton" and (not visible_only or obj.visible) then
+                if #obj.objects > 0 then
+                    group_iter = PTIterObjects(obj.objects, reverse, visible_only)
+                end
+                return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
+            elseif obj._type == "PTHorizSlider" and (not visible_only or obj.visible) and #obj.objects > 0 then
+                group_iter = PTIterObjects(obj.objects, reverse, visible_only)
+                return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
+            elseif obj._type == "PTActor" or obj._type == "PTBackground" or obj._type == "PTSprite" then
+                if not visible_only or obj.visible then
+                    i = i + 1
+                    return obj, obj.x + (obj.sx or 0), obj.y + (obj.sy or 0)
+                end
+            end
+            i = i + 1
+        end
+    end
+end
+
+--- Fetch the image to use when rendering a @{PTActor}/@{PTBackground}/@{PTSprite} object.
+-- @tparam table object The object to query.
+-- @treturn table The PTImage or PT9Slice for the current frame.
+-- @treturn integer Flags to render the image with.
+PTGetImageFromObject = function(object)
+    if object then
+        if object._type == "PTSprite" then
+            local anim = object.animations[object.anim_index]
+            if anim then
+                if anim.rate == 0 then
+                    -- Rate is 0, don't automatically change frames
+                    if anim.current_frame == 0 then
+                        anim.current_frame = 1
+                    end
+                elseif anim.current_frame == 0 then
+                    anim.current_frame = 1
+                    anim.next_wait = PTGetMillis() + (1000 // anim.rate)
+                elseif PTGetMillis() > anim.next_wait then
+                    if not anim.looping then
+                        if anim.current_frame < #anim.frames then
+                            anim.current_frame = anim.current_frame + 1
+                        end
+                    else
+                        anim.current_frame = (anim.current_frame % #anim.frames) + 1
+                    end
+                    anim.next_wait = PTGetMillis() + (1000 // anim.rate)
+                end
+                return anim.frames[anim.current_frame], object.anim_flags
+            end
+        elseif object._type == "PTBackground" then
+            return object.image, 0
+        elseif object._type == "PTActor" then
+            return PTGetImageFromObject(object.sprite)
+        elseif object._type == "PTPanel" then
+            return object.image, 0
+        elseif object._type == "PTButton" then
+            if object.disabled and object.images.disabled then
+                return object.images.disabled, 0
+            elseif object.active and object.images.active then
+                return object.images.active, 0
+            elseif object.hover and object.images.hover then
+                return object.images.hover, 0
+            elseif object.images.default then
+                return object.images.default, 0
+            end
+        end
+    end
+    return nil, 0
+end
+
+--- Add a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object to the global rendering list.
+-- @tparam table object Object to add.
+PTGlobalAddObject = function(object)
+    if object then
+        _PTAddToList(_PTGlobalRenderList, object)
+    end
+    table.sort(_PTGlobalRenderList, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Remove a renderable (@{PTActor}/@{PTBackground}/@{PTSprite}/@{PTGroup}) object from the global rendering list.
+-- @tparam table object Object to remove.
+PTGlobalRemoveObject = function(object)
+    if object then
+        _PTRemoveFromList(_PTGlobalRenderList, object)
+    end
+    table.sort(_PTGlobalRenderList, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Movement
+-- @section movement
+
+--- Return a function for linear interpolation.
+-- @tparam[opt={0.0 1.0}] table points List of control points to interpolate between.
+-- @treturn function Callable that takes a progress value from 0.0-1.0 and returns an output from 0.0-1.0.
+PTLinear = function(points)
+    if points == nil then
+        points = { 0.0, 1.0 }
+    end
+    return function(progress)
+        if #points == 0 then
+            return 0.0
+        elseif #points == 1 then
+            return points[1]
+        end
+        if progress < 0.0 then
+            return points[1]
+        elseif progress > 1.0 then
+            return points[#points]
+        end
+        local prog = (#points - 1) * progress
+        local lower = math.floor(prog)
+        local upper = math.min(#points, lower + 2)
+        --PTLog("PTLinear: %s %d %f\n", inspect(points), lower, prog)
+        return points[1 + lower] + (points[upper] - points[1 + lower]) * (prog - lower)
+    end
+end
+
+--- Return a function for a unit cubic bezier curve.
+-- Start point is always (0, 0), end point is always (1, 1).
+-- @tparam float x1 Curve control point 1 x coordinate.
+-- @tparam float y1 Curve control point 1 y coordinate.
+-- @tparam float x2 Curve control point 2 x coordinate.
+-- @tparam float y2 Curve control point 2 y coordinate.
+-- @treturn function Callable that takes a progress value from 0.0-1.0 and returns an output from 0.0-1.0.
+PTCubicBezier = function(x1, y1, x2, y2)
+    -- Algorithm nicked from Stylo's cubic bezier code, which
+    -- was originally based on code from WebKit
+    x1 = x1 + 0.0
+    y1 = y1 + 0.0
+    x2 = x2 + 0.0
+    y2 = y2 + 0.0
+    --print(string.format("PTCubicBezier(%f, %f, %f, %f)", x1, y1, x2, y2))
+    local cx = 3.0 * x1
+    local bx = 3.0 * (x2 - x1) - cx
+    local ax = 1.0 - cx - bx
+    local cy = 3.0 * y1
+    local by = 3.0 * (y2 - y1) - cy
+    local ay = 1.0 - cy - by
+
+    local f_x = function(t)
+        return ((ax * t + bx) * t + cx) * t
+    end
+
+    local f_y = function(t)
+        return ((ay * t + by) * t + cy) * t
+    end
+
+    local f_dx = function(t)
+        return (3.0 * ax * t + 2.0 * bx) * t + cx
+    end
+
+    local solve_x = function(x, epsilon)
+        local t = x
+        for _ = 0, 8 do
+            local sx = f_x(t)
+            if math.abs(sx - x) <= epsilon then
+                return t
+            end
+            local dx = f_dx(t)
+            if math.abs(dx) < 1e-6 then
+                break
+            end
+            t = t - ((sx - x) / dx)
+        end
+
+        local lo = 0.0
+        local hi = 1.0
+        t = x
+        if t < lo then
+            return lo
+        elseif t > hi then
+            return hi
+        end
+
+        while lo < hi do
+            local sx = f_x(t)
+            if math.abs(sx - x) < epsilon then
+                return t
+            end
+            if x > sx then
+                lo = t
+            else
+                hi = t
+            end
+            t = ((hi - lo) / 2.0) + lo
+        end
+        return t
+    end
+
+    return function(progress)
+        if x1 == y1 and x2 == y2 then
+            return progress
+        end
+        if progress == 0.0 then
+            return 0.0
+        elseif progress == 1.0 then
+            return 1.0
+        end
+        if progress < 0.0 then
+            if x1 > 0.0 then
+                return progress * y1 / x1
+            elseif y1 == 0.0 and x2 > 0.0 then
+                return progress * y2 / x2
+            end
+            return 0.0
+        end
+        if progress > 1.0 then
+            if x2 < 1.0 then
+                return 1.0 + (progress - 1.0) * (y2 - 1.0) / (x2 - 1.0)
+            elseif y2 == 1.0 and x1 < 1.0 then
+                return 1.0 + (progress - 1.0) * (y1 - 1.0) / (x1 - 1.0)
+            end
+            return 1.0
+        end
+
+        return f_y(solve_x(progress, 1e-6))
+    end
+end
+
+--- Return a preset timing function.
+-- A timing function is a callable that accepts a progress value between 0.0-1.0, and returns an output value between 0.0-1.0.
+-- The presets are the same as in the CSS animation-timing-function specification.
+-- "linear" - Even speed.
+-- "ease" - Increases in speed towards the middle of the animation, slowing back down at the end.
+-- "ease-in" - Starts off slowly, with the speed increasing until complete.
+-- "ease-out" - Starts off quickly, with the speed decreasing until complete.
+-- "ease-in-out" - Starts off slowly, speeds up in the middle, and then the speed decreases until complete.
+-- @tparam[opt="linear"] any timing Alias of a builtin function, or a timing function such as one generated from @{PTCubicBezier} or @{PTLinear}.
+-- @treturn The timing function.
+PTTimingFunction = function(timing)
+    if timing == "linear" then
+        timing = PTLinear()
+    elseif timing == "ease" then
+        timing = PTCubicBezier(0.25, 0.1, 0.25, 1.0)
+    elseif timing == "ease-in" then
+        timing = PTCubicBezier(0.42, 0.0, 1.0, 1.0)
+    elseif timing == "ease-out" then
+        timing = PTCubicBezier(0.0, 0.0, 0.58, 1.0)
+    elseif timing == "ease-in-out" then
+        timing = PTCubicBezier(0.42, 0.0, 0.58, 1.0)
+    end
+
+    -- Default to linear
+    if type(timing) ~= "function" then
+        timing = PTLinear()
+    end
+    return timing
+end
+
+--- Movement reference structure.
+-- @tfield string _type "PTMoveRef"
+-- @tfield function timing Timing function, such as returned from @{PTTimingFunction}.
+-- @tfield integer start_time Movement start time, in milliseconds.
+-- @tfield integer duration Movement duration, in milliseconds.
+-- @tfield table object Any object with "x" and "y" parameters to move.
+-- @tfield integer x_a Start X coordinate of the object in room space.
+-- @tfield integer y_a Start Y coordinate of the object in room space.
+-- @tfield integer x_b Finish X coordinate of the object in room space.
+-- @tfield integer y_b Finish Y coordinate of the object in room space.
+-- @tfield boolean while_paused Whether to move the object while the game is paused.
+-- @table PTMoveRef
+
+--- Create a new movement reference.
+-- @tparam table object Any object with "x" and "y" parameters to move.
+-- @tparam integer x Finish X coordinate of the object in room space.
+-- @tparam integer y Finish Y coordinate of the object in room space.
+-- @tparam integer start_time Movement start time, in milliseconds.
+-- @tparam integer duration Movement duration, in milliseconds.
+-- @tparam function timing Timing function, such as returned from @{PTTimingFunction}.
+-- @tparam boolean while_paused Whether to move the object while the game is paused.
+-- @treturn PTMoveRef The new movement refrence.
+PTMoveRef = function(object, x, y, start_time, duration, timing, while_paused)
+    -- timing functions nicked from the CSS animation-timing-function spec
+    timing = PTTimingFunction(timing)
+    return {
+        _type = "PTMoveRef",
+        timing = timing,
+        start_time = start_time,
+        duration = duration,
+        object = object,
+        x_a = object.x,
+        y_a = object.y,
+        x_b = x,
+        y_b = y,
+        while_paused = while_paused,
+    }
+end
+
+local _PTMoveRefList = {}
+--- Move an object smoothly to a destination point.
+-- On every rendered frame, Perentie will adjust the "x" and "y" parameters on the target object
+-- to move it to the destination, with the speed determined by a duration and a timing function.
+-- You can only have one movement instruction per object. If an existing
+-- move instruction is found for an object, Perentie will replace it.
+-- @tparam table object Any object with "x" and "y" parameters.
+-- @tparam integer x Absolute x coordinate to move towards.
+-- @tparam integer y Absolute y coordinate to move towards.
+-- @tparam integer duration Duration of movement in milliseconds.
+-- @tparam any timing Timing function or alias to use, same as timing argument of @{PTTimingFunction}.
+-- @tparam[opt=false] boolean while_paused Whether to move the object while the game is paused.
+PTMoveObject = function(object, x, y, duration, timing, while_paused)
+    for i, obj in ipairs(_PTMoveRefList) do
+        if object == obj.object then
+            table.remove(_PTMoveRefList, i)
+            break
+        end
+    end
+    local moveref = PTMoveRef(object, x, y, PTGetMillis(), duration, timing, while_paused)
+    table.insert(_PTMoveRefList, moveref)
+end
+
+--- Move an object smoothly to a destination point relative to the object's current position.
+-- @tparam table object Any object with "x" and "y" parameters
+-- @tparam integer dx X distance relative to the object's current position to move towards.
+-- @tparam integer dy Y distance relative to the object's current position to move towards.
+-- @tparam integer duration Duration of movement in milliseconds.
+-- @tparam any timing Timing function or alias to use, same as timing argument of @{PTTimingFunction}.
+-- @tparam[opt=false] boolean while_paused Whether to move the object while the game is paused.
+PTMoveObjectRelative = function(object, dx, dy, duration, timing, while_paused)
+    PTMoveObject(object, object.x + dx, object.y + dy, duration, timing, while_paused)
+end
+
+local _PTObjectIsMoving = function(object, fast_forward)
+    for i, obj in ipairs(_PTMoveRefList) do
+        if object == obj.object then
+            if fast_forward then
+                -- fast forward the movement
+                obj.start_time = PTGetMillis() - obj.duration
+                return false
+            else
+                return true
+            end
+        end
+    end
+    return false
+end
+
+--- Check if an object is moving.
+-- @tparam table object Any object with "x" and "y" parameters
+-- @treturn boolean Whether the object is moving.
+PTObjectIsMoving = function(object)
+    return _PTObjectIsMoving(object)
+end
+
+--- Return a function for shaking using simplex noise.
+-- @tparam float x_amplitude X amplitude of the shake.
+-- @tparam float y_amplitude Y amplitude of the shake.
+-- @tparam float x_frequency X frequency of the shake, in Hz.
+-- @tparam float y_frequency Y frequency of the shake, in Hz.
+-- @treturn function Callable that takes a time value in millieseconds and returns an (x, y) pair of coordinates.
+PTSimplexShake = function(x_amplitude, y_amplitude, x_frequency, y_frequency)
+    local simplex_x = math.random() * 2048.0 - 1024.0
+    local simplex_y = math.random() * 2048.0 - 1024.0
+    local last_offset_x = 0.0
+    local last_offset_y = 0.0
+    return function(time)
+        local shake = 1.0
+        local offset_x = x_amplitude * shake * PTSimplexNoise1D((time * x_frequency * 0.001) + simplex_x)
+        local offset_y = y_amplitude * shake * PTSimplexNoise1D((time * y_frequency * 0.001) + simplex_y)
+        local result_x, result_y = offset_x - last_offset_x, offset_y - last_offset_y
+        last_offset_x = offset_x
+        last_offset_y = offset_y
+        return result_x, result_y
+    end
+end
+
+--- Shake reference structure
+-- @tfield string _type "PTShakeRef"
+-- @tfield integer start_time Shake start time, in milliseconds.
+-- @tfield integer duration Movement duration, in milliseconds.
+-- @tfield table object Any object with "sx" and "sy" parameters to move.
+-- @tfield function shake_func Shake function to use, such as the return value of @{PTSimplexShake}.
+-- @tparam boolean while_paused Whether to shake the object while the game is paused.
+-- @table PTShakeRef
+
+--- Create a new shake reference.
+-- @tparam table object Any object with "sx" and "sy" parameters to move.
+-- @tparam function shake_func Shake function to use, such as the return value of @{PTSimplexShake}.
+-- @tparam integer start_time Shake start time, in milliseconds.
+-- @tparam integer duration Movement duration, in milliseconds.
+-- @tparam boolean while_paused Whether to shake the object while the game is paused.
+PTShakeRef = function(object, shake_func, start_time, duration, while_paused)
+    return {
+        _type = "PTShakeRef",
+        start_time = start_time,
+        duration = duration,
+        object = object,
+        shake_func = shake_func,
+        while_paused = while_paused,
+    }
+end
+
+local _PTShakeRefList = {}
+--- Shake an object without changing its position.
+-- On every rendered frame, Perentie will adjust the "sx" and "sy" parameters on the target object
+-- to adjust the offset from the (x, y) position.
+-- You can only have one shake instruction per object. If an existing
+-- shake instruction is found for an object, Perentie will replace it.
+-- @tparam table object Any object with "sx" and "sy" parameters.
+-- @tparam integer duration Duration of shake in milliseconds.
+-- @tparam function shake_func Shake function to use, such as the return value of @{PTSimplexShake}.
+-- @tparam[opt=false] boolean while_paused Whether to shake the object while the game is paused.
+PTShakeObject = function(object, duration, shake_func, while_paused)
+    for i, obj in ipairs(_PTShakeRefList) do
+        if object == obj.object then
+            table.remove(_PTShakeRefList, i)
+            break
+        end
+    end
+    local shakeref = PTShakeRef(object, shake_func, PTGetMillis(), duration, while_paused)
+    table.insert(_PTShakeRefList, shakeref)
+end
+
+local _PTUpdateMoveObject = function()
+    local t = PTGetMillis()
+    local done = {}
+    for i, moveref in ipairs(_PTMoveRefList) do
+        if (not _PTGamePaused) or moveref.while_paused then
+            local at = (t - moveref.start_time) / moveref.duration
+            local a = moveref.timing(at)
+
+            moveref.object.x = moveref.x_a + (moveref.x_b - moveref.x_a) * a
+            moveref.object.y = moveref.y_a + (moveref.y_b - moveref.y_a) * a
+            --print(string.format("%f,%f", at, a))
+            if at >= 1.0 then
+                table.insert(done, 1, i)
+            end
+        end
+    end
+    for _, i in ipairs(done) do
+        table.remove(_PTMoveRefList, i)
+    end
+end
+
+local _PTUpdateShakeObject = function()
+    local t = PTGetMillis()
+    local done = {}
+    for i, shakeref in ipairs(_PTShakeRefList) do
+        if (not _PTGamePaused) or shakeref.while_paused then
+            local at = (t - shakeref.start_time) / shakeref.duration
+
+            shakeref.object.sx, shakeref.object.sy = shakeref.shake_func(t - shakeref.start_time)
+            --PTLog("(%f, %f) %f", shakeref.object.sx, shakeref.object.sy, at)
+            if at >= 1.0 then
+                table.insert(done, 1, i)
+                shakeref.object.sx = nil
+                shakeref.object.sy = nil
+            end
+        end
+    end
+    for _, i in ipairs(done) do
+        table.remove(_PTShakeRefList, i)
+    end
+end
+
+--- GUI controls
+-- @section controls
+
+-- How do we want to deal with the GUI?
+-- We don't need a layout engine. Assume fixed positioning.
+-- Assume we give it an x, y, width and height
+-- Assume we have three images for button state (default, hover, active, disabled)
+-- Assume whatever thing is the focus sits in the middle.
+-- We can't use the image collision detection routine?
+-- Have GetImageFromObject return the correct image.
+-- Main thing is we don't want to have to do boilerplate
+-- for rendering or clicking.
+
+-- PTPanel
+-- PTButton
+--- Has one callback for activation
+-- PTSlider
+--- Has one callback for value change
+-- PTRadio
+--- Has one callback for activation
+-- PTCheckBox
+--- Has one callback for activation
+-- PTTextBox
+--- Has a callback for edit and a callback for submit
+
+--- Panel structure
+-- @tfield string _type "PTPanel"
+-- @tfield table image ${PTImage}/${PT9Slice} to use as a background.
+-- @tfield integer x X coordinate in screen space.
+-- @tfield integer y Y coordinate in screen space.
+-- @tfield integer z Depth coordinate; a higher number renders to the front.
+-- @tfield integer width Width of panel.
+-- @tfield integer height Height of panel.
+-- @tfield boolean visible Whether panel is visible.
+-- @tfield table objects Child widgets held by panel.
+-- @table PTPanel
+
+--- Create a new panel.
+-- @tparam table image ${PTImage}/${PT9Slice} to use as a background.
+-- @tparam integer x X coordinate in screen space.
+-- @tparam integer y Y coordinate in screen space.
+-- @tparam integer width Width of panel.
+-- @tparam integer height Height of panel.
+-- @tparam[opt=true] boolean visible Whether panel is visible.
+-- @treturn PTPanel The new panel.
+PTPanel = function(image, x, y, width, height, visible)
+    if image and image._type == "PT9Slice" then
+        image = PT9SliceCopy(image, width, height)
+    end
+    if visible == nil then
+        visible = true
+    end
+    return {
+        _type = "PTPanel",
+        image = image,
+        x = x,
+        y = y,
+        z = 0,
+        width = width,
+        height = height,
+        objects = {},
+        visible = visible,
+        origin_x = 0,
+        origin_y = 0,
+    }
+end
+
+--- Horizontal slider structure.
+-- @tfield string _type "PTHorizSlider"
+-- @tfield integer value Start value of the slider.
+-- @tfield integer min_value Minimum permitted value.
+-- @tfield integer max_value Maximum permitted value.
+-- @tfield table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled", "track"
+-- @tfield integer x X coordinate of widget.
+-- @tfield integer y Y coordinate of widget.
+-- @tfield integer z Depth coordinate; a higher number renders to the front.
+-- @tfield integer width Width of the slider.
+-- @tfield integer height Height of the slider.
+-- @tfield integer track_size Height of the track image.
+-- @tfield integer handle_size Width of the handle image.
+-- @tfield boolean hover Whether the widget is currently hovered over.
+-- @tfield boolean active Whether the widget is currently active.
+-- @tfield boolean disabled Whether the widget is disabled.
+-- @tfield boolean visible Whether the widget is visible.
+-- @tfield integer origin_x X coordinate of the widget offset.
+-- @tfield integer origin_y Y coordinate of the widget offset.
+-- @tfield function change_callback Callback to run when slider changes position.
+-- @tfield function set_callback Callback to run when the value is set.
+-- @tfield table objects Child objects held by widget.
+-- @table PTHorizSlider
+
+--- Create a new horizontal slider control.
+-- @tparam table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled", "track"
+-- @tparam integer x X coordinate.
+-- @tparam integer y Y coordinate.
+-- @tparam integer width Width of the control.
+-- @tparam integer height Height of the control.
+-- @tparam integer track_size Height of the track image.
+-- @tparam integer handle_size Width of the handle image.
+-- @tparam integer value Start value of the slider.
+-- @tparam integer min_value Minimum permitted value.
+-- @tparam integer max_value Maximum permitted value.
+-- @tparam function change_callback Callback to run when slider changes position.
+-- @tparam function set_callback Callback to run when the value is set.
+-- @treturn PTHorizSlider The new horizontal slider.
+PTHorizSlider = function(
+    images,
+    x,
+    y,
+    width,
+    height,
+    track_size,
+    handle_size,
+    value,
+    min_value,
+    max_value,
+    change_callback,
+    set_callback
+)
+    local target_images = {}
+    if images then
+        for _, key in ipairs({ "default", "hover", "active", "disabled" }) do
+            if images[key] and images[key]._type == "PT9Slice" then
+                target_images[key] = PT9SliceCopy(images[key], handle_size, height)
+            else
+                target_images[key] = images[key]
+            end
+        end
+        if images["track"] and images["track"]._type == "PT9Slice" then
+            target_images["track"] = PT9SliceCopy(images["track"], width, track_size)
+        else
+            target_images["track"] = images["track"]
+        end
+    end
+
+    local result = {
+        _type = "PTHorizSlider",
+        value = value,
+        min_value = min_value,
+        max_value = max_value,
+        images = target_images,
+        x = x,
+        y = y,
+        z = 0,
+        width = width,
+        height = height,
+        track_size = track_size,
+        handle_size = handle_size,
+        hover = false,
+        active = false,
+        disabled = false,
+        visible = true,
+        origin_x = 0,
+        origin_y = 0,
+        change_callback = change_callback,
+        set_callback = set_callback,
+        objects = {
+            PTBackground(target_images["track"], 0, (height - track_size) // 2),
+            PTBackground(target_images["default"]),
+        },
+    }
+    PTSliderSetValue(result, value)
+    return result
+end
+
+--- Convert a slider position to a value.
+-- @tparam any slider Slider object to modify.
+-- @tparam integer pos New slider position, in screen units.
+-- @treturn integer Slider value.
+PTSliderPosToValue = function(slider, pos)
+    return (
+        slider.min_value
+        + (((pos * 2 * (slider.max_value - slider.min_value)) // (slider.width - slider.handle_size) + 1) // 2)
+    )
+end
+
+--- Convert a slider value to a position.
+-- @tparam any slider Slider object to modify.
+-- @tparam integer value New value to have.
+-- @treturn integer Slider position, in screen units.
+PTSliderValueToPos = function(slider, value)
+    return ((slider.width - slider.handle_size) * (value - slider.min_value) // (slider.max_value - slider.min_value))
+end
+
+--- Set a slider to a value.
+-- @tparam any slider Slider object to modify.
+-- @tparam integer value New value to have.
+PTSliderSetValue = function(slider, value)
+    slider.value = value
+    slider.objects[2].x = PTSliderValueToPos(slider, value)
+end
+
+--- Button structure.
+-- @tfield string _type "PTButton"
+-- @tfield table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled"
+-- @tfield integer x X coordinate.
+-- @tfield integer y Y coordinate.
+-- @tfield integer z Depth coordinate; a higher number renders to the front.
+-- @tfield integer width Width of the control.
+-- @tfield integer height Height of the control.
+-- @tfield table objects Child objects held by widget.
+-- @tfield boolean hover Whether the widget is currently hovered over.
+-- @tfield boolean active Whether the widget is currently active.
+-- @tfield boolean disabled Whether the widget is disabled.
+-- @tfield boolean visible Whether the widget is visible.
+-- @tfield integer origin_x X coordinate of the widget offset.
+-- @tfield integer origin_y Y coordinate of the widget offset.
+-- @tfield function callback Callback to run when the button is activated.
+-- @table PTButton
+
+--- Create a new button control.
+-- @tparam table images Table of ${PTImage}/${PT9Slice} to use. Allowed keys: "default", "hover", "active", "disabled"
+-- @tparam integer x X coordinate.
+-- @tparam integer y Y coordinate.
+-- @tparam integer width Width of the control.
+-- @tparam integer height Height of the control.
+-- @tparam table objects Child objects held by widget.
+-- @tparam function callback Callback to run when the button is activated.
+-- @treturn PTButton The new button.
+PTButton = function(images, x, y, width, height, objects, callback)
+    local target_images = {}
+    if images then
+        for _, key in ipairs({ "default", "hover", "active", "disabled" }) do
+            if images[key] and images[key]._type == "PT9Slice" then
+                target_images[key] = PT9SliceCopy(images[key], width, height)
+            else
+                target_images[key] = images[key]
+            end
+        end
+    end
+    return {
+        _type = "PTButton",
+        images = target_images,
+        x = x,
+        y = y,
+        z = 0,
+        width = width,
+        height = height,
+        objects = objects,
+        hover = false,
+        active = false,
+        disabled = false,
+        visible = true,
+        origin_x = 0,
+        origin_y = 0,
+        callback = callback,
+    }
+end
+
+--- Add a panel to the engine state.
+-- @tparam PTPanel panel The panel to add.
+local _PTPanelList = {}
+PTAddPanel = function(panel)
+    if panel and panel._type == "PTPanel" then
+        _PTAddToList(_PTPanelList, panel)
+    end
+    table.sort(_PTPanelList, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Remove a panel from the engine state.
+-- @tparam PTPanel panel The panel to remove.
+PTRemovePanel = function(panel)
+    if not panel or panel._type ~= "PTPanel" then
+        error("PTRemovePanel: expected PTPanel for first argument")
+    end
+    _PTRemoveFromList(_PTPanelList, panel)
+    table.sort(_PTPanelList, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Add a renderable (@{PTBackground}/@{PTSprite}/@{PTGroup}) object to the panel rendering list.
+-- @tparam PTPanel panel Panel to modify.
+-- @tparam table object Object to add.
+PTPanelAddObject = function(panel, object)
+    if not panel or panel._type ~= "PTPanel" then
+        error("PTPanelAddObject: expected PTPanel for first argument")
+    end
+    _PTAddToList(panel.objects, object)
+    table.sort(panel.objects, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+--- Remove a renderable (@{PTBackground}/@{PTSprite}/@{PTGroup}) object from the panel rendering list.
+-- @tparam PTPanel panel Panel to modify.
+-- @tparam table object Object to add.
+PTPanelRemoveObject = function(panel, object)
+    if not panel or panel._type ~= "PTPanel" then
+        error("PTPanelRemoveObject: expected PTPanel for first argument")
+    end
+    _PTRemoveFromList(panel.objects, object)
+    table.sort(panel.objects, function(a, b)
+        return a.z < b.z
+    end)
+end
+
+local _PTWithinRect = function(x, y, width, height, test_x, test_y)
+    return (test_x >= x) and (test_x < (x + width)) and (test_y >= y) and (test_y < (y + height))
+end
+
+local _PTGUIActiveObject = nil
+local _PTGUIMouseOver = nil
+local _PTUpdateGUI = function()
+    local has_changed = false
+    local mouse_x, mouse_y = PTGetMousePos()
+    for _, panel in ipairs(_PTPanelList) do
+        if panel.visible then
+            for obj, x, y in PTIterObjects({ panel }) do
+                if obj._type == "PTButton" then
+                    local test = _PTWithinRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
+                    obj.hover = test
+                    if test then
+                        _PTGUIMouseOver = obj
+                        has_changed = true
+                    end
+                    obj.active = test and (obj == _PTGUIActiveObject)
+                elseif obj._type == "PTHorizSlider" then
+                    local test = _PTWithinRect(x, y, obj.width, obj.height, mouse_x, mouse_y)
+                    obj.hover = test
+                    if test then
+                        _PTGUIMouseOver = obj
+                        has_changed = true
+                    end
+                    obj.active = (obj == _PTGUIActiveObject)
+                    if obj.active then
+                        local x_rel = math.min(math.max(mouse_x, x), x + obj.width - obj.handle_size) - x
+                        local new_value = PTSliderPosToValue(obj, x_rel)
+                        --print(x_rel, x_snap, new_value)
+                        if obj.value ~= new_value then
+                            PTSliderSetValue(obj, new_value)
+                            PTStartThread("__gui", obj.change_callback, obj)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if not has_changed then
+        _PTGUIMouseOver = nil
+    end
+end
+
+local _PTGUIEvent = function(ev)
+    if ev.type == "mouseDown" and _PTGUIMouseOver then
+        if _PTGUIMouseOver._type == "PTButton" or _PTGUIMouseOver._type == "PTHorizSlider" then
+            _PTGUIActiveObject = _PTGUIMouseOver
+        end
+    elseif ev.type == "mouseUp" and _PTGUIActiveObject then
+        if _PTGUIActiveObject._type == "PTButton" and _PTGUIActiveObject == _PTGUIMouseOver then
+            PTStartThread("__gui", _PTGUIActiveObject.callback, _PTGUIActiveObject)
+        elseif _PTGUIActiveObject._type == "PTHorizSlider" then
+            PTStartThread("__gui", _PTGUIActiveObject.set_callback, _PTGUIActiveObject)
+        end
+        _PTGUIActiveObject = nil
+    end
+end
+
+--- Text
+-- @section text
+
+--- Bitmap font structure.
+-- @tfield string _type "PTFont"
+-- @tfield userdata ptr Pointer to C data.
+-- @table PTFont
+
+--- Create a new bitmap font.
+-- @tparam string path Path of the bitmap font (must be BMFont V3 binary).
+-- @treturn PTFont The new font.
+PTFont = function(path)
+    return { _type = "PTFont", ptr = _PTFont(path) }
+end
+
+--- Create an new image containing rendered text.
+-- @tparam string text Unicode text to render.
+-- @tparam PTFont font Font object to use.
+-- @tparam[opt=200] integer width Width of bounding area in pixels.
+-- @tparam[opt="left"] string align Text alignment; one of "left", "center" or "right".
+-- @tparam[opt={ 0xff 0xff 0xff }] table colour Inner colour; list of 3 8-bit numbers.
+-- @tparam[opt={ 0x00 0x00 0x00 }] table border Border colour; list of 3 8-bit numbers.
+-- @treturn PTImage The new image.
+PTText = function(text, font, width, align, colour, border)
+    if not width then
+        width = 200
+    end
+    local align_enum = 1
+    if align == "center" then
+        align_enum = 2
+    elseif align == "right" then
+        align_enum = 3
+    end
+    local r = 0xff
+    local g = 0xff
+    local b = 0xff
+    if colour and colour[1] then
+        r = colour[1]
+    end
+    if colour and colour[2] then
+        g = colour[2]
+    end
+    if colour and colour[3] then
+        b = colour[3]
+    end
+    local brd_r = 0x00
+    local brd_g = 0x00
+    local brd_b = 0x00
+    if border and border[1] then
+        brd_r = border[1]
+    end
+    if border and border[2] then
+        brd_g = border[2]
+    end
+    if border and border[3] then
+        brd_b = border[3]
+    end
+
+    return { _type = "PTImage", ptr = _PTText(text, font.ptr, width, align_enum, r, g, b, brd_r, brd_g, brd_b) }
 end
 
 --- Audio
@@ -3493,18 +3728,6 @@ end
 --- Threading
 -- @section threading
 
-local _PTOnlyRunOnce = {}
---- Assert that this function can't be run more than once.
--- Usually used as a guard instruction at the top of a Lua script.
--- Multiple invocations will raise an error.
--- @tparam string name Name of the script.
-PTOnlyRunOnce = function(name)
-    if _PTOnlyRunOnce[name] then
-        error(string.format("PTOnlyRunOnce(): attempted to run %s twice!", name))
-    end
-    _PTOnlyRunOnce[name] = 1
-end
-
 local _PTThreads = {}
 local _PTThreadsSleepUntil = {}
 local _PTThreadsActorWait = {}
@@ -3711,6 +3934,18 @@ PTSetWatchdogLimit = function(count)
     _PTWatchdogLimit = count
 end
 
+local _PTOnlyRunOnce = {}
+--- Assert that this function can't be run more than once.
+-- Usually used as a guard instruction at the top of a Lua script.
+-- Multiple invocations will raise an error.
+-- @tparam string name Name of the script.
+PTOnlyRunOnce = function(name)
+    if _PTOnlyRunOnce[name] then
+        error(string.format("PTOnlyRunOnce(): attempted to run %s twice!", name))
+    end
+    _PTOnlyRunOnce[name] = 1
+end
+
 --- Hook callback for when a thread runs too many instructions
 -- without sleeping. Throws an error.
 -- @tparam string event Event provided by the debug layer. Should always be "count".
@@ -3839,9 +4074,6 @@ PTRoomGetNextBox = function(room, from_id, to_id)
     return room.boxes[target]
 end
 
-local _PTOnRoomEnterHandlers = {}
-local _PTOnRoomExitHandlers = {}
-
 --- Convert coordinates in screen space to room space.
 -- Uses the current room.
 -- @tparam integer x X coordinate in screen space.
@@ -3878,71 +4110,6 @@ PTRoomToScreen = function(x, y, parallax_x, parallax_y)
     local room_x, room_y = room.x + (room.sx or 0), room.y + (room.sy or 0)
     local dx, dy = math.floor((x - room_x) * parallax_x), math.floor((y - room_y) * parallax_y)
     return dx + room.origin_x, dy + room.origin_y
-end
-
---- Set a callback for setting up a particular room.
--- This code will be called whenever @{PTSwitchRoom} is
--- triggered, and also during restoration of a save game.
--- It is recommended to use this callback function to e.g.
--- arrange the room contents based on variables from the @{PTVars}.
--- @tparam string name Name of the room.
--- @tparam function func Function body to call, with an optional argument
--- for context data.
-PTOnRoomLoad = function(name, func)
-    if type(name) ~= "string" then
-        error("PTOnRoomLoad: expected string for first argument")
-    end
-    if _PTOnRoomLoadHandlers[name] then
-        PTLog("PTOnRoomLoad: overwriting handler for %s", name)
-    end
-    _PTOnRoomLoadHandlers[name] = func
-end
-
---- Set a callback for unloading a particular room.
--- This code will be called whenever @{PTSwitchRoom} is
--- triggered.
--- @tparam string name Name of the room.
--- @tparam function func Function body to call, with an optional argument
--- for context data.
-PTOnRoomUnload = function(name, func)
-    if type(name) ~= "string" then
-        error("PTOnRoomUnload: expected string for first argument")
-    end
-    if _PTOnRoomUnloadHandlers[name] then
-        PTLog("PTOnRoomUnload: overwriting handler for %s", name)
-    end
-    _PTOnRoomUnloadHandlers[name] = func
-end
-
---- Set a callback for switching to a particular room.
--- This code will only be called during gameplay, i.e. when
--- @{PTSwitchRoom} is triggered. For code that sets up the
--- state of the room, use @{PTOnRoomLoad}.
--- @tparam string name Name of the room.
--- @tparam function func Function body to call, with an optional argument
--- for context data.
-PTOnRoomEnter = function(name, func)
-    if type(name) ~= "string" then
-        error("PTOnRoomEnter: expected string for first argument")
-    end
-    if _PTOnRoomEnterHandlers[name] then
-        PTLog("PTOnRoomEnter: overwriting handler for %s", name)
-    end
-    _PTOnRoomEnterHandlers[name] = func
-end
-
---- Set a callback for switching away from a room.
--- @tparam string name Name of the room.
--- @tparam function func Function body to call, with an optional argument
--- for context data.
-PTOnRoomExit = function(name, func)
-    if type(name) ~= "string" then
-        error("PTOnRoomExit: expected string for first argument")
-    end
-    if _PTOnRoomExitHandlers[name] then
-        PTLog("PTOnRoomExit: overwriting handler for %s", name)
-    end
-    _PTOnRoomExitHandlers[name] = func
 end
 
 --- Return the current room.
@@ -4222,6 +4389,24 @@ PTGetGamePaused = function()
     return _PTGamePaused
 end
 
+--- Error handler. Called from C.
+-- @local
+_PTWhoops = function(err, thread)
+    local preamble = string.format(
+        "Unhandled script error!\nPlease send this info to the game author so they can fix the problem.\n\nPerentie version: %s, Game: %s (%s) ver. %s\nError: %s",
+        _PTVersion(),
+        tostring(_PTGameID),
+        tostring(_PTGameName),
+        tostring(_PTGameVersion),
+        tostring(err)
+    )
+    if thread then
+        return debug.traceback(thread, preamble)
+    else
+        return debug.traceback(preamble)
+    end
+end
+
 --- Run and handle execution for all of the threads.
 -- @local
 -- @treturn integer Number of threads still alive.
@@ -4273,8 +4458,7 @@ _PTRunThreads = function()
 
                 -- Handle the response from the execution run.
                 if not success then
-                    PTLog("PTRunThreads(): Thread %s errored:\n  %s", name, result)
-                    PTLog(debug.traceback(_PTThreads[name]))
+                    PTLogError(_PTWhoops(result, _PTThreads[name]))
                 end
                 local status = coroutine.status(thread)
                 if status == "dead" then
@@ -4303,12 +4487,8 @@ PTSetMouseSprite = function(sprite)
     _PTMouseSprite = sprite
 end
 
-local _PTAutoClearScreen = true
---- Set whether to clear the screen at the start of every frame
--- @tparam bool val true if the screen is to be cleared, false otherwise.
-PTSetAutoClearScreen = function(val)
-    _PTAutoClearScreen = val
-end
+--- Debug
+-- @section debug
 
 local _PTWalkBoxDebug = false
 --- Set whether to draw the walkbox of the current room
@@ -4332,148 +4512,6 @@ PTSetDebugConsole = function(enable, device)
         device = ""
     end
     _PTSetDebugConsole(enable, device)
-end
-
-local _PTRenderFrameConsumer = nil
---- Set a callback for before rendering the current frame to the screen. Useful for animating object positions.
--- @tparam function callback Function body to call.
-PTOnRenderFrame = function(callback)
-    _PTRenderFrameConsumer = callback
-end
-
-local _PTTalkSkipWhileGrabbed = nil
---- Set a callback for when the user indicates they wish to skip a single spoken line (i.e. clicking or hitting"." while the input is grabbed).
--- This is separate to the verb thread, which will always be fast-forwarded.
--- @tparam function callback Function body to call.
-PTOnTalkSkipWhileGrabbed = function(callback)
-    _PTTalkSkipWhileGrabbed = callback
-end
-
-local _PTFastForwardWhileGrabbed = nil
---- Set a callback for when the user indicates they wish to fast-forward a sequence (i.e. hitting Escape while the input is grabbed).
--- This is separate to the verb thread, which will always be fast-forwarded.
--- @tparam function callback Function body to call.
-PTOnFastForwardWhileGrabbed = function(callback)
-    _PTFastForwardWhileGrabbed = callback
-end
-
-local _PTMouseOver = nil
---- Get the current object which the mouse is hovering over
--- @treturn table The object (@{PTActor}/@{PTBackground}/@{PTSprite}), or nil.
-PTGetMouseOver = function()
-    return _PTMouseOver
-end
-
---- Set a callback for when the mouse moves over a new @{PTActor}/@{PTBackground}/@{PTSprite}.
--- @tparam function callback Function body to call, with the moused-over object as an argument.
-local _PTMouseOverConsumer = nil
-PTOnMouseOver = function(callback)
-    _PTMouseOverConsumer = callback
-end
-
-local _PTUpdateMouseOver = function()
-    local mouse_x, mouse_y = PTGetMousePos()
-    local room_x, room_y = PTScreenToRoom(mouse_x, mouse_y)
-    local room = PTCurrentRoom()
-    if not room or room._type ~= "PTRoom" then
-        return
-    end
-    -- Need to iterate through objects in reverse draw order
-    for obj, x, y in PTIterObjects(_PTGlobalRenderList, true, false) do
-        if obj.collision then
-            local frame, flags = PTGetImageFromObject(obj)
-            if
-                frame
-                and PTTestImageCollision(
-                    frame,
-                    math.floor(mouse_x - x),
-                    math.floor(mouse_y - y),
-                    flags,
-                    frame.collision_mask
-                )
-            then
-                if _PTMouseOver ~= obj then
-                    _PTMouseOver = obj
-                    if _PTMouseOverConsumer then
-                        _PTMouseOverConsumer(_PTMouseOver)
-                    end
-                end
-                return
-            end
-        end
-    end
-    for obj, x, y in PTIterObjects(room.render_list, true, false) do
-        if obj.collision then
-            frame, flags = PTGetImageFromObject(obj)
-            if
-                frame
-                and PTTestImageCollision(
-                    frame,
-                    math.floor(room_x - x),
-                    math.floor(room_y - y),
-                    flags,
-                    frame.collision_mask
-                )
-            then
-                if _PTMouseOver ~= obj then
-                    _PTMouseOver = obj
-                    if _PTMouseOverConsumer then
-                        _PTMouseOverConsumer(_PTMouseOver)
-                    end
-                end
-                return
-            end
-        end
-    end
-
-    if _PTMouseOver ~= nil then
-        _PTMouseOver = nil
-        if _PTMouseOverConsumer then
-            _PTMouseOverConsumer(_PTMouseOver)
-        end
-    end
-end
-
-local _PTUpdateMoveObject = function()
-    local t = PTGetMillis()
-    local done = {}
-    for i, moveref in ipairs(_PTMoveRefList) do
-        if (not _PTGamePaused) or moveref.while_paused then
-            local at = (t - moveref.start_time) / moveref.duration
-            local a = moveref.timing(at)
-
-            moveref.object.x = moveref.x_a + (moveref.x_b - moveref.x_a) * a
-            moveref.object.y = moveref.y_a + (moveref.y_b - moveref.y_a) * a
-            --print(string.format("%f,%f", at, a))
-            if at >= 1.0 then
-                table.insert(done, 1, i)
-            end
-        end
-    end
-    for _, i in ipairs(done) do
-        table.remove(_PTMoveRefList, i)
-    end
-end
-
-local _PTUpdateShakeObject = function()
-    local t = PTGetMillis()
-    local done = {}
-    for i, shakeref in ipairs(_PTShakeRefList) do
-        if (not _PTGamePaused) or shakeref.while_paused then
-            local at = (t - shakeref.start_time) / shakeref.duration
-
-            shakeref.object.sx, shakeref.object.sy = shakeref.shake_func(t - shakeref.start_time)
-            --PTLog("(%f, %f) %f", shakeref.object.sx, shakeref.object.sy, at)
-            if at >= 1.0 then
-                table.insert(done, 1, i)
-                shakeref.object.sx = nil
-                shakeref.object.sy = nil
-            end
-        end
-    end
-    for _, i in ipairs(done) do
-        table.remove(_PTShakeRefList, i)
-    end
 end
 
 --- Process the main event loop. Called from C.
@@ -4606,19 +4644,4 @@ _PTRender = function()
             end
         end
     end
-end
-
---- Error handler. Called from C.
--- @local
-_PTWhoops = function(err)
-    return debug.traceback(
-        string.format(
-            "Unhandled script error!\nPlease send this info to the game author so they can fix the problem.\n\nPerentie version: %s, Game: %s (%s) ver. %s\nError: %s",
-            _PTVersion(),
-            tostring(_PTGameID),
-            tostring(_PTGameName),
-            tostring(_PTGameVersion),
-            tostring(err)
-        )
-    )
 end

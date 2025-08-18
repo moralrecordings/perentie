@@ -387,6 +387,16 @@ bool vga_is_vblank()
     return inportb(VGA_INPUT_STATUS_1) & 8;
 }
 
+void vga_update_overscan()
+{
+    union REGS regs;
+    regs.h.ah = 0x10;
+    regs.h.al = 0x01;
+    regs.h.bh = vga_overscan;
+    // INT 10 - Video - Set Overscan Color
+    int86(0x10, &regs, &regs);
+}
+
 void vga_blit()
 {
     // copy the framebuffer to VGA memory
@@ -421,16 +431,6 @@ void vga_blit()
     buf += SCREEN_PLANE;
     memcpy(vga, buf, SCREEN_PLANE);
     __djgpp_nearptr_disable();
-}
-
-void vga_update_overscan()
-{
-    union REGS regs;
-    regs.h.ah = 0x10;
-    regs.h.al = 0x01;
-    regs.h.bh = vga_overscan;
-    // INT 10 - Video - Set Overscan Color
-    int86(0x10, &regs, &regs);
 }
 
 static int frame_count = 0;

@@ -13,6 +13,8 @@
 #undef stdin
 #undef stdout
 #undef stderr
+#undef popen
+#undef pclose
 #define stdin NULL
 #define stdout NULL
 #define stderr NULL
@@ -61,6 +63,8 @@ extern int fs_pclose(FILE* stream);
 #define rewind(S) fs_rewind(S)
 #define setvbuf(F, B, M, S) fs_setvbuf(F, B, M, S)
 #define popen(C, M) fs_popen(C, M)
-#define pclose(C, M) fs_pclose(C, M)
+#define pclose(F) fs_pclose(F)
+#define _popen(C, M) fs_popen(C, M)
+#define _pclose(F) fs_pclose(F)
 
 #endif

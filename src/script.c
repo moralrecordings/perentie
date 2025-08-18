@@ -588,6 +588,13 @@ static int lua_pt_log(lua_State* L)
     return 0;
 }
 
+static int lua_pt_log_error(lua_State* L)
+{
+    const char* line = luaL_checkstring(L, 1);
+    log_error("%s\n", line);
+    return 0;
+}
+
 static int lua_pt_pump_event(lua_State* L)
 {
     pt_event* ev = event_pop();
@@ -951,6 +958,7 @@ static const struct luaL_Reg lua_funcs[] = {
     { "_PTImageTestCollision", lua_pt_image_test_collision },
     { "_PT9SliceTestCollision", lua_pt_9slice_test_collision },
     { "_PTLog", lua_pt_log },
+    { "_PTLogError", lua_pt_log_error },
     { "_PTPumpEvent", lua_pt_pump_event },
     { "_PTGetMousePos", lua_pt_get_mouse_pos },
     { "_PTGetPalette", lua_pt_get_palette },
@@ -1000,7 +1008,7 @@ void script_events()
     lua_getglobal(main_thread, "_PTEvents");
     if (lua_pcall(main_thread, 0, 0, 1)) {
         const char* error = lua_tostring(main_thread, -1);
-        log_print("script_events(): error: %s\n", error);
+        log_error("script_events(): error: %s\n", error);
         lua_pop(main_thread, 1);
     }
     lua_pop(main_thread, 1);
@@ -1017,7 +1025,7 @@ void script_render()
     lua_getglobal(main_thread, "_PTRender");
     if (lua_pcall(main_thread, 0, 0, 1)) {
         const char* error = lua_tostring(main_thread, -1);
-        log_print("script_render(): error: %s\n", error);
+        log_error("script_render(): error: %s\n", error);
         lua_pop(main_thread, 1);
     }
     lua_pop(main_thread, 1);
@@ -1045,7 +1053,7 @@ void script_init()
         log_print("script_init(): inspect: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);
         crash_message = lua_strcpy(main_thread, -1, NULL);
-        log_print("%s\n", crash_message);
+        log_error("script_init(): error loading inspect: %s\n", crash_message);
         lua_pop(main_thread, 1);
         exit(1);
     }
@@ -1057,7 +1065,7 @@ void script_init()
         log_print("script_init(): cbor: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);
         crash_message = lua_strcpy(main_thread, -1, NULL);
-        log_print("%s\n", crash_message);
+        log_error("script_init(): error loading cbor: %s\n", crash_message);
         lua_pop(main_thread, 1);
         exit(1);
     }
@@ -1068,7 +1076,7 @@ void script_init()
     if (result != LUA_OK) {
         log_print("script_init(): boot: %s\n", lua_tostring(main_thread, -1));
         luaL_traceback(main_thread, main_thread, NULL, 1);
-        log_print("%s", lua_tostring(main_thread, 1));
+        log_error("script_init(): error loading boot: %s\n", lua_tostring(main_thread, 1));
         lua_pop(main_thread, 1);
         exit(1);
     }
@@ -1078,7 +1086,7 @@ void script_init()
     int init_result = luaL_loadfile(main_thread, "main.lua") || lua_pcall(main_thread, 0, LUA_MULTRET, 1);
     if (init_result != LUA_OK) {
         crash_message = lua_strcpy(main_thread, -1, NULL);
-        log_print("%s\n", crash_message);
+        log_error("script_init(): error loading main: %s\n", crash_message);
         lua_pop(main_thread, 2);
         exit(1);
     }
@@ -1111,7 +1119,7 @@ void script_reset()
         reset_state_path = NULL;
         if (lua_pcall(main_thread, 1, LUA_MULTRET, 1) != LUA_OK) {
             crash_message = lua_strcpy(main_thread, -1, NULL);
-            log_print("script_reset(): error: %s\n", crash_message);
+            log_error("script_reset(): error: %s\n", crash_message);
             lua_pop(main_thread, 2);
             exit(1);
         }

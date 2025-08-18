@@ -49,3 +49,22 @@ int log_print(const char* format, ...)
     va_end(args);
     return result;
 }
+
+int log_error(const char* format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    int result = 0;
+#ifdef SYSTEM_DOS
+    if (log_output) {
+        result = vfprintf(log_output, format, args);
+        fflush(log_output);
+    } else {
+        result = vprintf(format, args);
+    }
+#else
+    result = vfprintf(stderr, format, args);
+#endif
+    va_end(args);
+    return result;
+}
