@@ -15,7 +15,7 @@ if host_machine.system() == 'msdos'
     'src/dos_vga.c',
   ]
   platform_args = [
-    '-DSYSTEM_DOS',
+    '-DSYSTEM_DOS', '-DSPNG_STATIC',
   ]
   platform_link_args = []
   platform_deps = []
@@ -27,7 +27,7 @@ elif host_machine.system() == 'emscripten'
     'src/sdl.h'
   ]
   platform_args = [
-    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3', '--use-port=sdl3',
+    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3', '--use-port=sdl3', '-DSPNG_STATIC',
   ]
   platform_link_args = ['--use-port=sdl3', '-sFORCE_FILESYSTEM', '-lidbfs.js', '--pre-js', em_pre_js.full_path()]
   # we don't need threads... yet
@@ -54,7 +54,7 @@ else
     'src/sdl.h',
   ]
   platform_args = [
-    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3',
+    '-DSYSTEM_SDL', '-DOPLTYPE_IS_OPL3', '-DSPNG_STATIC',
   ]
   platform_link_args = []
   platform_deps = [sdl_dep]
@@ -233,7 +233,8 @@ physfs = static_library(
     'src/physfs/physfs_unicode.c',
     'src/physfs/physfs_platform_djgpp.c',
     'src/physfs/physfs_platform_posix.c',
-    'src/physfs/physfs_platform_unix.c'
+    'src/physfs/physfs_platform_unix.c',
+    'src/physfs/physfs_platform_windows.c'
   ],
   c_args : ['-DPHYSFS_SUPPORTS_DEFAULT=0', '-DPHYSFS_SUPPORTS_ZIP'] + physfs_args + platform_args,
   include_directories : ['src/miniz'],
