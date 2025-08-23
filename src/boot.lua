@@ -34,13 +34,13 @@ local _PTGameName = nil
 -- @tparam string version Version number of the code. Used to state which version of the game created a save state.
 -- @tparam string name Human readable name
 PTSetGameInfo = function(id, version, name)
-    if not type(id) == "string" then
+    if type(id) ~= "string" then
         error("PTSetGameInfo: expected string for first argument")
     end
-    if not type(version) == "string" then
+    if type(version) ~= "string" then
         error("PTSetGameInfo: expected string for second argument")
     end
-    if not type(name) == "string" then
+    if type(name) ~= "string" then
         error("PTSetGameInfo: expected string for third argument")
     end
     _PTGameID = id
@@ -365,7 +365,7 @@ PTImportState = function(state)
     for i, obj in pairs(state.vars) do
         _PTVars[i] = obj
     end
-    for i, obj in ipairs(state.actors) do
+    for _, obj in ipairs(state.actors) do
         if not _PTActorList[obj.name] then
             PTLog("PTImportState: No actor found with name %s, skipping", obj.name)
         else
@@ -386,7 +386,7 @@ PTImportState = function(state)
             end
         end
     end
-    for i, obj in ipairs(state.rooms) do
+    for _, obj in ipairs(state.rooms) do
         if not _PTRoomList[obj.name] then
             PTLog("PTImportState: No room found with name %s, skipping", obj.name)
         else
@@ -422,7 +422,7 @@ end
 PTGetSaveStateSummary = function(index)
     local result = nil
     local path = PTSaveFileName(index)
-    local f, err = io.open(path, "rb")
+    local f, _ = io.open(path, "rb")
     if f then
         local magic = f:read(8)
         if magic ~= "PERENTIE" then
@@ -604,7 +604,7 @@ end
 
 local _PTAddToList = function(list, object)
     local exists = false
-    for i, obj in ipairs(list) do
+    for _, obj in ipairs(list) do
         if object == obj then
             exists = true
             break
@@ -1180,7 +1180,7 @@ local _PTAdjustPointToBeInBox = function(point, boxes)
     local best_point = PTPoint(0, 0)
     local best_dist = 0xfffffff
     local best_box = nil
-    for i, box in ipairs(boxes) do
+    for _, box in ipairs(boxes) do
         if _PTCheckPointInBoxBounds(point, box) then
             best_point = point
             best_dist = 0
@@ -1207,8 +1207,8 @@ local _PTFindPathTowards = function(start_x, start_y, dest_x, dest_y, b1, b2, b3
     local box1 = PTWalkBox(b1.ul, b1.ur, b1.lr, b1.ll)
     local box2 = PTWalkBox(b2.ul, b2.ur, b2.lr, b2.ll)
     local found_path = PTPoint(0, 0)
-    for i = 1, 4 do
-        for j = 1, 4 do
+    for _ = 1, 4 do
+        for _ = 1, 4 do
             --print(string.format("%s %s", inspect(box1, {newline='', indent=''}), inspect(box2, {newline='', indent=''})))
             -- if the top line has the same x coordinate
             if box1.ul.x == box1.ur.x and box1.ul.x == box2.ul.x and box1.ul.x == box2.ur.x then
@@ -1613,7 +1613,8 @@ end
 -- @tparam string message Message to show on the screen.
 -- @tparam[opt=nil] PTFont font Font to use. Defaults to actor.talk_font
 -- @tparam[opt=nil] table colour Inner colour; list of 3 8-bit numbers. Defaults to actor.talk_colour.
-PTActorTalk = function(actor, message, font, colour)
+-- @tparam[opt=nil] integer duration Duration of the message, in milliseconds. By default this varies based on the length of the message; see @{PTGetTalkBaseDelay} and @{PTGetTalkCharDelay}.
+PTActorTalk = function(actor, message, font, colour, duration)
     if not actor or actor._type ~= "PTActor" then
         error("PTActorTalk: expected PTActor for first argument")
     end
@@ -1647,7 +1648,9 @@ PTActorTalk = function(actor, message, font, colour)
     actor.talk_img.y = y
     actor.talk_img.image = text
 
-    if _PTTalkBaseDelay < 0 or _PTTalkCharDelay < 0 then
+    if duration then
+        actor.talk_next_wait = _PTGetMillis() + duration
+    elseif _PTTalkBaseDelay < 0 or _PTTalkCharDelay < 0 then
         actor.talk_next_wait = -1
     else
         actor.talk_next_wait = _PTGetMillis() + _PTTalkBaseDelay + #message * _PTTalkCharDelay
@@ -1677,7 +1680,7 @@ end
 
 --- Sleep the current thread.
 -- This is mechanically the same as @{PTSleep}, however it uses the same
--- timer as PTActorTalk, meaning it can be skipped by clicking the mouse.
+-- timer as @{PTActorTalk}, meaning it can be skipped by clicking the mouse.
 -- This is useful for e.g. dramatic pauses in dialogue.
 -- @tparam PTActor actor The actor.
 -- @tparam integer millis Time to wait in milliseconds.
@@ -1756,9 +1759,9 @@ PTActorWalk = function(actor)
             -- turn anim here
         end
 
-        if actor.moving == MF_TURN then
-            -- update_actor_direction
-        end
+        --if actor.moving == MF_TURN then
+        -- update_actor_direction
+        --end
 
         PTActorSetWalkBox(actor, actor.walkdata_curbox)
         actor.moving = MF_IN_LEG
@@ -2968,7 +2971,7 @@ PTMoveObjectRelative = function(object, dx, dy, duration, timing, while_paused)
 end
 
 local _PTObjectIsMoving = function(object, fast_forward)
-    for i, obj in ipairs(_PTMoveRefList) do
+    for _, obj in ipairs(_PTMoveRefList) do
         if object == obj.object then
             if fast_forward then
                 -- fast forward the movement
@@ -3601,7 +3604,7 @@ PTPCSpeakerDataFreq = function(data, playback_rate)
         playback_rate = 140
     end
     local new_data = {}
-    for i, v in ipairs(data) do
+    for _, v in ipairs(data) do
         table.insert(new_data, PTFreqToIFS(v))
     end --- Create a new PC speaker data buffer.
     -- This can be played back using @{PTPCSpeakerPlayData}.
@@ -3731,6 +3734,7 @@ end
 local _PTThreads = {}
 local _PTThreadsSleepUntil = {}
 local _PTThreadsActorWait = {}
+local _PTThreadsRoomWait = {}
 local _PTThreadsMoveObjectWait = {}
 local _PTThreadsAnimationWait = {}
 local _PTThreadsFastForward = {}
@@ -3784,6 +3788,7 @@ PTStopThread = function(name, ignore_self, ignore_missing)
     _PTThreads[name] = nil
     _PTThreadsSleepUntil[name] = nil
     _PTThreadsActorWait[name] = nil
+    _PTThreadsRoomWait[name] = nil
     _PTThreadsMoveObjectWait[name] = nil
     _PTThreadsAnimationWait[name] = nil
     _PTThreadsFastForward[name] = nil
@@ -3819,6 +3824,9 @@ PTTalkSkipThread = function(name, ignore_missing)
     if _PTThreadsActorWait[name] then
         _PTThreadsActorWait[name].talk_next_wait = _PTGetMillis()
     end
+    if _PTThreadsRoomWait[name] then
+        _PTThreadsRoomWait[name].talk_next_wait = _PTGetMillis()
+    end
 end
 
 --- Check whether a thread is in the fast forward state.
@@ -3842,7 +3850,7 @@ PTThreadExists = function(name)
         return _PTThreads[name] ~= nil
     end
     local thread, _ = coroutine.running()
-    for k, v in pairs(_PTThreads) do
+    for _, v in pairs(_PTThreads) do
         if v == thread then
             return true
         end
@@ -4153,6 +4161,25 @@ PTRemoveRoom = function(room)
     _PTRoomList[room.name] = nil
 end
 
+local _PTRoomTalkUpdate = function(room, fast_forward)
+    local result = true
+    if room.talk_next_wait then
+        if room.talk_next_wait < 0 then
+            -- negative talk wait time means wait until click
+            result = false
+        elseif not fast_forward and _PTGetMillis() < room.talk_next_wait then
+            result = false
+        else
+            if room.talk_img then
+                PTRoomRemoveObject(room, room.talk_img)
+                room.talk_img = nil
+            end
+            room.talk_next_wait = nil
+        end
+    end
+    return result
+end
+
 local _PTUpdateRoom = function(force)
     if force == nil then
         force = false
@@ -4171,6 +4198,9 @@ local _PTUpdateRoom = function(force)
         _PTActorUpdate(actor, false)
         --print(string.format("pos: (%d, %d), walkdata_cur: (%d, %d), walkdata_next: (%d, %d), walkdata_delta_factor: (%d, %d)", actor.x, actor.y, actor.walkdata_cur.x, actor.walkdata_cur.y, actor.walkdata_next.x, actor.walkdata_next.y, actor.walkdata_delta_factor.x, actor.walkdata_delta_factor.y))
     end
+    -- Update room text
+    _PTRoomTalkUpdate(room, false)
+
     -- constrain camera to room bounds
     local sw, sh = _PTGetScreenDims()
     local x_min = room.origin_x
@@ -4213,6 +4243,125 @@ PTSwitchRoom = function(name, ctx)
         _PTOnRoomEnterHandlers[room.name](ctx)
     end
     _PTUpdateRoom(true)
+end
+
+--- Sleep the current thread until a room finishes the action in progress.
+-- @tparam PTRoom room The @{PTRoom} to wait for.
+PTWaitForRoom = function(room)
+    if type(room) ~= "table" or room._type ~= "PTRoom" then
+        error(string.format("PTWaitForRoom(): argument must be a PTRoom"))
+    end
+    local thread, _ = coroutine.running()
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            _PTThreadsRoomWait[k] = room
+            coroutine.yield()
+            return
+        end
+    end
+    error(string.format("PTWaitForRoom(): thread not found"))
+end
+
+local _PTRoomWaitAfterTalk = true
+--- Set whether to automatically wait after a PTRoom starts talking.
+-- If enabled, this means threads can make successive calls to
+-- @{PTRoomTalk} and the engine will treat them as a conversation;
+-- you don't need to explicitly call @{PTWaitForRoom} after each one.
+-- If you want to do manual conversation timing, disable this feature.
+-- Defaults to true.
+-- @tparam boolean enable Whether to wait after talking.
+PTSetRoomWaitAfterTalk = function(enable)
+    _PTRoomWaitAfterTalk = enable
+end
+
+--- Make the current room talk.
+-- This is useful for displaying disembodied voices that aren't attached to an actor.
+-- By default, this will wait the thread until the room finishes talking. You can disable this by calling @{PTSetRoomWaitAfterTalk}.
+-- @tparam integer x X position of message, in room coordinates.
+-- @tparam integer y Y position of message, in room coordinates.
+-- @tparam string message Message to show on the screen.
+-- @tparam[opt=nil] PTFont font Font to use. Defaults to actor.talk_font
+-- @tparam[opt=nil] table colour Inner colour; list of 3 8-bit numbers. Defaults to actor.talk_colour.
+-- @tparam[opt=nil] integer duration Duration of the message, in milliseconds. By default this varies based on the length of the message; see @{PTGetTalkBaseDelay} and @{PTGetTalkCharDelay}.
+PTRoomTalk = function(x, y, message, font, colour, duration)
+    local room = PTCurrentRoom()
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomTalk: no current room set")
+    end
+    if not font then
+        font = room.talk_font
+    end
+    if not font or font._type ~= "PTFont" then
+        PTLog("PTRoomTalk: no font argument, or actor has invalid talk_font")
+        return
+    end
+
+    if not colour then
+        colour = room.talk_colour
+    end
+    if PTThreadInFastForward() then
+        return
+    end
+    local text = PTText(message, font, 200, "center", colour)
+    PTSetImageOriginSimple(text, "bottom")
+    local width, height = PTGetImageDims(text)
+    local sx, sy = PTRoomToScreen(x, y)
+    local sw, sh = _PTGetScreenDims()
+
+    sx = math.min(math.max(sx, width / 2), sw - width / 2)
+    sy = math.min(math.max(sy, height), sh)
+    x, y = PTScreenToRoom(sx, sy)
+
+    if not room.talk_img then
+        room.talk_img = PTBackground(nil, 0, 0, 20)
+        PTRoomAddObject(room, room.talk_img)
+    end
+    room.talk_img.x = x
+    room.talk_img.y = y
+    room.talk_img.image = text
+    if duration then
+        room.talk_next_wait = _PTGetMillis() + duration
+    elseif _PTTalkBaseDelay < 0 or _PTTalkCharDelay < 0 then
+        room.talk_next_wait = -1
+    else
+        room.talk_next_wait = _PTGetMillis() + _PTTalkBaseDelay + #message * _PTTalkCharDelay
+    end
+    if _PTRoomWaitAfterTalk then
+        PTWaitForRoom(room)
+    end
+end
+
+--- Make the current room stop talking.
+-- This will remove any speech bubble.
+PTRoomSilence = function()
+    local room = PTCurrentRoom()
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomSilence: no current room set")
+    end
+    if room.talk_img then
+        PTRoomRemoveObject(room, room.talk_img)
+        room.talk_img = nil
+    end
+    room.talk_next_wait = nil
+end
+
+--- Sleep the current thread.
+-- This is mechanically the same as @{PTSleep}, however it uses the same
+-- timer as @{PTRoomTalk}, meaning it can be skipped by clicking the mouse.
+-- This is useful for e.g. dramatic pauses in dialogue.
+-- @tparam integer millis Time to wait in milliseconds.
+PTRoomSleep = function(millis)
+    local room = PTCurrentRoom()
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomSleep: no current room set")
+    end
+    if PTThreadInFastForward() then
+        return
+    end
+    room.talk_next_wait = _PTGetMillis() + millis
+    if _PTRoomWaitAfterTalk then
+        PTWaitForRoom(room)
+    end
 end
 
 --- Verbs
@@ -4425,6 +4574,11 @@ _PTRunThreads = function()
                 if is_awake then
                     _PTThreadsActorWait[name] = nil
                 end
+            elseif _PTThreadsRoomWait[name] then
+                is_awake = _PTRoomTalkUpdate(_PTThreadsRoomWait[name], _PTThreadsFastForward[name])
+                if is_awake then
+                    _PTThreadsRoomWait[name] = nil
+                end
             elseif _PTThreadsMoveObjectWait[name] then
                 is_awake = not _PTObjectIsMoving(_PTThreadsMoveObjectWait[name], _PTThreadsFastForward[name])
                 --print("MoveObjectWait", is_awake)
@@ -4519,7 +4673,6 @@ end
 _PTEvents = function()
     local ev = _PTPumpEvent()
     while ev do
-        local result = 0
         if _PTInputGrabbed then
             -- Grabbed input mode, intercept events
             if ev.type == "keyDown" and ev.key == "escape" then
@@ -4533,11 +4686,10 @@ _PTEvents = function()
                     _PTTalkSkipWhileGrabbed()
                 end
             end
-        elseif _PTGamePaused then
+        elseif not _PTGamePaused then
             -- Don't run event consumers while paused
-        else
             if _PTEventConsumers[ev.type] then
-                result = _PTEventConsumers[ev.type](ev)
+                _PTEventConsumers[ev.type](ev)
             end
         end
         _PTGUIEvent(ev)
