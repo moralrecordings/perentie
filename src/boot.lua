@@ -3794,11 +3794,32 @@ PTStopThread = function(name, ignore_self, ignore_missing)
     _PTThreadsFastForward[name] = nil
 end
 
---- Fast forward a thread.
+--- Fast forward the current thread.
+-- This will cause the engine to skip all sleep/wait instructions.
+-- @tparam[opt=true] bool enabled Whether to enable or disable fast forward.
+PTFastForward = function(enabled)
+    if enabled == nil then
+        enabled = true
+    end
+    local thread, _ = coroutine.running()
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            _PTThreadsFastForward[k] = enabled
+            return
+        end
+    end
+    error("PTFastForward(): thread not found")
+end
+
+--- Fast forward the named thread.
 -- This will cause the engine to skip all sleep/wait instructions.
 -- @tparam string name Name of the thread.
 -- @tparam boolean ignore_missing If true, ignore if this thread isn't running.
-PTFastForwardThread = function(name, ignore_missing)
+-- @tparam[opt=true] bool enabled Whether to enable or disable fast forward.
+PTFastForwardThread = function(name, ignore_missing, enabled)
+    if enabled == nil then
+        enabled = true
+    end
     if not _PTThreads[name] then
         if not ignore_missing then
             error(string.format("PTFastForwardThread(): thread named %s doesn't exist", name))
@@ -3806,10 +3827,28 @@ PTFastForwardThread = function(name, ignore_missing)
             return
         end
     end
-    _PTThreadsFastForward[name] = true
+    _PTThreadsFastForward[name] = enabled
 end
 
---- Perform a talk skip on the htread.
+--- Perform a talk skip on the current thread.
+-- If the thread is still waiting for an actor, the engine will skip the wait.
+PTTalkSkip = function()
+    local thread, _ = coroutine.running()
+    for k, v in pairs(_PTThreads) do
+        if v == thread then
+            if _PTThreadsActorWait[k] then
+                _PTThreadsActorWait[k].talk_next_wait = _PTGetMillis()
+            end
+            if _PTThreadsRoomWait[k] then
+                _PTThreadsRoomWait[k].talk_next_wait = _PTGetMillis()
+            end
+            return
+        end
+    end
+    error("PTTalkSkip(): thread not found")
+end
+
+--- Perform a talk skip on the named thread.
 -- If the thread is still waiting for an actor, the engine will skip the wait.
 -- @tparam string name Name of the thread.
 -- @tparam boolean ignore_missing If true, ignore if this thread isn't running.
@@ -3981,6 +4020,7 @@ end
 -- @tfield table boxes List of @{PTWalkBox} objects which make up the room's walkable area.
 -- @tfield table box_links List of box ID pairs, each describing two directly connected walk boxes.
 -- @tfield table box_matrix N x N matrix describing the shortest route between walk boxes; e.g. when starting from box ID i and trying to reach box ID j, box_matrix[i][j] is the ID of the next box you need to travel through in order to take the shortest path, or 0 if there is no path.
+-- @tfield PTActor camera_actor Actor to follow with the room camera.
 
 --- Create a new room.
 -- @tparam string name Name of the room.
