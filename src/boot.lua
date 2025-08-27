@@ -2229,7 +2229,7 @@ end
 
 local _PTAutoClearScreen = true
 --- Set whether to clear the screen at the start of every frame
--- @tparam bool val true if the screen is to be cleared, false otherwise.
+-- @tparam boolean val true if the screen is to be cleared, false otherwise.
 PTSetAutoClearScreen = function(val)
     _PTAutoClearScreen = val
 end
@@ -3796,7 +3796,7 @@ end
 
 --- Fast forward the current thread.
 -- This will cause the engine to skip all sleep/wait instructions.
--- @tparam[opt=true] bool enabled Whether to enable or disable fast forward.
+-- @tparam[opt=true] boolean enabled Whether to enable or disable fast forward.
 PTFastForward = function(enabled)
     if enabled == nil then
         enabled = true
@@ -3815,7 +3815,7 @@ end
 -- This will cause the engine to skip all sleep/wait instructions.
 -- @tparam string name Name of the thread.
 -- @tparam boolean ignore_missing If true, ignore if this thread isn't running.
--- @tparam[opt=true] bool enabled Whether to enable or disable fast forward.
+-- @tparam[opt=true] boolean enabled Whether to enable or disable fast forward.
 PTFastForwardThread = function(name, ignore_missing, enabled)
     if enabled == nil then
         enabled = true
@@ -3870,7 +3870,7 @@ end
 
 --- Check whether a thread is in the fast forward state.
 -- @tparam[opt=nil] string name Name of the thread. Defaults to the current execution context.
--- @treturn bool Whether the thread is in the fast forward state.
+-- @treturn boolean Whether the thread is in the fast forward state.
 PTThreadInFastForward = function(name)
     local thread, _ = coroutine.running()
     for k, v in pairs(_PTThreads) do
@@ -3883,7 +3883,7 @@ end
 
 --- Check whether a thread is running.
 -- @tparam[opt=nil] string name Name of the thread. Defaults to the current execution context.
--- @treturn bool Whether the thread exists.
+-- @treturn boolean Whether the thread exists.
 PTThreadExists = function(name)
     if name then
         return _PTThreads[name] ~= nil
@@ -3967,7 +3967,7 @@ end
 local _PTWatchdogEnabled = true
 --- Toggle the use of the watchdog to abort threads that take too long.
 -- Enabled by default.
--- @tparam bool enable Whether to enable the watchdog.
+-- @tparam boolean enable Whether to enable the watchdog.
 PTSetWatchdog = function(enable)
     _PTWatchdogEnabled = enable
 end
@@ -4440,6 +4440,10 @@ PTDoVerb = function(verb, subject)
 end
 
 local _PTVerbReadyCallback = nil
+--- Set a callback for determining if the engine can trigger a verb action.
+-- This can be useful for e.g. delaying a verb from being triggered
+-- until an actor has finished walking to a location.
+-- @tparam function callback Function body to call.
 PTSetVerbReadyCheck = function(callback)
     _PTVerbReadyCallback = callback
 end
@@ -4499,7 +4503,8 @@ PTSetGrabInputOnVerb = function(enable)
 end
 
 --- Return whether the current queued verb action is ready.
--- @treturn bool Whether the
+-- If there is a callback set by @{PTSetVerbReadyCheck}, this will return the response from that.
+-- @treturn boolean Whether the queued verb action is ready.
 PTVerbReady = function()
     if
         _PTCurrentVerb ~= nil
