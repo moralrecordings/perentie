@@ -387,6 +387,6 @@ if prog_ldoc.found()
     'doc',
     input : 'src/boot.lua',
     output : 'doc',
-    command : [prog_ldoc, '-p', 'Perentie', '-d', '@OUTPUT@', '@INPUT@'],
+    command : [prog_ldoc, '-p', 'Perentie', '--title', 'Perentie scripting API', '-s', '@SOURCE_ROOT@/src/doc', '-l', '@SOURCE_ROOT@/src/doc', '-d', '@OUTPUT@', '@INPUT@'],
   )
 endif

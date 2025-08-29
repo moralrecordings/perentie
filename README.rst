@@ -1,7 +1,5 @@
-Perentie
-========
-
-.. image:: example/assets/logo.png
+.. image:: logo.png
+   :alt: Perentie
 
 Perentie is a Lua-based graphical adventure game engine. The design is heavily inspired by LucasArts' SCUMM and GrimE adventure game engines.
 
@@ -69,7 +67,7 @@ For better debugging, you will probably want to turn off optimisation and turn o
 
    meson setup -Doptimization=0 -Db_sanitize=address build_sdl
 
-It is possible to build Perentie for Windows using `MSYS2 <https://www.msys2.org>`. I haven't tried building it -in- Windows, but I was able to cross-compile from Linux using `quasi-msys2 <https://github.com/HolyBlackCat/quasi-msys2>`_ after installing the sdl3 package.
+It is possible to build Perentie for Windows using `MSYS2 <https://www.msys2.org>`_. I haven't tried building it -in- Windows, but I was able to cross-compile from Linux using `quasi-msys2 <https://github.com/HolyBlackCat/quasi-msys2>`_ after installing the sdl3 package.
 
 .. code-block:: bash
 

@@ -126,7 +126,7 @@ end
 --- Reset Perentie and load the engine state from a file.
 -- Similar to PTReset, this will clear the scripting engine
 -- and restart.
--- @tparam[opt=nil] string index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}.
+-- @tparam[opt=nil] integer index Save game index to use. This will be stored in the user's app data path, as provided by @{PTGetAppDataPath}.
 PTLoadState = function(index)
     local path = PTSaveFileName(index)
     if not PTGetSaveStateSummary(index) then
@@ -669,16 +669,16 @@ PTOnRenderFrame = function(callback)
 end
 
 local _PTTalkSkipWhileGrabbed = nil
---- Set a callback for when the user indicates they wish to skip a single spoken line (i.e. clicking or hitting"." while the input is grabbed).
--- This is separate to the verb thread, which will always be fast-forwarded.
+--- Set a callback for when the user indicates they wish to skip a single spoken line.
+-- This callback will be called if the user clicks the mouse or presses [.] while the input is grabbed.
 -- @tparam function callback Function body to call.
 PTOnTalkSkipWhileGrabbed = function(callback)
     _PTTalkSkipWhileGrabbed = callback
 end
 
 local _PTFastForwardWhileGrabbed = nil
---- Set a callback for when the user indicates they wish to fast-forward a sequence (i.e. hitting Escape while the input is grabbed).
--- This is separate to the verb thread, which will always be fast-forwarded.
+--- Set a callback for when the user indicates they wish to fast-forward a thread.
+-- This callback will be called if the user presses [Escape] while the input is grabbed.
 -- @tparam function callback Function body to call.
 PTOnFastForwardWhileGrabbed = function(callback)
     _PTFastForwardWhileGrabbed = callback
