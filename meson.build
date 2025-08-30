@@ -67,6 +67,7 @@ libm = cc.find_library('m', required : true)
 prog_lua = find_program('lua', '/usr/bin/lua', required : true)
 prog_luac = find_program('luac', '/usr/bin/luac', required : true)
 prog_ldoc = find_program('ldoc', required : false)
+prog_mdbook = find_program('mdbook', required : false)
 
 liblua = static_library(
   'lua',
@@ -403,5 +404,13 @@ if prog_ldoc.found()
     input : 'src/boot.lua',
     output : 'doc',
     command : [prog_ldoc, '-p', 'Perentie', '--title', 'Perentie scripting API', '-s', '@SOURCE_ROOT@/src/doc', '-l', '@SOURCE_ROOT@/src/doc', '-d', '@OUTPUT@', '@INPUT@'],
+  )
+endif
+
+if prog_mdbook.found()
+  guide = custom_target(
+    'guide',
+    output : 'guide',
+    command : [prog_mdbook, 'build', '-d', join_paths(meson.current_build_dir(), 'guide'), '@SOURCE_ROOT@/guide' ]
   )
 endif

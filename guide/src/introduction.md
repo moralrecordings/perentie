@@ -9,8 +9,6 @@ Perentie is designed for the hardware constraints of Pentium-era MS-DOS. You can
 - Natively on most platforms (via SDL3)
 - Embedded in a webpage (via SDL3 + Emscripten)
 
-The engine is still work-in-progress, however a lot of the base functionality has been implemented. Try it and see!
-
 Featuring:
 
 - Lua-based scripting API

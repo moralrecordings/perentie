@@ -1,5 +1,7 @@
 # Getting Started
 
+This guide is intended to provide a basic introduction to engine concepts. For information about Perentie's Lua scripting API, see the [API docs](https://moral.net.au/perentie/doc). 
+
 The best way to get introduced to Perentie's internals is to [download the source code of the demonstration game, Maura & Ash](https://github.com/moralrecordings/mauraash). This game makes use of the full smörgåsbord of engine features. Try modifying the game code, and then press CTRL+R in the game to hot-reload it.
 
 There is a fully commented [basic example program](https://github.com/moralrecordings/perentie/tree/main/example/main.lua) included with the Perentie source code. Try modifying the game code, and then press R in the game to hot-reload it.
