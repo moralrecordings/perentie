@@ -358,15 +358,30 @@ exe = executable(
 )
 
 if host_machine.system() == 'msdos'
+  # Given that DJGPP isn't good for inline debugging, strip the symbols.
+  # This will give a disk savings of about 20%.
+  # You can crunch it down by another 50% by running it through UPX.
+
+  prog_strip = find_program('strip', required : true)
+  exe_strip = custom_target(
+    'pt_strip.exe',
+    input : [exe],
+    output : 'pt_strip.exe',
+    depends : [exe],
+    command : [prog_strip, '@INPUT0@', '-o', '@OUTPUT@'],
+    build_by_default : true
+  )
+
   # DJGPP will build EXEs with a loader stub that looks for CWSDPMI.EXE.
   # But we have the option of replacing the stub with CWSDPMI itself, so
   # we may as well do that.
   prog_exe2coff = find_program('exe2coff', required : true)
+
   exe_coff = custom_target(
-    'pt_base',
-    input : [exe],
-    output : 'pt_base',
-    depends : [exe],
+    'pt_strip',
+    input : [exe_strip],
+    output : 'pt_strip',
+    depends : [exe_strip],
     command : [prog_exe2coff, '@INPUT0@'],
     build_by_default : true
   )
