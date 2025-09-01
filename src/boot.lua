@@ -2985,6 +2985,10 @@ local _PTObjectIsMoving = function(object, fast_forward)
     return false
 end
 
+local _PTAnimationIsPlaying = function(animation, fast_forward)
+    return (not fast_forward) and not animation.looping and (animation.current_frame ~= #animation.frames)
+end
+
 --- Check if an object is moving.
 -- @tparam table object Any object with "x" and "y" parameters
 -- @treturn boolean Whether the object is moving.
@@ -4078,6 +4082,18 @@ PTRoomRemoveObject = function(room, object)
     end)
 end
 
+--- Update the depth ordering of the objects in the room.
+-- Must be called when you change an object's z coordinate.
+-- @tparam PTRoom room The room to modify.
+PTRoomUpdateDepth = function(room)
+    if not room or room._type ~= "PTRoom" then
+        error("PTRoomUpdateDepth: expected PTRoom for first argument")
+    end
+    table.sort(room.render_list, function(a, b)
+        return a.z < b.z
+    end)
+end
+
 --- Set the walk boxes for a room.
 -- This will replace all existing walk boxes, and regenerate the box links and box matrix for the room.
 -- @tparam PTRoom room The room to modify.
@@ -4332,7 +4348,7 @@ PTRoomTalk = function(x, y, message, font, colour, duration)
         font = room.talk_font
     end
     if not font or font._type ~= "PTFont" then
-        PTLog("PTRoomTalk: no font argument, or actor has invalid talk_font")
+        PTLog("PTRoomTalk: no font argument")
         return
     end
 
@@ -4631,8 +4647,7 @@ _PTRunThreads = function()
                     _PTThreadsMoveObjectWait[name] = nil
                 end
             elseif _PTThreadsAnimationWait[name] then
-                is_awake = not _PTThreadsAnimationWait[name].looping
-                    and _PTThreadsAnimationWait[name].current_frame == #_PTThreadsAnimationWait[name].frames
+                is_awake = not _PTAnimationIsPlaying(_PTThreadsAnimationWait[name], _PTThreadsFastForward[name])
                 if is_awake then
                     _PTThreadsAnimationWait[name] = nil
                 end

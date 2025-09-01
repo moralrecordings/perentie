@@ -1,5 +1,6 @@
 .. image:: logo.png
-   :alt: Perentie
+
+   :alt: Perentie logo, featuring the smiling head of Petra the monitor lizard, next to the name in a futurist pixel font.
 
 Perentie is a Lua-based graphical adventure game engine. The design is heavily inspired by LucasArts' SCUMM and GrimE adventure game engines.
 
@@ -21,6 +22,18 @@ Featuring:
 - Debug shell over null modem/Telnet connection
 
 Perentie was originally created for DOS Games Jam July 2024.
+
+Download
+========
+
+You can obtain the latest version from the `releases page <https://github.com/moralrecordings/perentie/releases>`_.
+
+Documentation
+=============
+
+For general information about engine concepts, check out the `Perentie guide <https://moral.net.au/perentie/guide/>`_.
+
+For information about the Perentie Lua scripting API, check out the `Perentie API docs <https://moral.net.au/perentie/doc/>`_.
 
 Compiling
 =========
