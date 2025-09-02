@@ -1538,7 +1538,7 @@ local _PTActorUpdate = function(actor, fast_forward)
     local result = true
     if actor.moving > 0 then
         if PTGetMillis() > actor.walkdata_next_wait then
-            PTActorWalk(actor)
+            _PTActorUpdateWalk(actor)
             PTSpriteIncrementFrame(actor.sprite)
             actor.walkdata_next_wait = PTGetMillis() + (1000 // actor.walk_rate)
             local room = PTCurrentRoom()
@@ -1724,12 +1724,9 @@ PTActorSetWalk = function(actor, x, y, facing)
     actor.moving = MF_NEW_LEG
 end
 
---- Make an actor take a single step towards the current walk target.
--- Called by the the event update loop.
--- @tparam PTActor actor Actor to move.
-PTActorWalk = function(actor)
+_PTActorUpdateWalk = function(actor)
     if not actor or actor._type ~= "PTActor" then
-        error("PTActorWalk: expected PTActor for first argument")
+        error("PTActorUpdateWalk: expected PTActor for first argument")
     end
 
     if actor.moving == 0 then
@@ -1826,7 +1823,7 @@ PTActorWalk = function(actor)
             end
         end
         PTLog(
-            "PTActorWalk: (%d, %d) (%d, %d) %s",
+            "PTActorUpdateWalk: (%d, %d) (%d, %d) %s",
             found_path.x,
             found_path.y,
             actor.walkdata_dest.x,
