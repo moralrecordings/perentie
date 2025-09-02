@@ -2,7 +2,6 @@
 #define PERENTIE_FONT_H
 
 #include <stdint.h>
-#include <stdio.h>
 
 #include "image.h"
 

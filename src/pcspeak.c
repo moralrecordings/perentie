@@ -1,4 +1,3 @@
-#include <stdio.h>
 #include <string.h>
 
 #ifdef SYSTEM_DOS
@@ -10,7 +9,6 @@
 #include "log.h"
 #include "pcspeak.h"
 #include "system.h"
-#include "utils.h"
 
 #define TIMER_PIT_CLOCK 1193180L
 #define TIMER_HZ 1000

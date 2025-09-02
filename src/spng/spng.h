@@ -24,7 +24,8 @@ extern "C" {
 
 #include <stdlib.h>
 #include <stdint.h>
-#include <stdio.h>
+// HACK: Use Perentie's file API
+#include "../stdio_shim.h"
 
 #define SPNG_VERSION_MAJOR 0
 #define SPNG_VERSION_MINOR 7

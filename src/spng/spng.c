@@ -6,7 +6,8 @@
 
 #include <limits.h>
 #include <string.h>
-#include <stdio.h>
+// HACK: Use Perentie's file API
+#include "../stdio_shim.h"
 #include <math.h>
 
 #define ZLIB_CONST

@@ -271,13 +271,19 @@ void fs_clearerr(PHYSFS_File* stream)
 {
 }
 
+off_t fs_ftello(PHYSFS_File* stream)
+{
+    PHYSFS_File* file = (PHYSFS_File*)stream;
+    return (off_t)PHYSFS_tell(file);
+}
+
 long fs_ftell(PHYSFS_File* stream)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
     return (long)PHYSFS_tell(file);
 }
 
-int fs_fseek(PHYSFS_File* stream, long offset, int origin)
+int fs_fseeko(PHYSFS_File* stream, off_t offset, int origin)
 {
     PHYSFS_File* file = (PHYSFS_File*)stream;
     struct unget_t* ugt = get_unget(stream);
@@ -289,6 +295,11 @@ int fs_fseek(PHYSFS_File* stream, long offset, int origin)
     else if (origin == SEEK_CUR)
         return (int)PHYSFS_seek(file, offset + PHYSFS_tell(file)) != 0 ? 0 : 1;
     return (int)PHYSFS_seek(file, offset) != 0 ? 0 : 1;
+}
+
+int fs_fseek(PHYSFS_File* stream, long offset, int origin)
+{
+    return fs_fseeko(stream, (off_t)offset, origin);
 }
 
 #define AUTOCLEAN_MAX 64

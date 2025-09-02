@@ -28,7 +28,9 @@ extern int fs_fputc(int ch, FILE* stream);
 extern int fs_feof(FILE* stream);
 extern int fs_ferror(FILE* stream);
 extern void fs_clearerr(FILE* stream);
+extern off_t fs_ftello(FILE* stream);
 extern long fs_ftell(FILE* stream);
+extern int fs_fseeko(FILE* stream, off_t offset, int origin);
 extern int fs_fseek(FILE* stream, long offset, int origin);
 extern FILE* fs_tmpfile();
 extern int fs_fclose(FILE* stream);
@@ -52,7 +54,9 @@ extern int fs_pclose(FILE* stream);
 #define feof(F) fs_feof(F)
 #define ferror(F) fs_ferror(F)
 #define clearerr(F) fs_clearerr(F)
+#define ftello(F) fs_ftello(F)
 #define ftell(F) fs_ftell(F)
+#define fseeko(F, L, O) fs_fseeko(F, L, O)
 #define fseek(F, L, O) fs_fseek(F, L, O)
 #define tmpfile() fs_tmpfile();
 #define fclose(F) fs_fclose(F)

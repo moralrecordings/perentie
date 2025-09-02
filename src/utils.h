@@ -2,7 +2,6 @@
 #define PERENTIE_UTILS_H
 
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 
 #define MIN(a, b)                                                                                                      \

@@ -29,7 +29,8 @@ typedef int mz_bool;
 #ifdef MINIZ_NO_STDIO
 #define MZ_FILE void *
 #else
-#include <stdio.h>
+// HACK: Use Perentie's file API
+#include "../stdio_shim.h"
 #define MZ_FILE FILE
 #endif /* #ifdef MINIZ_NO_STDIO */
 
