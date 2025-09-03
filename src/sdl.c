@@ -11,7 +11,10 @@
 #include <SDL3/SDL_surface.h>
 #include <SDL3/SDL_video.h>
 
-#include "dos.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "event.h"
 #include "fs.h"
 #include "image.h"
@@ -107,7 +110,9 @@ void sdlvideo_init()
     SDL_SetRenderTarget(renderer, framebuffer);
     SDL_SetRenderVSync(renderer, 1);
     SDL_HideCursor();
-
+#ifdef __EMSCRIPTEN__
+    emscripten_hide_mouse();
+#endif
     atexit(sdlvideo_shutdown);
 }
 
