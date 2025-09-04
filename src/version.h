@@ -1,7 +1,7 @@
 #ifndef PERENTIE_VERSION_H
 #define PERENTIE_VERSION_H
 
-static const char* VERSION = "0.9.1";
+static const char* VERSION = "1.0.0";
 
 #ifdef SYSTEM_DOS
 static const char* PLATFORM = "dos";
