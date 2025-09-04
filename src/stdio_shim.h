@@ -15,6 +15,8 @@
 #undef stderr
 #undef popen
 #undef pclose
+#undef fseeko
+#undef ftello
 #define stdin NULL
 #define stdout NULL
 #define stderr NULL

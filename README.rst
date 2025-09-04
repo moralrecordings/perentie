@@ -58,7 +58,9 @@ You will also need:
    source /path/to/djgpp/setenv
    meson setup --cross-file=i586-pc-msdosdjgpp.ini build_dos
    cd build_dos
-   ninja 
+   ninja
+
+If you're building with `-Dbuildtype=release`, you will need to also include `--optimization=2`. The default is to use -O3, which with DJGPP will cause aggressive inlining of functions. This will cause a lot of mystery crashes in PhysicsFS.
 
 SDL executable
 --------------

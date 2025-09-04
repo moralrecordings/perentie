@@ -365,6 +365,11 @@ static int lua_pt_image(lua_State* L)
     }
 
     pt_image* image = create_image(path, origin_x, origin_y, colourkey);
+    if (!image) {
+        log_print("lua_pt_create_image: unable to load image %s\n", path);
+        lua_pushnil(L);
+        return 1;
+    }
     // log_print("lua_pt_create_image: %p %d %d %d\n", image, image->width, image->height, image->colourkey);
     // create a table
     pt_image** target = lua_newuserdatauv(L, sizeof(pt_image*), 1);
@@ -471,6 +476,10 @@ static int lua_pt_text(lua_State* L)
     pt_text* text = create_text(string, len, *fontptr, width, align);
     pt_image* image = text_to_image(text, r, g, b, brd_r, brd_g, brd_b);
     destroy_text(text);
+    if (!image) {
+        lua_pushnil(L);
+        return 1;
+    }
 
     // same as the lua_pt_image code
     pt_image** target = lua_newuserdatauv(L, sizeof(pt_image*), 1);

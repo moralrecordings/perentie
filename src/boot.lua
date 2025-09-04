@@ -1947,7 +1947,7 @@ end
 -- @tparam[opt=0] integer origin_y Origin y coordinate, relative to top-left corner.
 -- @tparam[opt=-1] integer colourkey Palette index to use as colourkey.
 -- @tparam[opt=true] boolean collision_mask Whether to use the transparency mask for collision detection.
--- @treturn PTImage The new image.
+-- @treturn PTImage The new image, or nil if it could not be loaded.
 PTImage = function(path, origin_x, origin_y, colourkey, collision_mask)
     if not origin_x then
         origin_x = 0
@@ -1961,7 +1961,11 @@ PTImage = function(path, origin_x, origin_y, colourkey, collision_mask)
     if collision_mask == nil then
         collision_mask = true
     end
-    return { _type = "PTImage", ptr = _PTImage(path, origin_x, origin_y, colourkey), collision_mask = collision_mask }
+    local data = _PTImage(path, origin_x, origin_y, colourkey)
+    if not data then
+        return nil
+    end
+    return { _type = "PTImage", ptr = data, collision_mask = collision_mask }
 end
 
 --- Load a sequence of images.
@@ -2076,7 +2080,7 @@ PTSetImageOriginSimple = function(image, origin)
     if not image or image._type ~= "PTImage" then
         return
     end
-    local w, h = _PTGetImageDims(image.ptr)
+    local w, h = PTGetImageDims(image)
     local w2, h2 = w / 2, h / 2
     if origin == "top-left" then
         _PTSetImageOrigin(image.ptr, 0, 0)
@@ -2111,7 +2115,7 @@ PTDrawImage = function(image, x, y, flags)
     if image then
         if image._type == "PTImage" then
             _PTDrawImage(image.ptr, x, y, flags)
-        elseif image._type == "PT9Slice" then
+        elseif image._type == "PT9Slice" and image.image then
             _PTDraw9Slice(
                 image.image.ptr,
                 x,
@@ -2504,7 +2508,7 @@ PTSpriteIncrementFrame = function(object)
                 if anim.current_frame < #anim.frames then
                     anim.current_frame = anim.current_frame + 1
                 end
-            else
+            elseif #anim.frames > 0 then
                 anim.current_frame = (anim.current_frame % #anim.frames) + 1
             end
             --print(string.format("PTSpriteIncrementFrame: %d", anim.current_frame))
@@ -3486,7 +3490,7 @@ end
 -- @tparam[opt="left"] string align Text alignment; one of "left", "center" or "right".
 -- @tparam[opt={ 0xff 0xff 0xff }] table colour Inner colour; list of 3 8-bit numbers.
 -- @tparam[opt={ 0x00 0x00 0x00 }] table border Border colour; list of 3 8-bit numbers.
--- @treturn PTImage The new image.
+-- @treturn PTImage The new image, or nil if the text was unable to be created.
 PTText = function(text, font, width, align, colour, border)
     if not width then
         width = 200
@@ -3521,8 +3525,11 @@ PTText = function(text, font, width, align, colour, border)
     if border and border[3] then
         brd_b = border[3]
     end
-
-    return { _type = "PTImage", ptr = _PTText(text, font.ptr, width, align_enum, r, g, b, brd_r, brd_g, brd_b) }
+    local data = _PTText(text, font.ptr, width, align_enum, r, g, b, brd_r, brd_g, brd_b)
+    if not data then
+        return nil
+    end
+    return { _type = "PTImage", ptr = data }
 end
 
 --- Audio

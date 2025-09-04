@@ -180,6 +180,10 @@ void vga_blit_image(
 
     if (!image->hw_image) {
         image->hw_image = (void*)vga_convert_image(image);
+        if (!image->hw_image) {
+            log_error("vga_blit_image: failed to create hardware image for %s\n", image->path);
+            return;
+        }
     }
 
     pt_image_vga* hw_image = (pt_image_vga*)image->hw_image;
@@ -504,6 +508,8 @@ void vga_flip()
 pt_image_vga* vga_convert_image(pt_image* image)
 {
     pt_image_vga* result = (pt_image_vga*)calloc(1, sizeof(pt_image_vga));
+    if (!result)
+        return NULL;
     result->width = image->width;
     result->height = image->height;
     result->pitch = image->pitch;
@@ -511,6 +517,12 @@ pt_image_vga* vga_convert_image(pt_image* image)
     result->plane_pitch = (image->pitch) >> 2;
     result->bitmap = (byte*)calloc(result->pitch * result->height, sizeof(byte));
     result->mask = (byte*)calloc(result->pitch * result->height, sizeof(byte));
+    if (!result->bitmap || !result->mask) {
+        return NULL;
+    }
+    // log_print("vga_convert_image: width %d, height %d, pitch %d, plane %d, plane_pitch %d, bitmap_size %d, mask_size
+    // %d\n", result->width, result->height, result->pitch, result->plane, result->plane_pitch, result->pitch *
+    // result->height, result->pitch * result->height);
     result->revision = pt_sys.palette_revision;
 
     byte palette_map[256];

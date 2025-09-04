@@ -179,7 +179,7 @@ size_t fs_fread(void* buffer, size_t size, size_t count, PHYSFS_File* stream)
 {
     if ((size == 0) || (count == 0))
         return 0;
-    // void* buffer_start = buffer;
+    void* buffer_start = buffer;
     size_t len = size * count;
     PHYSFS_File* file = (PHYSFS_File*)stream;
     size_t result = 0;
@@ -196,7 +196,8 @@ size_t fs_fread(void* buffer, size_t size, size_t count, PHYSFS_File* stream)
     result += (size_t)PHYSFS_readBytes(file, buffer, len);
 
     /*log_print("fs_fread: Fetched %d bytes (size: %d, count: %d, len: %d) from ptr 0x%lx (%d)\n", result, size, count,
-    len, (size_t)file, PHYSFS_tell(file)); for (int i = 0; i < result; i++) { log_print("%02hhX ", ((uint8_t
+    len, (size_t)file, PHYSFS_tell(file));
+    for (int i = 0; i < result; i++) { log_print("%02hhX ", ((uint8_t
     *)buffer_start)[i]);
     }
     log_print("\n");*/
@@ -355,6 +356,7 @@ PHYSFS_File* fs_tmpfile()
 
 int fs_fclose(PHYSFS_File* stream)
 {
+    log_print("fs_close: Closing file ptr 0x%lx\n", (size_t)stream);
     PHYSFS_File* file = (PHYSFS_File*)stream;
     int result = PHYSFS_close(file);
     remove_file_if_temp(stream);
