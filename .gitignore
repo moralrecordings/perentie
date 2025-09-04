@@ -7,3 +7,7 @@ src/pt_base
 **.o
 **.a
 **.exe
+**/repl-result
+**/repl-result-*
+**/result
+**/result-*
