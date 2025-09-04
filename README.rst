@@ -35,6 +35,8 @@ For general information about engine concepts, check out the `Perentie guide <ht
 
 For information about the Perentie Lua scripting API, check out the `Perentie API docs <https://moral.net.au/perentie/doc/>`_.
 
+Please check out the example game, `Maura and Ash <https://moralrecordings.itch.io/mauraash>`_, along with the `full source code <https://github.com/moralrecordings/mauraash>`_
+
 Compiling
 =========
 
