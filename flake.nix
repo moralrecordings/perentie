@@ -18,7 +18,7 @@
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = nixpkgs.legacyPackages.${system};
       pname = "perentie";
-      version = "0.6";
+      version = "1.0.0";
       src = ./.;
       buildInputs = with pkgs; [
         sdl3
@@ -61,6 +61,7 @@
           mesonAutoFeatures = false;
           mesonFlags = [
             "--cross-file=i586-pc-msdosdjgpp.ini"
+            "--optimization=2"
           ];
           installPhase = ''
             mkdir -p $out/bin
